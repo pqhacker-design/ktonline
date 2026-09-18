@@ -23,10 +23,21 @@ import {
   AlertTriangle,
   X,
   Loader2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  ArrowDownAZ,
+  Save,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { ClassItem, StudentItem } from '../types';
 import { OnlineExamService } from '../services/onlineExamService';
 import { ExportExcel } from '../services/exportExcel';
+import {
+  compareVietnameseNames,
+  naturalCompare,
+  sortStudentsDefault,
+} from '../utils/vietnameseSort';
 
 interface ClassManagementViewProps {
   onNavigateTab?: (tab: any) => void;
@@ -84,6 +95,14 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
   // Auto-generation SBD prefix settings
   const [sbdPrefixMode, setSbdPrefixMode] = useState<'CLASS' | 'SBD' | 'CUSTOM'>('CLASS');
   const [customPrefix, setCustomPrefix] = useState('');
+
+  // Student sorting and order states
+  type StudentSortField = 'orderIndex' | 'name' | 'sbd' | 'dob';
+  type SortDirection = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<StudentSortField>('orderIndex');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [isSavingOrder, setIsSavingOrder] = useState<boolean>(false);
+  const [bulkSortAZ, setBulkSortAZ] = useState<boolean>(false);
 
   // Confirmation Modal & Toast Notification State
   const [isSubmittingClass, setIsSubmittingClass] = useState<boolean>(false);
@@ -148,7 +167,45 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
         s.className.trim().toLowerCase() === currentClass.name.trim().toLowerCase())
   );
 
-  const displayedStudents = classStudents.filter((s) => {
+  // Sắp xếp ổn định học sinh của lớp theo tiêu chí được chọn
+  const sortedClassStudents = React.useMemo(() => {
+    const list = [...classStudents];
+    list.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'name') {
+        cmp = compareVietnameseNames(a.name, b.name);
+      } else if (sortField === 'sbd') {
+        cmp = naturalCompare(a.sbd || '', b.sbd || '');
+        if (cmp === 0) {
+          cmp = compareVietnameseNames(a.name, b.name);
+        }
+      } else if (sortField === 'dob') {
+        cmp = (a.dob || '').localeCompare(b.dob || '');
+        if (cmp === 0) {
+          cmp = compareVietnameseNames(a.name, b.name);
+        }
+      } else {
+        // 'orderIndex' - Thứ tự gốc khi thêm vào
+        if (typeof a.orderIndex === 'number' && typeof b.orderIndex === 'number') {
+          cmp = a.orderIndex - b.orderIndex;
+        } else if (typeof a.orderIndex === 'number') {
+          cmp = -1;
+        } else if (typeof b.orderIndex === 'number') {
+          cmp = 1;
+        } else if (a.sbd && b.sbd && a.sbd !== b.sbd) {
+          cmp = naturalCompare(a.sbd, b.sbd);
+        } else if (a.createdAt && b.createdAt && a.createdAt !== b.createdAt) {
+          cmp = a.createdAt.localeCompare(b.createdAt);
+        } else {
+          cmp = compareVietnameseNames(a.name, b.name);
+        }
+      }
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [classStudents, sortField, sortDirection]);
+
+  const displayedStudents = sortedClassStudents.filter((s) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -157,6 +214,41 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
       (s.className && s.className.toLowerCase().includes(q))
     );
   });
+
+  const handleToggleSort = (field: StudentSortField) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const handleSaveCurrentOrderAsPermanent = async () => {
+    if (!currentClass || sortedClassStudents.length === 0 || isSavingOrder) return;
+    setIsSavingOrder(true);
+
+    try {
+      const updatedList: StudentItem[] = sortedClassStudents.map((st, idx) => ({
+        ...st,
+        orderIndex: idx + 1,
+      }));
+
+      // Optimistic update
+      const updatedMap = new Map(updatedList.map((s) => [s.id, s]));
+      setStudents((prev) => prev.map((s) => updatedMap.get(s.id) || s));
+
+      await OnlineExamService.saveStudents(updatedList);
+      setSortField('orderIndex');
+      setSortDirection('asc');
+      showToast('success', `Đã lưu thứ tự ${updatedList.length} học sinh của lớp ${currentClass.name} làm thứ tự chuẩn thành công!`);
+    } catch (err: any) {
+      console.error('Lỗi khi lưu thứ tự học sinh:', err);
+      showToast('error', 'Lỗi khi lưu thứ tự: ' + err.message);
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
 
   // Handle Save Class (Instant Optimistic UI)
   const handleCreateClass = async (e: React.FormEvent) => {
@@ -281,7 +373,12 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
     }
 
     setIsSubmittingStudent(true);
-    const studentPayload: any = {
+    const maxOrder = classStudents.reduce((max, s) => Math.max(max, s.orderIndex || 0), 0);
+    const orderIndex = editingStudent && typeof editingStudent.orderIndex === 'number'
+      ? editingStudent.orderIndex
+      : maxOrder + 1;
+
+    const studentPayload: StudentItem = {
       id: editingStudent?.id || 'std_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
       classId: currentClass.id,
       className: currentClass.name,
@@ -290,6 +387,7 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
       gender: studentGenderInput,
       dob: studentDobInput.trim(),
       notes: studentNotesInput.trim(),
+      orderIndex,
       createdAt: editingStudent?.createdAt || new Date().toISOString(),
     };
 
@@ -329,16 +427,38 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
     e.preventDefault();
     if (!currentClass || !bulkText.trim() || isSubmittingBulk) return;
 
-    const lines = bulkText
+    const rawLines = bulkText
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean);
 
-    if (lines.length === 0) return;
+    if (rawLines.length === 0) return;
+
+    // Filter out common table headers
+    const isHeaderLine = (line: string): boolean => {
+      const lower = line.toLowerCase();
+      if (
+        lower.startsWith('stt') ||
+        lower.startsWith('sbd') ||
+        lower.startsWith('họ và tên') ||
+        lower.startsWith('họ tên') ||
+        lower.startsWith('số báo danh') ||
+        (lower.includes('họ và tên') && lower.includes('ngày sinh')) ||
+        (lower.includes('stt') && lower.includes('họ'))
+      ) {
+        return true;
+      }
+      return false;
+    };
+
+    const lines = rawLines.filter((l) => !isHeaderLine(l));
+    if (lines.length === 0) {
+      showToast('error', 'Nội dung dán chỉ chứa dòng tiêu đề, vui lòng dán danh sách học sinh.');
+      return;
+    }
 
     setIsSubmittingBulk(true);
-    const newStudents: any[] = [];
-    const cleanCls = currentClass.name.replace(/\s+/g, '').toUpperCase();
+    const cleanCls = currentClass.name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'HS';
 
     const takenSet = new Set(
       students
@@ -346,20 +466,84 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
         .filter(Boolean)
     );
 
-    lines.forEach((line, idx) => {
-      const parts = line.split(/[,;\t]/).map((p) => p.trim());
+    const baseOrder = classStudents.reduce((max, s) => Math.max(max, s.orderIndex || 0), 0);
+    const startTime = Date.now();
+
+    // Parse lines into structured records
+    const parsedRows: { name: string; sbd: string; gender: string; dob: string }[] = [];
+
+    lines.forEach((line) => {
+      // Clean leading numbering like "1. ", "1/ ", "1- ", "01. "
+      const cleanLine = line.replace(/^\s*\d+[\.\-\/\)\:]\s+/, '').trim();
+
+      // Split by tab, comma, semicolon, or 2+ consecutive spaces
+      const parts = line.split(/[\t]+| {2,}|[;,]/).map((p) => p.trim()).filter(Boolean);
+
       let sbd = '';
       let name = '';
       let gender = 'Nam';
       let dob = '';
 
-      if (parts.length >= 2 && /^[A-Z0-9]+$/i.test(parts[0])) {
-        sbd = parts[0].toUpperCase();
-        name = parts[1];
-        gender = parts[2] || 'Nam';
-        dob = parts[3] || '';
+      if (parts.length >= 3) {
+        const isPart0STT = /^\d+$/.test(parts[0]);
+        if (isPart0STT) {
+          const isPart1Sbd = /^[a-zA-Z0-9_\-\/]{1,15}$/.test(parts[1]) && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(parts[1]);
+          if (isPart1Sbd && parts.length >= 3) {
+            sbd = parts[1].toUpperCase();
+            name = parts[2];
+            gender = parts[3] || 'Nam';
+            dob = parts[4] || '';
+          } else {
+            name = parts[1];
+            gender = parts[2] || 'Nam';
+            dob = parts[3] || '';
+          }
+        } else {
+          const isPart0Sbd = /^[a-zA-Z0-9_\-\/]{1,15}$/.test(parts[0]) && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(parts[0]);
+          if (isPart0Sbd) {
+            sbd = parts[0].toUpperCase();
+            name = parts[1];
+            gender = parts[2] || 'Nam';
+            dob = parts[3] || '';
+          } else {
+            name = cleanLine;
+          }
+        }
+      } else if (parts.length === 2) {
+        if (/^\d+$/.test(parts[0])) {
+          name = parts[1];
+        } else if (/^[a-zA-Z0-9_\-\/]{1,15}$/.test(parts[0]) && !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(parts[0])) {
+          sbd = parts[0].toUpperCase();
+          name = parts[1];
+        } else {
+          name = cleanLine;
+        }
       } else {
-        name = line;
+        name = cleanLine;
+      }
+
+      const normGender = (gender || '').trim().toLowerCase();
+      if (normGender === 'nữ' || normGender === 'nu' || normGender === 'female' || normGender === 'f') {
+        gender = 'Nữ';
+      } else {
+        gender = 'Nam';
+      }
+
+      if (name) {
+        parsedRows.push({ name: name.trim(), sbd, gender, dob: dob.trim() });
+      }
+    });
+
+    // Sắp xếp trước A - Z chuẩn Tiếng Việt nếu giáo viên chọn tùy chọn này
+    if (bulkSortAZ) {
+      parsedRows.sort((a, b) => compareVietnameseNames(a.name, b.name));
+    }
+
+    const newStudents: StudentItem[] = [];
+
+    parsedRows.forEach((row, idx) => {
+      let sbd = row.sbd;
+      if (!sbd) {
         let candidateIdx = classStudents.length + idx + 1;
         let padded = candidateIdx < 10 ? `0${candidateIdx}` : `${candidateIdx}`;
         sbd = `${cleanCls}${padded}`;
@@ -369,23 +553,19 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
           sbd = `${cleanCls}${padded}`;
         }
       }
+      takenSet.add(sbd);
 
-      if (sbd) {
-        takenSet.add(sbd);
-      }
-
-      if (name) {
-        newStudents.push({
-          id: 'std_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6) + '_' + idx,
-          classId: currentClass.id,
-          className: currentClass.name,
-          sbd,
-          name,
-          gender,
-          dob,
-          createdAt: new Date().toISOString(),
-        });
-      }
+      newStudents.push({
+        id: 'std_' + startTime + '_' + Math.random().toString(36).substring(2, 6) + '_' + idx,
+        classId: currentClass.id,
+        className: currentClass.name,
+        sbd,
+        name: row.name,
+        gender: row.gender,
+        dob: row.dob,
+        orderIndex: baseOrder + idx + 1,
+        createdAt: new Date(startTime + idx * 20).toISOString(),
+      });
     });
 
     // 1. Optimistic UI update
@@ -531,10 +711,10 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
       if (currentClass) {
         const prefix =
           sbdPrefixMode === 'CLASS'
-            ? currentClass.name.replace(/\s+/g, '').toUpperCase()
+            ? currentClass.name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
             : sbdPrefixMode === 'SBD'
             ? 'SBD'
-            : (customPrefix.trim() || 'HS').toUpperCase();
+            : (customPrefix.trim().replace(/[^a-zA-Z0-9]/g, '') || 'HS').toUpperCase();
 
         const takenSet = new Set(
           students
@@ -543,7 +723,8 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
             .filter(Boolean)
         );
 
-        const updatedStudents = classStudents.map((st, idx) => {
+        // Đánh lại SBD theo đúng thứ tự hiển thị hiện tại của lớp
+        const updatedStudents = sortedClassStudents.map((st, idx) => {
           let candidateIdx = idx + 1;
           let padded = candidateIdx < 10 ? `0${candidateIdx}` : `${candidateIdx}`;
           let candidateSbd = `${prefix}${padded}`;
@@ -557,6 +738,7 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
 
           return {
             ...st,
+            orderIndex: idx + 1,
             sbd: candidateSbd,
           };
         });
@@ -587,14 +769,14 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
       return;
     }
 
-    if (classStudents.length === 0) {
+    if (sortedClassStudents.length === 0) {
       showToast('error', `Lớp ${currentClass.name} chưa có học sinh nào để xuất Excel.`);
       return;
     }
 
     try {
-      ExportExcel.exportStudentListToExcel(classStudents, currentClass.name);
-      showToast('success', `Đã xuất danh sách lớp ${currentClass.name} (${classStudents.length} HS) ra file Excel thành công!`);
+      ExportExcel.exportStudentListToExcel(sortedClassStudents, currentClass.name);
+      showToast('success', `Đã xuất danh sách lớp ${currentClass.name} (${sortedClassStudents.length} HS) ra file Excel thành công!`);
     } catch (err: any) {
       console.error('Lỗi khi xuất danh sách lớp ra Excel:', err);
       showToast('error', 'Lỗi khi xuất file Excel: ' + (err.message || 'Lỗi không xác định'));
@@ -614,8 +796,9 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
     }
 
     try {
-      ExportExcel.exportStudentListToExcel(studentsOfClass, cls.name);
-      showToast('success', `Đã xuất danh sách lớp ${cls.name} (${studentsOfClass.length} HS) ra file Excel thành công!`);
+      const sorted = sortStudentsDefault(studentsOfClass);
+      ExportExcel.exportStudentListToExcel(sorted, cls.name);
+      showToast('success', `Đã xuất danh sách lớp ${cls.name} (${sorted.length} HS) ra file Excel thành công!`);
     } catch (err: any) {
       console.error('Lỗi khi xuất danh sách lớp ra Excel:', err);
       showToast('error', 'Lỗi khi xuất file Excel: ' + (err.message || 'Lỗi không xác định'));
@@ -860,6 +1043,87 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
                 />
               </div>
 
+              {/* Sort Controls & Action Toolbar */}
+              {classStudents.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-2xl">
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+                    <span className="text-slate-500 dark:text-slate-400 mr-1 flex items-center gap-1">
+                      <SlidersHorizontal className="w-3.5 h-3.5" /> Sắp xếp:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('orderIndex')}
+                      className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 transition-all cursor-pointer ${
+                        sortField === 'orderIndex'
+                          ? 'bg-teal-600 border-teal-600 text-white font-bold shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                      }`}
+                      title="Sắp xếp theo thứ tự nhập ban đầu (STT)"
+                    >
+                      <span>Thứ tự nhập (STT)</span>
+                      {sortField === 'orderIndex' && (
+                        sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('name')}
+                      className={`px-3 py-1.5 rounded-xl border flex items-center gap-1.5 transition-all cursor-pointer ${
+                        sortField === 'name'
+                          ? 'bg-teal-600 border-teal-600 text-white font-bold shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                      }`}
+                      title="Sắp xếp theo Họ và Tên (chuẩn Tiếng Việt: so Tên trước, Họ đệm sau)"
+                    >
+                      <ArrowDownAZ className="w-3.5 h-3.5" />
+                      <span>Tên {sortField === 'name' && sortDirection === 'desc' ? 'Z → A' : 'A → Z'}</span>
+                      {sortField === 'name' && (
+                        sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSort('sbd')}
+                      className={`px-3 py-1.5 rounded-xl border flex items-center gap-1 transition-all cursor-pointer ${
+                        sortField === 'sbd'
+                          ? 'bg-teal-600 border-teal-600 text-white font-bold shadow-xs'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                      }`}
+                      title="Sắp xếp theo Số Báo Danh tự nhiên (1, 2... 10...)"
+                    >
+                      <span>Theo SBD</span>
+                      {sortField === 'sbd' && (
+                        sortDirection === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveCurrentOrderAsPermanent}
+                      disabled={isSavingOrder || classStudents.length <= 1}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Lưu thứ tự đang hiển thị làm thứ tự danh sách lớp chuẩn (cố định STT 1, 2, 3...)"
+                    >
+                      {isSavingOrder ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Đang lưu thứ tự...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>Lưu thứ tự này làm chuẩn</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Roster Table */}
               {displayedStudents.length === 0 ? (
                 <div className="text-center py-12 space-y-3 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700">
@@ -892,11 +1156,63 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 font-bold uppercase text-[11px] tracking-wider border-b border-slate-200 dark:border-slate-700">
                       <tr>
-                        <th className="py-3 px-4 w-12 text-center">STT</th>
-                        <th className="py-3 px-4">Số Báo Danh (SBD)</th>
-                        <th className="py-3 px-4">Họ và Tên</th>
+                        <th
+                          onClick={() => handleToggleSort('orderIndex')}
+                          className="py-3 px-4 w-16 text-center cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors select-none"
+                          title="Bấm để sắp xếp theo STT nhập"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>STT</span>
+                            {sortField === 'orderIndex' ? (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-teal-600" /> : <ArrowDown className="w-3 h-3 text-teal-600" />
+                            ) : (
+                              <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleToggleSort('sbd')}
+                          className="py-3 px-4 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors select-none"
+                          title="Bấm để sắp xếp theo Số Báo Danh"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Số Báo Danh (SBD)</span>
+                            {sortField === 'sbd' ? (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-teal-600" /> : <ArrowDown className="w-3 h-3 text-teal-600" />
+                            ) : (
+                              <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          onClick={() => handleToggleSort('name')}
+                          className="py-3 px-4 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors select-none"
+                          title="Bấm để sắp xếp theo Họ và Tên (Tiếng Việt)"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Họ và Tên</span>
+                            {sortField === 'name' ? (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-teal-600" /> : <ArrowDown className="w-3 h-3 text-teal-600" />
+                            ) : (
+                              <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
                         <th className="py-3 px-4">Giới tính</th>
-                        <th className="py-3 px-4">Ngày sinh</th>
+                        <th
+                          onClick={() => handleToggleSort('dob')}
+                          className="py-3 px-4 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors select-none"
+                          title="Bấm để sắp xếp theo Ngày sinh"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Ngày sinh</span>
+                            {sortField === 'dob' ? (
+                              sortDirection === 'asc' ? <ArrowUp className="w-3 h-3 text-teal-600" /> : <ArrowDown className="w-3 h-3 text-teal-600" />
+                            ) : (
+                              <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60" />
+                            )}
+                          </div>
+                        </th>
                         <th className="py-3 px-4 text-right">Thao tác</th>
                       </tr>
                     </thead>
@@ -1309,10 +1625,22 @@ Ví dụ định dạng 2 (kèm SBD):
                 />
               </div>
 
+              <div className="flex items-center gap-2 px-1">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={bulkSortAZ}
+                    onChange={(e) => setBulkSortAZ(e.target.checked)}
+                    className="rounded-md border-slate-300 text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span>Tự động sắp xếp Họ Tên A → Z (chuẩn Tiếng Việt) trước khi đánh STT & SBD</span>
+                </label>
+              </div>
+
               <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-2xl text-xs text-indigo-700 dark:text-indigo-300 flex items-start gap-2">
                 <Sparkles className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
                 <div>
-                  <strong>Tự động sinh Số Báo Danh (SBD):</strong> Nếu bạn chỉ dán tên học sinh, hệ thống sẽ tự động tạo SBD dạng <code>{currentClass.name.replace(/\s+/g, '').toUpperCase()}01</code>, <code>{currentClass.name.replace(/\s+/g, '').toUpperCase()}02</code>...
+                  <strong>Tự động sinh Số Báo Danh (SBD):</strong> Nếu bạn chỉ dán tên học sinh, hệ thống sẽ tự động tạo SBD dạng <code>{currentClass.name.replace(/\s+/g, '').toUpperCase()}01</code>, <code>{currentClass.name.replace(/\s+/g, '').toUpperCase()}02</code> theo đúng thứ tự dán vào.
                 </div>
               </div>
 

@@ -5,6 +5,7 @@ import { StorageEngine } from './storageEngine';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { extractGradeNumber, matchGrade, normalizeClassName, validateStudentEligibility } from '../types';
+import { sortStudentsDefault, naturalCompare } from '../utils/vietnameseSort';
 
 export interface OnlineExamItem {
   id: string;
@@ -2145,6 +2146,14 @@ export class OnlineExamService {
 
     const merged = Array.from(map.values());
 
+    // Sắp xếp danh sách lớp ổn định theo Khối và Tên lớp (10A1, 10A2, 10B1... 11A1...)
+    merged.sort((a, b) => {
+      const gradeA = parseInt((a.grade || '').replace(/\D/g, '') || '0', 10);
+      const gradeB = parseInt((b.grade || '').replace(/\D/g, '') || '0', 10);
+      if (gradeA !== gradeB && gradeA > 0 && gradeB > 0) return gradeA - gradeB;
+      return naturalCompare(a.name || '', b.name || '');
+    });
+
     // Update local cache if merged has more info
     if (merged.length > 0 && merged.length !== localClasses.length) {
       this.saveLocalClasses(merged);
@@ -2335,6 +2344,9 @@ export class OnlineExamService {
 
     let allStudents = Array.from(map.values());
 
+    // Sắp xếp danh sách học sinh ổn định (thứ tự nhập ban đầu / SBD / Tên tiếng Việt)
+    allStudents = sortStudentsDefault(allStudents);
+
     if (allStudents.length > 0 && allStudents.length !== localStudents.length && !classId) {
       this.saveLocalStudents(allStudents);
     }
@@ -2403,7 +2415,7 @@ export class OnlineExamService {
     const existing = this.getLocalStudents();
     const existingMap = new Map(existing.map((s) => [s.id, s]));
     savedList.forEach((s) => existingMap.set(s.id, s));
-    const updated = Array.from(existingMap.values());
+    const updated = sortStudentsDefault(Array.from(existingMap.values()));
     this.saveLocalStudents(updated);
 
     // 4. Immediately update UserDataSync

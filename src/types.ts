@@ -409,6 +409,7 @@ export interface StudentItem {
   dob?: string;
   notes?: string;
   createdAt?: string;
+  orderIndex?: number;
 }
 
 export interface ClassItem {
