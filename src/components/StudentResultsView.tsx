@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { OnlineExamService, StudentResultItem } from '../services/onlineExamService';
+import { ExportExcel } from '../services/exportExcel';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 
@@ -178,7 +179,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'KetQuaHocSinh');
-    XLSX.writeFile(workbook, `KetQuaHocSinh_MaDe_${examCodeFilter}.xlsx`);
+    ExportExcel.saveWorkbook(workbook, `KetQuaHocSinh_MaDe_${examCodeFilter}.xlsx`);
   };
 
   // Export PDF Summary
