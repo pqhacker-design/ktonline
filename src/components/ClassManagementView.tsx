@@ -582,22 +582,44 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
 
   // Export Roster to Excel
   const handleExportRosterExcel = () => {
-    if (!currentClass || classStudents.length === 0) {
-      showToast('error', 'Lớp chưa có danh sách học sinh để xuất Excel.');
+    if (!currentClass) {
+      showToast('error', 'Vui lòng chọn một lớp học để xuất danh sách.');
       return;
     }
 
-    const data = classStudents.map((st, idx) => ({
-      STT: idx + 1,
-      'Số Báo Danh (SBD)': st.sbd || '—',
-      'Họ và Tên': st.name,
-      Lớp: st.className,
-      'Giới tính': st.gender || 'Nam',
-      'Ngày sinh': st.dob || '—',
-      'Ghi chú': st.notes || '',
-    }));
+    if (classStudents.length === 0) {
+      showToast('error', `Lớp ${currentClass.name} chưa có học sinh nào để xuất Excel.`);
+      return;
+    }
 
-    ExportExcel.exportStudentListToExcel(classStudents, currentClass.name);
+    try {
+      ExportExcel.exportStudentListToExcel(classStudents, currentClass.name);
+      showToast('success', `Đã xuất danh sách lớp ${currentClass.name} (${classStudents.length} HS) ra file Excel thành công!`);
+    } catch (err: any) {
+      console.error('Lỗi khi xuất danh sách lớp ra Excel:', err);
+      showToast('error', 'Lỗi khi xuất file Excel: ' + (err.message || 'Lỗi không xác định'));
+    }
+  };
+
+  const handleExportClassById = (cls: ClassItem) => {
+    const studentsOfClass = students.filter(
+      (s) =>
+        s.classId === cls.id ||
+        s.className.trim().toLowerCase() === cls.name.trim().toLowerCase()
+    );
+
+    if (studentsOfClass.length === 0) {
+      showToast('error', `Lớp ${cls.name} chưa có học sinh nào để xuất Excel.`);
+      return;
+    }
+
+    try {
+      ExportExcel.exportStudentListToExcel(studentsOfClass, cls.name);
+      showToast('success', `Đã xuất danh sách lớp ${cls.name} (${studentsOfClass.length} HS) ra file Excel thành công!`);
+    } catch (err: any) {
+      console.error('Lỗi khi xuất danh sách lớp ra Excel:', err);
+      showToast('error', 'Lỗi khi xuất file Excel: ' + (err.message || 'Lỗi không xác định'));
+    }
   };
 
   return (
@@ -735,16 +757,26 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-200">
                           {count} HS
                         </span>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            handleExportClassById(cls);
+                          }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950 transition-colors cursor-pointer"
+                          title={`Xuất Excel danh sách lớp ${cls.name}`}
+                        >
+                          <FileSpreadsheet className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleDeleteClass(cls.id, cls.name);
                           }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors cursor-pointer"
                           title="Xóa lớp"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -807,10 +839,11 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
 
                   <button
                     onClick={handleExportRosterExcel}
-                    className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition-colors"
-                    title="Xuất danh sách Excel"
+                    className="px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Xuất danh sách lớp ra file Excel (.xlsx)"
                   >
-                    <Download className="w-4 h-4" />
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <span>Xuất DS Excel</span>
                   </button>
                 </div>
               </div>
