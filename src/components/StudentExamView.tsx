@@ -1475,9 +1475,17 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
       if (studentAns === null || studentAns === undefined) return false;
       if (typeof studentAns === 'string') {
         const trimmed = studentAns.trim();
-        return trimmed !== '' && trimmed !== 'Chưa trả lời';
+        return (
+          trimmed !== '' &&
+          trimmed !== 'Chưa trả lời' &&
+          trimmed !== 'null' &&
+          trimmed !== 'undefined'
+        );
       }
-      if (typeof studentAns === 'number' || typeof studentAns === 'boolean') {
+      if (typeof studentAns === 'number') {
+        return !isNaN(studentAns);
+      }
+      if (typeof studentAns === 'boolean') {
         return true;
       }
       if (typeof studentAns === 'object') {
@@ -1493,6 +1501,10 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
       return false;
     };
 
+    const detailedList: any[] = Array.isArray(examResult.detailedGrading) ? examResult.detailedGrading : [];
+    const answeredQuestions = detailedList.filter((item: any) => isQuestionAnswered(item.studentAnswer));
+    const unansweredCount = detailedList.length - answeredQuestions.length;
+
     return (
       <div className="min-h-screen max-h-screen overflow-y-auto bg-slate-900 text-slate-100 p-3 sm:p-6 flex items-center justify-center relative">
         <div className="max-w-2xl w-full my-auto bg-slate-800/95 border border-slate-700/80 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-5 relative">
@@ -1505,15 +1517,21 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
             <LogOut className="w-5 h-5" />
           </button>
 
-          {/* Read-Only Notice Banner if student re-entered after submit */}
-          <div className="p-3 bg-amber-950/80 border border-amber-600/60 rounded-2xl text-xs text-amber-200 flex items-center space-x-2.5">
-            <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-            <div>
-              <div className="font-extrabold text-amber-300">Bài Thi Đã Được Nộp (Chế Độ Xem Lại)</div>
-              <div className="text-[11px] text-amber-200/80">
-                Mỗi học sinh chỉ được làm bài 1 lần duy nhất. Bạn có thể xem lại điểm số và đáp án chi tiết bên dưới.
-              </div>
+          {/* Top Result Notification Banner */}
+          <div className="p-4 bg-emerald-950/70 border border-emerald-500/40 rounded-2xl text-xs space-y-1.5 shadow-lg animate-in fade-in">
+            <div className="flex items-center space-x-2 text-emerald-300 font-extrabold text-sm sm:text-base">
+              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              <span>THÔNG BÁO: ĐÃ NỘP BÀI THI THÀNH CÔNG!</span>
             </div>
+            <p className="text-slate-300 leading-relaxed text-[11px] sm:text-xs">
+              Kết quả làm bài của bạn đã được lưu lại và gửi tới giáo viên. Hệ thống hiển thị câu hỏi và đáp án chi tiết cho{' '}
+              <strong className="text-emerald-400">{answeredQuestions.length} câu đã làm</strong>.
+              {unansweredCount > 0 ? (
+                <> Các câu chưa làm (<strong className="text-amber-300">{unansweredCount} câu</strong>) <span className="text-amber-300 font-semibold">không hiển thị cả nội dung câu hỏi và đáp án</span> theo quy chế thi.</>
+              ) : (
+                <> Bạn đã hoàn thành toàn bộ tất cả câu hỏi của đề thi.</>
+              )}
+            </p>
           </div>
 
           {/* Top Gauge Header */}
@@ -1538,7 +1556,7 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-center text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center text-xs">
             <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700">
               <span className="text-[10px] text-slate-400 font-bold uppercase">Số câu đúng</span>
               <div className="text-base sm:text-lg font-black text-emerald-400 mt-0.5">
@@ -1551,7 +1569,13 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
                 {examResult.incorrectCount} câu
               </div>
             </div>
-            <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700 sm:col-span-1 col-span-2">
+            <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700">
+              <span className="text-[10px] text-slate-400 font-bold uppercase">Đã làm</span>
+              <div className="text-base sm:text-lg font-black text-teal-300 mt-0.5">
+                {answeredQuestions.length}/{detailedList.length} câu
+              </div>
+            </div>
+            <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-700">
               <span className="text-[10px] text-slate-400 font-bold uppercase">Thời Gian Nộp</span>
               <div className="text-xs font-bold text-slate-200 mt-1">
                 {examResult.submitTime ? new Date(examResult.submitTime).toLocaleTimeString('vi-VN') : '—'}
@@ -1559,104 +1583,107 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
             </div>
           </div>
 
-          {/* Detailed Review Section */}
-          {examResult.detailedGrading && Array.isArray(examResult.detailedGrading) && (
+          {/* Detailed Review Section: ONLY DISPLAY ANSWERED QUESTIONS */}
+          {detailedList.length > 0 && (
             <div className="space-y-2.5 pt-1">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase text-teal-300 tracking-wider flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Chi Tiết Đáp Án Bài Làm & Lời Giải:</span>
+                  <span>Đáp Án & Lời Giải Các Câu Đã Làm ({answeredQuestions.length} câu):</span>
                 </h3>
-                <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
-                  {examResult.detailedGrading.length} câu hỏi
+                <span className="text-[10px] text-slate-400 bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">
+                  {answeredQuestions.length}/{detailedList.length} câu đã làm
                 </span>
               </div>
+
+              {/* Unanswered Notice Banner */}
+              {unansweredCount > 0 && (
+                <div className="p-3 bg-slate-900/90 border border-slate-700/80 rounded-2xl text-[11px] text-slate-300 flex items-center justify-between gap-2 shadow-inner">
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>
+                      Đã ẩn <strong className="text-amber-300">{unansweredCount} câu chưa làm</strong> (hệ thống không hiển thị cả câu hỏi và đáp án cho câu chưa làm).
+                    </span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 bg-amber-950/80 text-amber-300 border border-amber-800/60 rounded-lg font-bold shrink-0">
+                    Ẩn {unansweredCount} câu
+                  </span>
+                </div>
+              )}
+
+              {/* Review Question Cards List */}
               <div className="max-h-72 sm:max-h-80 overflow-y-auto space-y-2.5 p-2.5 sm:p-3 bg-slate-900/80 rounded-2xl border border-slate-700 text-xs shadow-inner">
-                {examResult.detailedGrading.map((item: any, i: number) => {
-                  const answered = isQuestionAnswered(item.studentAnswer);
-
-                  return (
-                    <div
-                      key={i}
-                      className={`p-3 sm:p-3.5 rounded-2xl border space-y-2 transition-all ${
-                        !answered
-                          ? 'bg-slate-900/60 border-slate-700/80'
-                          : item.isCorrect
-                          ? 'bg-emerald-950/20 border-emerald-800/50'
-                          : 'bg-rose-950/20 border-rose-800/50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-bold">
-                        <span className="text-teal-300 font-extrabold text-xs sm:text-sm">
-                          Câu {item.questionNumber}:
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
-                            !answered
-                              ? 'bg-slate-800 text-slate-400 border border-slate-700'
-                              : item.isCorrect
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                          }`}
-                        >
-                          {!answered
-                            ? '— Chưa làm'
-                            : item.isCorrect
-                            ? '✓ Đúng'
-                            : '✗ Sai'}{' '}
-                          ({item.points}/{item.maxPoints}đ)
-                        </span>
-                      </div>
-
-                      <div className="text-slate-200 font-medium text-xs leading-relaxed overflow-x-auto break-words">
-                        <MathText content={item.content || item.questionContent || ''} />
-                      </div>
-
-                      <div className="pt-1.5 text-[11px] space-y-1 bg-slate-900/90 p-2.5 rounded-xl border border-slate-700/80">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-slate-400 font-medium shrink-0">Đã chọn:</span>
-                          <div
-                            className={`font-bold overflow-x-auto ${
-                              !answered
-                                ? 'text-slate-400 italic'
-                                : item.isCorrect
-                                ? 'text-emerald-400'
-                                : 'text-rose-400'
+                {answeredQuestions.length > 0 ? (
+                  answeredQuestions.map((item: any, i: number) => {
+                    return (
+                      <div
+                        key={item.questionId || i}
+                        className={`p-3 sm:p-3.5 rounded-2xl border space-y-2 transition-all ${
+                          item.isCorrect
+                            ? 'bg-emerald-950/20 border-emerald-800/50'
+                            : 'bg-rose-950/20 border-rose-800/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-bold">
+                          <span className="text-teal-300 font-extrabold text-xs sm:text-sm">
+                            Câu {item.questionNumber}:
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-black ${
+                              item.isCorrect
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
                             }`}
                           >
-                            <MathText content={formatAnswerVal(item.studentAnswer)} />
-                          </div>
+                            {item.isCorrect ? '✓ Đúng' : '✗ Sai'} ({item.points}/{item.maxPoints}đ)
+                          </span>
                         </div>
 
-                        {answered ? (
-                          <>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-slate-400 font-medium shrink-0">Đáp án chuẩn:</span>
-                              <div className="font-extrabold text-emerald-400 overflow-x-auto">
-                                <MathText content={formatAnswerVal(item.correctAnswer)} />
+                        {/* Question Content */}
+                        <div className="text-slate-200 font-medium text-xs leading-relaxed overflow-x-auto break-words">
+                          <MathText content={item.content || item.questionContent || ''} />
+                        </div>
+
+                        {/* Answer Details */}
+                        <div className="pt-1.5 text-[11px] space-y-1.5 bg-slate-900/90 p-2.5 rounded-xl border border-slate-700/80">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-slate-400 font-medium shrink-0">Bạn đã chọn:</span>
+                            <div
+                              className={`font-bold overflow-x-auto ${
+                                item.isCorrect ? 'text-emerald-400' : 'text-rose-400'
+                              }`}
+                            >
+                              <MathText content={formatAnswerVal(item.studentAnswer)} />
+                            </div>
+                          </div>
+
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-slate-400 font-medium shrink-0">Đáp án chuẩn:</span>
+                            <div className="font-extrabold text-emerald-400 overflow-x-auto">
+                              <MathText content={formatAnswerVal(item.correctAnswer)} />
+                            </div>
+                          </div>
+
+                          {item.explanation && (
+                            <div className="pt-1.5 text-teal-300 border-t border-slate-800 space-y-1 mt-1.5">
+                              <span className="font-bold text-slate-400 block text-[10px] uppercase tracking-wider">
+                                Lời giải chi tiết:
+                              </span>
+                              <div className="text-slate-200 bg-slate-950/80 p-2 rounded-lg border border-slate-800 overflow-x-auto">
+                                <MathText content={item.explanation} />
                               </div>
                             </div>
-                            {item.explanation && (
-                              <div className="pt-1.5 text-teal-300 border-t border-slate-800 space-y-1 mt-1.5">
-                                <span className="font-bold text-slate-400 block text-[10px] uppercase tracking-wider">
-                                  Lời giải chi tiết:
-                                </span>
-                                <div className="text-slate-200 bg-slate-950/80 p-2 rounded-lg border border-slate-800 overflow-x-auto">
-                                  <MathText content={item.explanation} />
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <div className="text-amber-400/90 italic text-[10px] pt-0.5 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 inline-block"></span>
-                            <span>Không hiển thị đáp án chuẩn và lời giải cho câu hỏi chưa làm.</span>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                ) : (
+                  <div className="p-6 text-center text-slate-400 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-1">
+                    <p className="text-xs font-semibold text-slate-300">Bạn chưa làm câu hỏi nào trong bài thi này.</p>
+                    <p className="text-[11px] text-slate-500">Theo quy định, hệ thống không hiển thị cả câu hỏi và đáp án cho các câu chưa làm.</p>
+                  </div>
+                )}
               </div>
             </div>
           )}
