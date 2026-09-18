@@ -152,11 +152,17 @@ export class ExportExcel {
    * Xuất danh sách học sinh theo Lớp ra file Excel (.xlsx)
    */
   static exportStudentListToExcel(students: any[], className: string): void {
+    if (!students || students.length === 0) {
+      throw new Error('Danh sách học sinh trống, không có dữ liệu để xuất Excel.');
+    }
+
     const data = students.map((s, idx) => ({
-      STT: idx + 1,
-      'Số Báo Danh (SBD)': s.sbd,
-      'Họ và Tên Học Sinh': s.name,
-      'Lớp': s.className,
+      'STT': idx + 1,
+      'Số Báo Danh (SBD)': s.sbd || '',
+      'Họ và Tên': s.name || '',
+      'Giới tính': s.gender || 'Nam',
+      'Ngày sinh': s.dob || '',
+      'Lớp': s.className || className || '',
       'Khối': s.grade || '',
       'Trường': s.school || '',
       'Ghi Chú': s.notes || '',
@@ -164,19 +170,39 @@ export class ExportExcel {
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(data);
-    XLSX.utils.book_append_sheet(wb, ws, `Danh sach HS Loph ${className}`);
+
+    // Thiết lập độ rộng cột chuẩn đẹp
+    ws['!cols'] = [
+      { wch: 6 },  // STT
+      { wch: 18 }, // SBD
+      { wch: 28 }, // Họ và Tên
+      { wch: 12 }, // Giới tính
+      { wch: 14 }, // Ngày sinh
+      { wch: 12 }, // Lớp
+      { wch: 12 }, // Khối
+      { wch: 22 }, // Trường
+      { wch: 25 }, // Ghi Chú
+    ];
+
+    // Tên Sheet trong Excel giới hạn tối đa 31 ký tự và cấm các ký tự: \ / ? * : [ ]
+    const rawName = String(className || 'HS').replace(/[\/\\?*:[\]]/g, '_').trim();
+    const safeSheetName = `Lop_${rawName}`.substring(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
     
-    const fileName = `Danh_Sach_Hoc_Sinh_Lop_${className.replace(/\s+/g, '_')}.xlsx`;
+    const cleanFileName = String(className || 'Chung')
+      .replace(/[\/\\?*:[\]]/g, '-')
+      .replace(/\s+/g, '_');
+    const fileName = `Danh_Sach_Hoc_Sinh_Lop_${cleanFileName}.xlsx`;
     this.saveWorkbook(wb, fileName);
   }
 
-  private static saveWorkbook(wb: XLSX.WorkBook, fileName: string): void {
+  static saveWorkbook(wb: XLSX.WorkBook, fileName: string): void {
     try {
-      XLSX.writeFile(wb, fileName);
-    } catch (e) {
-      // Fallback cho trình duyệt / iFrame
+      // 1. Phương pháp Blob chuẩn cho mọi trình duyệt và iFrame sandbox
       const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([wbout], { type: 'application/octet-stream' });
+      const blob = new Blob([wbout], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8',
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -185,9 +211,19 @@ export class ExportExcel {
       document.body.appendChild(a);
       a.click();
       setTimeout(() => {
-        if (document.body.contains(a)) document.body.removeChild(a);
+        if (document.body.contains(a)) {
+          document.body.removeChild(a);
+        }
         URL.revokeObjectURL(url);
       }, 2000);
+    } catch (e) {
+      console.warn('Lỗi khi tải bằng Blob, chuyển sang XLSX.writeFile:', e);
+      try {
+        XLSX.writeFile(wb, fileName);
+      } catch (e2) {
+        console.error('Lỗi khi ghi file Excel:', e2);
+        throw e2;
+      }
     }
   }
 }
