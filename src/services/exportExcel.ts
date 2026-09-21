@@ -196,6 +196,120 @@ export class ExportExcel {
     this.saveWorkbook(wb, fileName);
   }
 
+  /**
+   * Xuất kết quả bài thi của học sinh ra file Excel (.xlsx)
+   * Đảm bảo xuất đúng theo thứ tự danh sách học sinh đã nhập vào (orderIndex/SBD/Tên)
+   * Kèm cột Ghi Chú: hiện "Chưa làm" đối với các thí sinh chưa nộp bài.
+   */
+  static exportStudentResultsToExcel(
+    items: {
+      sbd?: string;
+      studentName: string;
+      studentClass: string;
+      studentSchool?: string;
+      examCode: string;
+      score?: number | null;
+      correctCount?: number | null;
+      totalQuestions?: number | null;
+      startTime?: string | null;
+      submitTime?: string | null;
+      durationMinutes?: number | null;
+      tabSwitches?: number | null;
+      status: 'submitted' | 'not_taken';
+      notes?: string;
+    }[],
+    options: {
+      examCode?: string;
+      className?: string;
+    } = {}
+  ): void {
+    if (!items || items.length === 0) {
+      throw new Error('Không có dữ liệu kết quả học sinh để xuất Excel.');
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    const formatRow = (item: any, idx: number) => ({
+      STT: idx + 1,
+      'Số Báo Danh (SBD)': item.sbd || '',
+      'Họ và Tên': item.studentName || '',
+      Lớp: item.studentClass || '',
+      Trường: item.studentSchool || '',
+      'Mã Đề': item.examCode || options.examCode || '',
+      'Điểm Số':
+        item.status === 'submitted' && typeof item.score === 'number'
+          ? Number(item.score.toFixed(2))
+          : '',
+      'Số Câu Đúng':
+        item.status === 'submitted' && typeof item.correctCount === 'number'
+          ? `${item.correctCount}/${item.totalQuestions || 0}`
+          : '',
+      'Thời Gian Làm (Phút)':
+        item.status === 'submitted' && item.durationMinutes ? item.durationMinutes : '',
+      'Thời Gian Nộp':
+        item.status === 'submitted' && item.submitTime
+          ? new Date(item.submitTime).toLocaleString('vi-VN')
+          : '',
+      'Cảnh Báo Chuyển Tab':
+        item.status === 'submitted' ? item.tabSwitches || 0 : '',
+      'Ghi Chú':
+        item.status === 'not_taken'
+          ? 'Chưa làm'
+          : item.notes || 'Đã nộp bài',
+    });
+
+    const colsWidth = [
+      { wch: 6 },  // STT
+      { wch: 18 }, // Số Báo Danh (SBD)
+      { wch: 28 }, // Họ và Tên
+      { wch: 12 }, // Lớp
+      { wch: 20 }, // Trường
+      { wch: 14 }, // Mã Đề
+      { wch: 10 }, // Điểm Số
+      { wch: 14 }, // Số Câu Đúng
+      { wch: 18 }, // Thời Gian Làm (Phút)
+      { wch: 20 }, // Thời Gian Nộp
+      { wch: 18 }, // Cảnh Báo Chuyển Tab
+      { wch: 18 }, // Ghi Chú
+    ];
+
+    // 1. Sheet Tổng hợp toàn bộ
+    const allData = items.map(formatRow);
+    const wsAll = XLSX.utils.json_to_sheet(allData);
+    wsAll['!cols'] = colsWidth;
+    XLSX.utils.book_append_sheet(wb, wsAll, 'KetQua_TongHop');
+
+    // 2. Nếu có nhiều lớp, tạo thêm từng Sheet cho từng lớp riêng biệt
+    const classGroups: Record<string, typeof items> = {};
+    items.forEach((it) => {
+      const cName = it.studentClass || 'Khac';
+      if (!classGroups[cName]) classGroups[cName] = [];
+      classGroups[cName].push(it);
+    });
+
+    const classKeys = Object.keys(classGroups);
+    if (classKeys.length > 1) {
+      classKeys.forEach((cls) => {
+        const clsData = classGroups[cls].map(formatRow);
+        const wsCls = XLSX.utils.json_to_sheet(clsData);
+        wsCls['!cols'] = colsWidth;
+        const rawSheetName = String(cls).replace(/[\/\\?*:[\]]/g, '_').trim();
+        const safeSheetName = `Lop_${rawSheetName}`.substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, wsCls, safeSheetName);
+      });
+    }
+
+    const cleanExam = String(options.examCode || 'TatCa')
+      .replace(/[\/\\?*:[\]]/g, '-')
+      .replace(/\s+/g, '_');
+    const cleanClass = String(options.className || 'TatCaLop')
+      .replace(/[\/\\?*:[\]]/g, '-')
+      .replace(/\s+/g, '_');
+
+    const fileName = `Ket_Qua_Thi_${cleanExam}_${cleanClass}.xlsx`;
+    this.saveWorkbook(wb, fileName);
+  }
+
   static saveWorkbook(wb: XLSX.WorkBook, fileName: string): void {
     try {
       // 1. Phương pháp Blob chuẩn cho mọi trình duyệt và iFrame sandbox
