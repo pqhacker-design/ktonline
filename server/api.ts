@@ -1092,7 +1092,7 @@ export function registerExamRoutes(app: express.Express) {
       session.submitTime = new Date().toISOString();
       session.status = 'submitted';
 
-      const result = evaluateStudentSessionResult(session, exam!);
+      const result = evaluateStudentSessionResult(session, exam || ({} as any));
 
       session.score = result.score;
       session.correctCount = result.correctCount;

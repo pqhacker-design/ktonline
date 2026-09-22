@@ -144,7 +144,7 @@ export class OnlineExamService {
     }
   }
 
-  private static async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  private static async request<T>(endpoint: string, options?: RequestInit, timeoutMs?: number): Promise<T> {
     const userId = this.getActiveUserId();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -154,28 +154,46 @@ export class OnlineExamService {
       headers['x-user-id'] = userId;
     }
 
-    const res = await fetch(endpoint, {
-      ...options,
-      headers,
-    });
+    let controller: AbortController | null = null;
+    let timer: any = null;
+    if (timeoutMs && timeoutMs > 0) {
+      controller = new AbortController();
+      timer = setTimeout(() => {
+        try {
+          controller?.abort();
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
+    }
 
-    const text = await res.text();
-    let data: any = null;
     try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      // Non-JSON response (e.g. 404 HTML page on Vercel static deployment)
-    }
+      const res = await fetch(endpoint, {
+        ...options,
+        headers,
+        signal: controller ? controller.signal : options?.signal,
+      });
 
-    if (res.ok && data && data.error === undefined) {
-      return data as T;
-    }
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        // Non-JSON response (e.g. 404 HTML page on Vercel static deployment)
+      }
 
-    if (data && data.error) {
-      throw new Error(data.error);
-    }
+      if (res.ok && data && data.error === undefined) {
+        return data as T;
+      }
 
-    throw new Error('SERVER_OFFLINE_OR_NON_JSON');
+      if (data && data.error) {
+        throw new Error(data.error);
+      }
+
+      throw new Error('SERVER_OFFLINE_OR_NON_JSON');
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   // --- LocalStorage Helpers ---
@@ -1395,6 +1413,8 @@ export class OnlineExamService {
         const updatedSess = {
           ...res.session,
           shuffledQuestions: res.questions || res.session.shuffledQuestions,
+          examInfo: res.examInfo,
+          teacherId: res.examInfo?.createdBy || res.session?.teacherId || '',
         };
         if (idx >= 0) {
           sessions[idx] = { ...sessions[idx], ...updatedSess };
@@ -1645,6 +1665,26 @@ export class OnlineExamService {
         return clean;
       });
 
+      // Pre-compute answer map and explanations map for instant local grading
+      const answersMap: Record<string, any> = {};
+      const explanationsMap: Record<string, string> = {};
+      questions.forEach((q: any) => {
+        if (q.partType === 'PART2') {
+          const stMap: Record<string, boolean> = {};
+          const statements = q.trueFalseStatements || q.statements || [];
+          statements.forEach((st: any, sIdx: number) => {
+            const key = st.key || ['a', 'b', 'c', 'd'][sIdx];
+            stMap[key] = !!st.isCorrect;
+          });
+          answersMap[q.id] = stMap;
+        } else if (q.partType === 'PART3') {
+          answersMap[q.id] = q.correctAnswer || q.shortAnswer || q.acceptableAnswers || '';
+        } else {
+          answersMap[q.id] = q.correctOption || q.correctAnswer || 'A';
+        }
+        explanationsMap[q.id] = q.explanation || q.solution || q.explain || '';
+      });
+
       const newSession: any = {
         id: 'sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
         examCode: exam.code,
@@ -1659,6 +1699,12 @@ export class OnlineExamService {
         shuffledQuestions: sanitizedQuestions,
         activityLogs: [{ timestamp: new Date().toISOString(), event: 'Bắt đầu làm bài thi' }],
         status: 'in_progress',
+        teacherId: exam.createdBy || '',
+        originalAnswersMap: answersMap,
+        explanationsMap,
+        rawQuestions: questions,
+        totalPoints: exam.totalPoints || 10,
+        allowExplanations: exam.allowExplanations,
       };
 
       sessions.push(newSession);
@@ -1686,7 +1732,7 @@ export class OnlineExamService {
       return await this.request<{ success: boolean }>('/api/exam/save-progress', {
         method: 'POST',
         body: JSON.stringify({ sessionId, answers, remainingSeconds }),
-      });
+      }, 2500);
     } catch {
       const sessions = this.getLocalSessions();
       const idx = sessions.findIndex((s) => s.id === sessionId);
@@ -1699,169 +1745,22 @@ export class OnlineExamService {
     }
   }
 
-  // 9. Submit Student Exam
-  static async submitExam(sessionId: string, answers: Record<string, any>, remainingSeconds: number) {
-    let submitRes: any = null;
-    try {
-      submitRes = await this.request<{
-        success: boolean;
-        result: {
-          score: number;
-          correctCount: number;
-          incorrectCount: number;
-          totalQuestions: number;
-          startTime: string;
-          submitTime: string;
-          allowExplanations: boolean;
-          detailedGrading: any[];
-        };
-      }>('/api/exam/submit', {
-        method: 'POST',
-        body: JSON.stringify({ sessionId, answers, remainingSeconds }),
-      });
-    } catch (err: any) {
-      if (
-        err.message &&
-        err.message !== 'SERVER_OFFLINE_OR_NON_JSON' &&
-        !err.message.includes('Unexpected') &&
-        !err.message.includes('JSON')
-      ) {
-        throw err;
-      }
-      const sessions = this.getLocalSessions();
-      const idx = sessions.findIndex((s) => s.id === sessionId);
-      if (idx === -1) {
-        throw new Error('Không tìm thấy phiên làm bài.');
-      }
-
-      const session = sessions[idx];
-      const examRes = await this.getExamDetail(session.examCode);
-      const exam = examRes.exam;
-      const originalQuestions = exam.examPackage?.exams?.[0]?.questions || [];
-
-      let correctCount = 0;
-      const totalQuestions = originalQuestions.length;
-      const finalAnswers = { ...session.answers, ...answers };
-      const detailedGrading: any[] = [];
-
-      let totalEarnedPts = 0;
-      originalQuestions.forEach((q: any, i: number) => {
-        const studentAns = finalAnswers[q.id];
-        const pt = Number(q.points) || (exam.totalPoints > 0 && totalQuestions > 0 ? exam.totalPoints / totalQuestions : 0.25);
-
-        if (q.partType === 'PART2') {
-          const statements = Array.isArray(q.trueFalseStatements) ? q.trueFalseStatements : [];
-          const statementsCount = statements.length > 0 ? statements.length : 4;
-          const studentTfMap = typeof studentAns === 'object' && studentAns ? studentAns : {};
-          let correctStatementsCount = 0;
-
-          statements.forEach((st: any) => {
-            if (studentTfMap[st.key] === st.isCorrect) {
-              correctStatementsCount++;
-            }
-          });
-
-          const earnedPts = Math.round((correctStatementsCount / statementsCount) * pt * 100) / 100;
-          totalEarnedPts += earnedPts;
-          const isCorrect = correctStatementsCount === statementsCount;
-          if (isCorrect) correctCount++;
-
-          detailedGrading.push({
-            questionId: q.id,
-            questionNumber: q.number || i + 1,
-            partType: 'PART2',
-            studentAnswer: studentTfMap,
-            correctAnswer: statements.map((st: any) => `${st.key}: ${st.isCorrect ? 'Đúng' : 'Sai'}`).join(' | '),
-            isCorrect,
-            points: earnedPts,
-            maxPoints: pt,
-            content: q.content,
-            trueFalseStatements: statements,
-            explanation: q.explanation || q.solution || q.explain || '',
-          });
-        } else {
-          const correctAns = q.correctOption || q.correctAnswer || q.shortAnswer || 'A';
-          let isCorrect = false;
-          let earnedPts = 0;
-          if (studentAns && String(studentAns).trim().toUpperCase() === String(correctAns).trim().toUpperCase()) {
-            isCorrect = true;
-            earnedPts = pt;
-            correctCount++;
-          }
-          totalEarnedPts += earnedPts;
-          detailedGrading.push({
-            questionId: q.id,
-            questionNumber: q.number || i + 1,
-            partType: q.partType || 'PART1',
-            studentAnswer: studentAns || 'Chưa trả lời',
-            correctAnswer: correctAns,
-            isCorrect,
-            points: earnedPts,
-            maxPoints: pt,
-            content: q.content,
-            options: q.options,
-            explanation: q.explanation || q.solution || q.explain || '',
-          });
-        }
-      });
-
-      const score = Math.round(totalEarnedPts * 100) / 100;
-      const submitTime = new Date().toISOString();
-
-      session.answers = finalAnswers;
-      session.remainingSeconds = remainingSeconds;
-      session.submitTime = submitTime;
-      session.status = 'submitted';
-      session.score = score;
-      session.correctCount = correctCount;
-      session.incorrectCount = totalQuestions - correctCount;
-      session.totalQuestions = totalQuestions;
-      session.activityLogs.push({ timestamp: submitTime, event: 'Nộp bài thi hoàn tất' });
-
-      sessions[idx] = session;
-      this.saveLocalSessions(sessions);
-
-      submitRes = {
-        success: true,
-        result: {
-          score,
-          correctCount,
-          incorrectCount: totalQuestions - correctCount,
-          totalQuestions,
-          startTime: session.startTime,
-          submitTime,
-          allowExplanations: exam.allowExplanations,
-          detailedGrading,
-        },
-      };
-    }
-
-    // Always sync result item to Firestore
-    try {
-      const sessions = this.getLocalSessions();
-      let session = sessions.find((s) => s.id === sessionId);
-
-      const resResult = submitRes?.result;
-      const examCode = session?.examCode || resResult?.examCode;
-
-      if (examCode) {
-        const examDetail = await this.getExamDetail(examCode).catch(() => null);
-        const exam = examDetail?.exam;
-        const teacherId = exam?.createdBy || '';
-
-        if (session) {
-          session.status = 'submitted';
-          if (resResult) {
-            session.score = resResult.score;
-            session.correctCount = resResult.correctCount;
-            session.incorrectCount = resResult.incorrectCount;
-            session.totalQuestions = resResult.totalQuestions;
-            session.submitTime = resResult.submitTime || session.submitTime;
-          }
-          const sIdx = sessions.findIndex((s) => s.id === sessionId);
-          if (sIdx >= 0) {
-            sessions[sIdx] = session;
-            this.saveLocalSessions(sessions);
+  // Non-blocking background sync of student results to Firestore
+  private static syncStudentResultInBackground(
+    sessionId: string,
+    session: any,
+    resResult: any,
+    examCode: string,
+    teacherIdOverride?: string
+  ): void {
+    setTimeout(async () => {
+      try {
+        let teacherId = teacherIdOverride || session?.teacherId || session?.examInfo?.createdBy || '';
+        if (!teacherId && examCode) {
+          const localExams = this.getLocalExams();
+          const found = localExams.find((e) => (e.code || '').toUpperCase() === examCode.toUpperCase());
+          if (found?.createdBy) {
+            teacherId = found.createdBy;
           }
         }
 
@@ -1896,11 +1795,272 @@ export class OnlineExamService {
           createdBy: teacherId,
           teacherId,
         });
+      } catch (err) {
+        console.warn('Lỗi đồng bộ ngầm kết quả thi lên Firestore:', err);
       }
-    } catch (e) {
-      console.warn('Lỗi sync student result to Firestore:', e);
+    }, 10);
+  }
+
+  // 9. Submit Student Exam (Optimized for instant feedback & zero blocking waterfall)
+  static async submitExam(
+    sessionId: string,
+    answers: Record<string, any>,
+    remainingSeconds: number,
+    cachedContext?: { examInfo?: any; questions?: any[] }
+  ) {
+    let submitRes: any = null;
+
+    // 1. Attempt API submission with quick 3.5s timeout
+    try {
+      submitRes = await this.request<{
+        success: boolean;
+        result: {
+          score: number;
+          correctCount: number;
+          incorrectCount: number;
+          totalQuestions: number;
+          startTime: string;
+          submitTime: string;
+          allowExplanations: boolean;
+          detailedGrading: any[];
+        };
+      }>(
+        '/api/exam/submit',
+        {
+          method: 'POST',
+          body: JSON.stringify({ sessionId, answers, remainingSeconds }),
+        },
+        3500
+      );
+    } catch (err: any) {
+      // 2. Instant client-side fallback grading (Zero-network waterfall)
+      const sessions = this.getLocalSessions();
+      const idx = sessions.findIndex((s) => s.id === sessionId);
+      if (idx === -1) {
+        throw new Error('Không tìm thấy phiên làm bài.');
+      }
+
+      const session = sessions[idx];
+      const examCode = (session.examCode || '').trim().toUpperCase();
+
+      // Find exam questions from local memory / storage first
+      let exam = session.exam || session.examInfo || cachedContext?.examInfo;
+      let originalQuestions = session.rawQuestions || session.shuffledQuestions || cachedContext?.questions || [];
+      const answersMap = session.originalAnswersMap || {};
+
+      if (!originalQuestions || originalQuestions.length === 0) {
+        const localExams = this.getLocalExams();
+        const foundLocal = localExams.find((e) => (e.code || '').toUpperCase() === examCode);
+        if (foundLocal) {
+          exam = foundLocal;
+          originalQuestions = foundLocal.examPackage?.exams?.[0]?.questions || foundLocal.questions || [];
+        }
+      }
+
+      if (!originalQuestions || originalQuestions.length === 0) {
+        try {
+          const history = StorageEngine.getExamHistory();
+          const pkg = history.find((p) => p.metadata?.onlineExamCode?.toUpperCase() === examCode);
+          if (pkg) {
+            originalQuestions = pkg.exams?.[0]?.questions || [];
+            exam = {
+              code: examCode,
+              title: (pkg.metadata as any)?.title || 'Đề thi',
+              totalPoints: 10,
+              allowExplanations: true,
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!originalQuestions || originalQuestions.length === 0) {
+        try {
+          const examRes = await this.getExamDetail(examCode);
+          exam = examRes.exam;
+          originalQuestions = exam.examPackage?.exams?.[0]?.questions || [];
+        } catch {
+          originalQuestions = [];
+        }
+      }
+
+      let correctCount = 0;
+      let totalEarnedPts = 0;
+      const totalQuestions = originalQuestions.length || Object.keys(answers).length || 1;
+      const finalAnswers = { ...session.answers, ...answers };
+      const detailedGrading: any[] = [];
+      const totalPoints = exam?.totalPoints > 0 ? exam.totalPoints : 10;
+      const defaultPt = totalQuestions > 0 ? totalPoints / totalQuestions : 0.25;
+
+      originalQuestions.forEach((q: any, i: number) => {
+        const studentAns = finalAnswers[q.id];
+        const pt = Number(q.points) || defaultPt;
+        const correctVal = answersMap[q.id];
+
+        if (q.partType === 'PART2') {
+          const statements = Array.isArray(q.trueFalseStatements)
+            ? q.trueFalseStatements
+            : Array.isArray(q.statements)
+            ? q.statements
+            : [];
+          const statementsCount = statements.length > 0 ? statements.length : 4;
+          const studentTfMap = typeof studentAns === 'object' && studentAns ? studentAns : {};
+          const tfCorrectMap: Record<string, boolean> = typeof correctVal === 'object' && correctVal ? correctVal : {};
+          let correctStatementsCount = 0;
+
+          statements.forEach((st: any, sIdx: number) => {
+            const key = st.key || ['a', 'b', 'c', 'd'][sIdx];
+            const correctBool = tfCorrectMap[key] !== undefined ? tfCorrectMap[key] : !!st.isCorrect;
+            if (studentTfMap[key] === correctBool) {
+              correctStatementsCount++;
+            }
+          });
+
+          const earnedPts = Math.round((correctStatementsCount / statementsCount) * pt * 100) / 100;
+          totalEarnedPts += earnedPts;
+          const isCorrect = correctStatementsCount === statementsCount;
+          if (isCorrect) correctCount++;
+
+          detailedGrading.push({
+            questionId: q.id,
+            questionNumber: q.number || i + 1,
+            partType: 'PART2',
+            studentAnswer: studentTfMap,
+            correctAnswer: statements.map((st: any, sIdx: number) => {
+              const key = st.key || ['a', 'b', 'c', 'd'][sIdx];
+              const correctBool = tfCorrectMap[key] !== undefined ? tfCorrectMap[key] : !!st.isCorrect;
+              return `${key}: ${correctBool ? 'Đúng' : 'Sai'}`;
+            }).join(' | '),
+            isCorrect,
+            points: earnedPts,
+            maxPoints: pt,
+            content: q.content,
+            trueFalseStatements: statements,
+            explanation: q.explanation || session.explanationsMap?.[q.id] || q.solution || q.explain || '',
+          });
+        } else if (q.partType === 'PART3') {
+          const correctAns = correctVal || q.correctAnswer || q.shortAnswer || '';
+          const studentStr = String(studentAns || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/,/g, '.');
+          let isCorrect = false;
+          if (Array.isArray(correctAns)) {
+            isCorrect = correctAns.some((c: any) => String(c).trim().toLowerCase().replace(/,/g, '.') === studentStr);
+          } else {
+            isCorrect = studentStr.length > 0 && studentStr === String(correctAns).trim().toLowerCase().replace(/,/g, '.');
+          }
+          const earnedPts = isCorrect ? pt : 0;
+          if (isCorrect) correctCount++;
+          totalEarnedPts += earnedPts;
+
+          detailedGrading.push({
+            questionId: q.id,
+            questionNumber: q.number || i + 1,
+            partType: 'PART3',
+            studentAnswer: studentAns || 'Chưa trả lời',
+            correctAnswer: Array.isArray(correctAns) ? correctAns.join(' / ') : String(correctAns),
+            isCorrect,
+            points: earnedPts,
+            maxPoints: pt,
+            content: q.content,
+            explanation: q.explanation || session.explanationsMap?.[q.id] || q.solution || q.explain || '',
+          });
+        } else {
+          // PART1 4-choice or default
+          const correctAns = correctVal || q.correctOption || q.correctAnswer || 'A';
+          let isCorrect = false;
+          let earnedPts = 0;
+          if (studentAns && String(studentAns).trim().toUpperCase() === String(correctAns).trim().toUpperCase()) {
+            isCorrect = true;
+            earnedPts = pt;
+            correctCount++;
+          }
+          totalEarnedPts += earnedPts;
+
+          detailedGrading.push({
+            questionId: q.id,
+            questionNumber: q.number || i + 1,
+            partType: q.partType || 'PART1',
+            studentAnswer: studentAns || 'Chưa trả lời',
+            correctAnswer: correctAns,
+            isCorrect,
+            points: earnedPts,
+            maxPoints: pt,
+            content: q.content,
+            options: q.options,
+            explanation: q.explanation || session.explanationsMap?.[q.id] || q.solution || q.explain || '',
+          });
+        }
+      });
+
+      const score = Math.min(10.0, Math.round(totalEarnedPts * 100) / 100);
+      const submitTime = new Date().toISOString();
+
+      session.answers = finalAnswers;
+      session.remainingSeconds = remainingSeconds;
+      session.submitTime = submitTime;
+      session.status = 'submitted';
+      session.score = score;
+      session.correctCount = correctCount;
+      session.incorrectCount = totalQuestions - correctCount;
+      session.totalQuestions = totalQuestions;
+      session.activityLogs.push({ timestamp: submitTime, event: 'Nộp bài thi hoàn tất' });
+
+      sessions[idx] = session;
+      this.saveLocalSessions(sessions);
+
+      submitRes = {
+        success: true,
+        result: {
+          score,
+          correctCount,
+          incorrectCount: totalQuestions - correctCount,
+          totalQuestions,
+          startTime: session.startTime,
+          submitTime,
+          allowExplanations: exam?.allowExplanations !== false,
+          detailedGrading,
+        },
+      };
     }
 
+    // 3. Update local session state immediately & trigger non-blocking cloud sync
+    try {
+      const sessions = this.getLocalSessions();
+      let session = sessions.find((s) => s.id === sessionId);
+      const resResult = submitRes?.result;
+      const examCode = session?.examCode || resResult?.examCode;
+
+      if (session) {
+        session.status = 'submitted';
+        if (resResult) {
+          session.score = resResult.score;
+          session.correctCount = resResult.correctCount;
+          session.incorrectCount = resResult.incorrectCount;
+          session.totalQuestions = resResult.totalQuestions;
+          session.submitTime = resResult.submitTime || session.submitTime;
+        }
+        const sIdx = sessions.findIndex((s) => s.id === sessionId);
+        if (sIdx >= 0) {
+          sessions[sIdx] = session;
+          this.saveLocalSessions(sessions);
+        }
+      }
+
+      if (examCode) {
+        // NON-BLOCKING: Trigger background sync without awaiting
+        this.syncStudentResultInBackground(
+          sessionId,
+          session,
+          resResult,
+          examCode,
+          cachedContext?.examInfo?.createdBy || session?.teacherId
+        );
+      }
+    } catch (e) {
+      console.warn('Lỗi cập nhật phiên nộp bài:', e);
+    }
+
+    // 4. Return immediately to student UI (< 0.5s)
     return submitRes;
   }
 
@@ -1910,7 +2070,7 @@ export class OnlineExamService {
       return await this.request<{ success: boolean }>('/api/exam/log-activity', {
         method: 'POST',
         body: JSON.stringify({ sessionId, event, details }),
-      });
+      }, 2500);
     } catch {
       const sessions = this.getLocalSessions();
       const idx = sessions.findIndex((s) => s.id === sessionId);

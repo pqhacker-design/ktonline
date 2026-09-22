@@ -426,7 +426,10 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
       timerRef.current = setInterval(() => {
         setRemainingSeconds((prev) => {
           if (prev <= 1) {
-            clearInterval(timerRef.current);
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+              timerRef.current = null;
+            }
             // Auto submit on timer end
             handleFinalSubmit(true);
             return 0;
@@ -435,13 +438,19 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
         });
       }, 1000);
     } else {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     };
-  }, [step, remainingSeconds]);
+  }, [step]);
 
   // Periodic Auto-Save Progress (every 15 seconds)
   useEffect(() => {
@@ -494,14 +503,25 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
     setSubmitting(true);
     setShowSubmitConfirmModal(false);
 
+    // Stop countdown timer immediately
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
     try {
-      const res = await OnlineExamService.submitExam(session.id, answers, remainingSeconds);
-      if (res.success) {
+      const res = await OnlineExamService.submitExam(
+        session.id,
+        answers,
+        remainingSeconds,
+        { examInfo, questions }
+      );
+      if (res && res.success) {
         setExamResult(res.result);
         setStep('result');
       }
     } catch (err: any) {
-      alert('Lỗi khi nộp bài: ' + err.message);
+      alert('Lỗi khi nộp bài: ' + (err.message || 'Không thể gửi kết quả'));
     } finally {
       setSubmitting(false);
     }
