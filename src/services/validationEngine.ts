@@ -200,34 +200,53 @@ export class ValidationEngine {
       repairedQuestions.push(validQuestion);
     }
 
+    const cleanTopics = (metadata.topicsList || [])
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+
     // Repair Matrix if needed
-    const repairedMatrix: MatrixRow[] = rawMatrix.map((m: any, idx: number) => ({
-      stt: m.stt || idx + 1,
-      topic: m.topic || metadata.chapterTitle || 'Chủ đề chính',
-      subTopic: m.subTopic || 'Đơn vị kiến thức',
-      part1: m.part1 || { remember: 1, understand: 1, apply: 0, advanced: 0 },
-      part2: m.part2 || { remember: 0, understand: 1, apply: 0, advanced: 0 },
-      part3: m.part3 || { remember: 0, understand: 0, apply: 1, advanced: 0 },
-      part4: m.part4 || { remember: 0, understand: 0, apply: 0, advanced: 1 },
-      totalQuestions: typeof m.totalQuestions === 'number' ? m.totalQuestions : 3,
-      totalPoints: typeof m.totalPoints === 'number' ? m.totalPoints : 2.0,
-      percentage: typeof m.percentage === 'number' ? m.percentage : 20,
-    }));
+    const repairedMatrix: MatrixRow[] = rawMatrix.map((m: any, idx: number) => {
+      let defaultTopic = metadata.chapterTitle || 'Chủ đề chính';
+      if (cleanTopics.length > 0) {
+        defaultTopic = cleanTopics[idx % cleanTopics.length];
+      }
+      return {
+        stt: m.stt || idx + 1,
+        topic: m.topic || defaultTopic,
+        subTopic: m.subTopic || 'Đơn vị kiến thức',
+        part1: m.part1 || { remember: 1, understand: 1, apply: 0, advanced: 0 },
+        part2: m.part2 || { remember: 0, understand: 1, apply: 0, advanced: 0 },
+        part3: m.part3 || { remember: 0, understand: 0, apply: 1, advanced: 0 },
+        part4: m.part4 || { remember: 0, understand: 0, apply: 0, advanced: 1 },
+        totalQuestions: typeof m.totalQuestions === 'number' ? m.totalQuestions : 3,
+        totalPoints: typeof m.totalPoints === 'number' ? m.totalPoints : 2.0,
+        percentage: typeof m.percentage === 'number' ? m.percentage : 20,
+        cellTexts: m.cellTexts || undefined,
+      };
+    });
 
     // Repair Specification if needed
-    const repairedSpec: SpecRow[] = rawSpec.map((s: any, idx: number) => ({
-      stt: s.stt || idx + 1,
-      topic: s.topic || metadata.chapterTitle || 'Chủ đề chính',
-      subTopic: s.subTopic || 'Đơn vị kiến thức',
-      requirements:
-        s.requirements ||
-        'Nhận biết được kiến thức cơ bản, thông hiểu bản chất và vận dụng giải bài tập.',
-      part1: s.part1 || { remember: 1, understand: 1, apply: 0, advanced: 0 },
-      part2: s.part2 || { remember: 0, understand: 1, apply: 0, advanced: 0 },
-      part3: s.part3 || { remember: 0, understand: 0, apply: 1, advanced: 0 },
-      part4: s.part4 || { remember: 0, understand: 0, apply: 0, advanced: 1 },
-      totalPoints: typeof s.totalPoints === 'number' ? s.totalPoints : 2.0,
-    }));
+    const repairedSpec: SpecRow[] = rawSpec.map((s: any, idx: number) => {
+      let defaultTopic = metadata.chapterTitle || 'Chủ đề chính';
+      if (cleanTopics.length > 0) {
+        defaultTopic = cleanTopics[idx % cleanTopics.length];
+      }
+      return {
+        stt: s.stt || idx + 1,
+        topic: s.topic || defaultTopic,
+        subTopic: s.subTopic || 'Đơn vị kiến thức',
+        requirements:
+          s.requirements ||
+          'Nhận biết được kiến thức cơ bản, thông hiểu bản chất và vận dụng giải bài tập.',
+        part1: s.part1 || { remember: 1, understand: 1, apply: 0, advanced: 0 },
+        part2: s.part2 || { remember: 0, understand: 1, apply: 0, advanced: 0 },
+        part3: s.part3 || { remember: 0, understand: 0, apply: 1, advanced: 0 },
+        part4: s.part4 || { remember: 0, understand: 0, apply: 0, advanced: 1 },
+        totalPoints: typeof s.totalPoints === 'number' ? s.totalPoints : 2.0,
+        cellTexts: s.cellTexts || undefined,
+        competency: s.competency || 'NL_gqvđ',
+      };
+    });
 
     return {
       isValid: errors.length === 0,

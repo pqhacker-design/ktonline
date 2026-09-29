@@ -33,6 +33,7 @@ import { ManualExamModal } from './ManualExamModal';
 import { EditExamQuestionsModal } from './EditExamQuestionsModal';
 import { AssignClassModal } from './AssignClassModal';
 import { EditExamScheduleModal } from './EditExamScheduleModal';
+import { useAuth } from '../auth/useAuth';
 
 interface OnlineExamBankViewProps {
   questionBank?: QuestionBankItem[];
@@ -51,6 +52,7 @@ export const OnlineExamBankView: React.FC<OnlineExamBankViewProps> = ({
   onOpenStudentExam,
   onOpenPublishModal,
 }) => {
+  const { user } = useAuth();
   const [exams, setExams] = useState<OnlineExamItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -102,6 +104,17 @@ export const OnlineExamBankView: React.FC<OnlineExamBankViewProps> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchExams();
+  }, [user?.id, user?.username]);
+
+  useEffect(() => {
+    const unsubscribe = StorageEngine.subscribe(() => {
+      fetchExams();
+    });
+    return unsubscribe;
+  }, []);
 
   const handleExportAllJson = () => {
     try {

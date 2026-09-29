@@ -25,6 +25,23 @@ export interface AppUser {
 }
 
 const USERS_COLLECTION = 'users';
+const LOCAL_USERS_CACHE_KEY = 'aitest_system_users_cache';
+
+// In-memory & LocalStorage user cache for resilient offline-first support
+let _cachedUsers: AppUser[] = [];
+try {
+  const saved = localStorage.getItem(LOCAL_USERS_CACHE_KEY);
+  if (saved) {
+    _cachedUsers = JSON.parse(saved);
+  }
+} catch (e) {}
+
+const updateLocalUsersCache = (newList: AppUser[]) => {
+  _cachedUsers = newList;
+  try {
+    localStorage.setItem(LOCAL_USERS_CACHE_KEY, JSON.stringify(newList));
+  } catch (e) {}
+};
 
 const fetchWithTimeout = <T>(promise: Promise<T>, ms = 1500): Promise<T | null> => {
   return Promise.race([
@@ -278,9 +295,14 @@ export const userService = {
   },
 
   /**
-   * Listen to real-time users collection updates for Admin
+   * Listen to real-time users collection updates for Admin (with local cache fallback)
    */
   subscribeUsers(callback: (users: AppUser[]) => void) {
+    // Deliver cache immediately for instant UI render
+    if (_cachedUsers.length > 0) {
+      callback([..._cachedUsers]);
+    }
+
     const colRef = collection(db, USERS_COLLECTION);
     return onSnapshot(
       colRef,
@@ -296,16 +318,20 @@ export const userService = {
         });
         // Sort by createdAt descending
         list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        updateLocalUsersCache(list);
         callback(list);
       },
       (error) => {
-        console.error('Error fetching users:', error);
+        console.warn('Lỗi lắng nghe users từ Firestore (đang dùng cache nội bộ):', error?.message || error);
+        if (_cachedUsers.length > 0) {
+          callback([..._cachedUsers]);
+        }
       }
     );
   },
 
   /**
-   * Admin adds a new user with username and password
+   * Admin adds a new user with username and password (resilient & offline-first)
    */
   async addUser(newUser: { 
     username: string; 
@@ -322,15 +348,31 @@ export const userService = {
 
     const docId = cleanUsername.replace(/[^a-zA-Z0-9]/g, '_');
 
-    // Query if already exists
-    const userDocRef = doc(db, USERS_COLLECTION, docId);
-    const existingSnap = await getDoc(userDocRef);
-
-    if (existingSnap.exists()) {
+    // 1. Instant check against cached users (Instant & zero-latency)
+    const duplicateInCache = _cachedUsers.find(
+      (u) => (u.username || '').toLowerCase() === cleanUsername || (u.id || '').toLowerCase() === docId
+    );
+    if (duplicateInCache) {
       throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
     }
 
+    // 2. Safely check remote Firestore if online, without crashing if client is offline
+    const userDocRef = doc(db, USERS_COLLECTION, docId);
+    try {
+      const existingSnap = await fetchWithTimeout(getDoc(userDocRef), 1200);
+      if (existingSnap && existingSnap.exists()) {
+        throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
+      }
+    } catch (err: any) {
+      if (err?.message && err.message.includes('đã tồn tại')) {
+        throw err;
+      }
+      // Silently catch offline errors ("Failed to get document because the client is offline")
+      console.warn('Bỏ qua kiểm tra mạng Firestore (sử dụng cache & tiếp tục lưu):', err?.message || err);
+    }
+
     const appUserData: AppUser = {
+      id: docId,
       username: cleanUsername,
       email: cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@system.local`,
       password: newUser.password.trim(),
@@ -340,7 +382,18 @@ export const userService = {
       createdAt: new Date().toISOString(),
     };
 
-    await setDoc(userDocRef, appUserData);
+    // Update local cache immediately so UI reflects the new user right away
+    updateLocalUsersCache([appUserData, ..._cachedUsers.filter((u) => u.id !== docId)]);
+
+    // Write to Firestore (setDoc writes to local storage and syncs to server in background)
+    try {
+      await setDoc(userDocRef, appUserData, { merge: true });
+    } catch (err: any) {
+      console.warn('Ghi nhận lưu Firestore (sẽ đồng bộ lại khi có kết nối):', err?.message || err);
+      if (err?.code === 'permission-denied') {
+        throw new Error('Bạn không có quyền thực hiện thao tác này.');
+      }
+    }
   },
 
   /**
@@ -357,13 +410,30 @@ export const userService = {
 
     if (updates.username && updates.username.trim()) {
       const cleanUsername = updates.username.toLowerCase().trim();
-      // Check if another doc has this username
-      const qUsername = query(collection(db, USERS_COLLECTION), where('username', '==', cleanUsername));
-      const qSnap = await getDocs(qUsername);
-      const conflict = qSnap.docs.find((d) => d.id !== docId);
-      if (conflict) {
+      
+      // 1. Check local cache first
+      const conflictCache = _cachedUsers.find((u) => u.id !== docId && (u.username || '').toLowerCase() === cleanUsername);
+      if (conflictCache) {
         throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
       }
+
+      // 2. Check remote Firestore safely
+      try {
+        const qUsername = query(collection(db, USERS_COLLECTION), where('username', '==', cleanUsername));
+        const qSnap = await fetchWithTimeout(getDocs(qUsername), 1200);
+        if (qSnap && !qSnap.empty) {
+          const conflict = qSnap.docs.find((d) => d.id !== docId);
+          if (conflict) {
+            throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
+          }
+        }
+      } catch (err: any) {
+        if (err?.message && err.message.includes('đã tồn tại')) {
+          throw err;
+        }
+        console.warn('Bỏ qua lỗi mạng khi kiểm tra trùng tên:', err?.message || err);
+      }
+
       payload.username = cleanUsername;
       payload.email = cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@system.local`;
     }
@@ -375,7 +445,17 @@ export const userService = {
       payload.password = updates.password.trim();
     }
 
-    await setDoc(userDocRef, payload, { merge: true });
+    // Update cache
+    updateLocalUsersCache(_cachedUsers.map((u) => u.id === docId ? { ...u, ...payload } : u));
+
+    try {
+      await setDoc(userDocRef, payload, { merge: true });
+    } catch (err: any) {
+      console.warn('Lỗi ghi Firestore (sẽ đồng bộ lại khi có kết nối):', err?.message || err);
+      if (err?.code === 'permission-denied') {
+        throw new Error('Bạn không có quyền thực hiện thao tác này.');
+      }
+    }
   },
 
   /**
@@ -409,12 +489,28 @@ export const userService = {
     if (updates.username && updates.username.trim()) {
       const cleanUsername = updates.username.toLowerCase().trim();
       if (cleanUsername !== (currentData.username || '').toLowerCase()) {
-        const qUsername = query(collection(db, USERS_COLLECTION), where('username', '==', cleanUsername));
-        const qSnap = await getDocs(qUsername);
-        const conflict = qSnap.docs.find((d) => d.id !== docId);
-        if (conflict) {
+        // Check cache first
+        const conflictCache = _cachedUsers.find((u) => u.id !== docId && (u.username || '').toLowerCase() === cleanUsername);
+        if (conflictCache) {
           throw new Error(`Tên đăng nhập "${cleanUsername}" đã được sử dụng. Vui lòng chọn tên đăng nhập khác.`);
         }
+
+        try {
+          const qUsername = query(collection(db, USERS_COLLECTION), where('username', '==', cleanUsername));
+          const qSnap = await fetchWithTimeout(getDocs(qUsername), 1200);
+          if (qSnap && !qSnap.empty) {
+            const conflict = qSnap.docs.find((d) => d.id !== docId);
+            if (conflict) {
+              throw new Error(`Tên đăng nhập "${cleanUsername}" đã được sử dụng. Vui lòng chọn tên đăng nhập khác.`);
+            }
+          }
+        } catch (err: any) {
+          if (err?.message && err.message.includes('đã được sử dụng')) {
+            throw err;
+          }
+          console.warn('Bỏ qua lỗi mạng khi kiểm tra tên:', err?.message || err);
+        }
+
         payload.username = cleanUsername;
         payload.email = cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@system.local`;
       }
@@ -431,7 +527,14 @@ export const userService = {
       payload.password = updates.password.trim();
     }
 
-    await setDoc(userDocRef, payload, { merge: true });
+    // Update cache
+    updateLocalUsersCache(_cachedUsers.map((u) => u.id === docId ? { ...u, ...payload } : u));
+
+    try {
+      await setDoc(userDocRef, payload, { merge: true });
+    } catch (err: any) {
+      console.warn('Lỗi ghi Firestore profile:', err?.message || err);
+    }
 
     return {
       ...currentData,
@@ -448,8 +551,13 @@ export const userService = {
    * Admin deletes a user account
    */
   async deleteUser(docId: string): Promise<void> {
+    updateLocalUsersCache(_cachedUsers.filter((u) => u.id !== docId && u.username !== docId));
     const userDocRef = doc(db, USERS_COLLECTION, docId);
-    await deleteDoc(userDocRef);
+    try {
+      await deleteDoc(userDocRef);
+    } catch (err: any) {
+      console.warn('Lỗi xóa Firestore user:', err?.message || err);
+    }
   },
 
   /**

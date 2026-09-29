@@ -483,11 +483,11 @@ export default function App() {
 
   // Export handlers
   const handleExportWord = async (
-    modeOrPack?: 'full' | 'exams' | 'answers' | 'matrix' | ExamPackage,
-    mode: 'full' | 'exams' | 'answers' | 'matrix' = 'full'
+    modeOrPack?: 'full' | 'exams' | 'answers' | 'matrix' | 'spec' | ExamPackage,
+    mode: 'full' | 'exams' | 'answers' | 'matrix' | 'spec' = 'full'
   ) => {
     let target: ExamPackage | null = currentExamPackage || examHistory[0] || null;
-    let exportMode: 'full' | 'exams' | 'answers' | 'matrix' = mode;
+    let exportMode: 'full' | 'exams' | 'answers' | 'matrix' | 'spec' = mode;
 
     if (typeof modeOrPack === 'string') {
       exportMode = modeOrPack;
@@ -514,6 +514,8 @@ export default function App() {
     try {
       if (exportMode === 'matrix') {
         await ExportDocx.exportMatrixOnlyToDocx(target);
+      } else if (exportMode === 'spec') {
+        await ExportDocx.exportSpecOnlyToDocx(target);
       } else if (exportMode === 'exams') {
         await ExportDocx.exportExamsOnlyToDocx(target);
       } else if (exportMode === 'answers') {
@@ -786,7 +788,8 @@ export default function App() {
                 <SpecificationView
                   examPackage={currentExamPackage}
                   onUpdateSpec={handleUpdateSpec}
-                  onExportWord={() => handleExportWord()}
+                  onExportWord={() => handleExportWord('spec')}
+                  onExportExcel={() => handleExportExcel()}
                 />
               )}
 

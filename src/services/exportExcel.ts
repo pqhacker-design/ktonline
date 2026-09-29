@@ -10,50 +10,274 @@ export class ExportExcel {
     const wb = XLSX.utils.book_new();
     const { metadata, matrix, specification, answerKeys } = examPack;
 
-    // --- SHEET 1: MA TRẬN ĐỀ KIỂM TRA ---
+    // --- SHEET 1: 1. MA TRẬN ĐỀ KIỂM TRA ĐỊNH KÌ ---
+    const getBiết = (part: any): number => (part && part.remember ? Number(part.remember) : 0);
+    const getHiểu = (part: any): number => (part && part.understand ? Number(part.understand) : 0);
+    const getVậnDụng = (part: any): number =>
+      (part && part.apply ? Number(part.apply) : 0) + (part && part.advanced ? Number(part.advanced) : 0);
+
     const matrixData = matrix.map((row) => {
-      const getNum = (part: any, field: string): number => (part && part[field]) ? Number(part[field]) : 0;
+      const p1Biết = getBiết(row.part1);
+      const p1Hiểu = getHiểu(row.part1);
+      const p1VậnDụng = getVậnDụng(row.part1);
+
+      const p2Biết = getBiết(row.part2);
+      const p2Hiểu = getHiểu(row.part2);
+      const p2VậnDụng = getVậnDụng(row.part2);
+
+      const p3Biết = getBiết(row.part3);
+      const p3Hiểu = getHiểu(row.part3);
+      const p3VậnDụng = getVậnDụng(row.part3);
+
+      const p4Biết = getBiết(row.part4);
+      const p4Hiểu = getHiểu(row.part4);
+      const p4VậnDụng = getVậnDụng(row.part4);
+
+      const rowBiết = p1Biết + p2Biết + p3Biết + p4Biết;
+      const rowHiểu = p1Hiểu + p2Hiểu + p3Hiểu + p4Hiểu;
+      const rowVậnDụng = p1VậnDụng + p2VậnDụng + p3VậnDụng + p4VậnDụng;
 
       return {
-        STT: row.stt,
-        'Chủ đề / Mạch nội dung': cleanLatexForDocx(row.topic),
-        'Đơn vị kiến thức': cleanLatexForDocx(row.subTopic),
-        'Nhận biết (TN)': getNum(row.part1, 'remember') + getNum(row.part2, 'remember') + getNum(row.part3, 'remember'),
-        'Nhận biết (TL)': getNum(row.part4, 'remember'),
-        'Thông hiểu (TN)': getNum(row.part1, 'understand') + getNum(row.part2, 'understand') + getNum(row.part3, 'understand'),
-        'Thông hiểu (TL)': getNum(row.part4, 'understand'),
-        'Vận dụng (TN)': getNum(row.part1, 'apply') + getNum(row.part2, 'apply') + getNum(row.part3, 'apply'),
-        'Vận dụng (TL)': getNum(row.part4, 'apply'),
-        'Vận dụng cao (TN)': getNum(row.part1, 'advanced') + getNum(row.part2, 'advanced') + getNum(row.part3, 'advanced'),
-        'Vận dụng cao (TL)': getNum(row.part4, 'advanced'),
-        'Phần I (4 lựa chọn)': Object.values(row.part1).reduce((a, b) => a + Number(b || 0), 0),
-        'Phần II (Đúng/Sai)': Object.values(row.part2).reduce((a, b) => a + Number(b || 0), 0),
-        'Phần III (Trả lời ngắn)': Object.values(row.part3).reduce((a, b) => a + Number(b || 0), 0),
-        'Phần IV (Tự luận)': Object.values(row.part4).reduce((a, b) => a + Number(b || 0), 0),
-        'Tổng số câu': row.totalQuestions,
-        'Tổng điểm': row.totalPoints,
-        'Tỷ lệ %': `${row.percentage}%`,
+        TT: row.stt,
+        'Chủ đề/Chương': cleanLatexForDocx(row.topic),
+        'Nội dung/đơn vị kiến thức': cleanLatexForDocx(row.subTopic),
+        'Nhiều lựa chọn (Biết)': row.cellTexts?.p1_rem || (p1Biết > 0 ? p1Biết : ''),
+        'Nhiều lựa chọn (Hiểu)': row.cellTexts?.p1_und || (p1Hiểu > 0 ? p1Hiểu : ''),
+        'Nhiều lựa chọn (Vận dụng)': row.cellTexts?.p1_app || (p1VậnDụng > 0 ? p1VậnDụng : ''),
+        '“Đúng – Sai”² (Biết)': row.cellTexts?.p2_rem || (p2Biết > 0 ? p2Biết : ''),
+        '“Đúng – Sai”² (Hiểu)': row.cellTexts?.p2_und || (p2Hiểu > 0 ? p2Hiểu : ''),
+        '“Đúng – Sai”² (Vận dụng)': row.cellTexts?.p2_app || (p2VậnDụng > 0 ? p2VậnDụng : ''),
+        'Trả lời ngắn³ (Biết)': row.cellTexts?.p3_rem || (p3Biết > 0 ? p3Biết : ''),
+        'Trả lời ngắn³ (Hiểu)': row.cellTexts?.p3_und || (p3Hiểu > 0 ? p3Hiểu : ''),
+        'Trả lời ngắn³ (Vận dụng)': row.cellTexts?.p3_app || (p3VậnDụng > 0 ? p3VậnDụng : ''),
+        'Tự luận (Biết)': row.cellTexts?.p4_rem || (p4Biết > 0 ? p4Biết : ''),
+        'Tự luận (Hiểu)': row.cellTexts?.p4_und || (p4Hiểu > 0 ? p4Hiểu : ''),
+        'Tự luận (Vận dụng)': row.cellTexts?.p4_app || (p4VậnDụng > 0 ? p4VậnDụng : ''),
+        'Tổng (Biết)': rowBiết > 0 ? rowBiết : '',
+        'Tổng (Hiểu)': rowHiểu > 0 ? rowHiểu : '',
+        'Tổng (Vận dụng)': rowVậnDụng > 0 ? rowVậnDụng : '',
+        'Tỉ lệ % điểm': row.percentage ? `${row.percentage}%` : '',
       };
+    });
+
+    // Summary footer rows for Excel Sheet 1
+    const totalP1 = matrix.reduce((acc, r) => acc + getBiết(r.part1) + getHiểu(r.part1) + getVậnDụng(r.part1), 0);
+    const totalP2 = matrix.reduce((acc, r) => acc + getBiết(r.part2) + getHiểu(r.part2) + getVậnDụng(r.part2), 0);
+    const totalP3 = matrix.reduce((acc, r) => acc + getBiết(r.part3) + getHiểu(r.part3) + getVậnDụng(r.part3), 0);
+    const totalP4 = matrix.reduce((acc, r) => acc + getBiết(r.part4) + getHiểu(r.part4) + getVậnDụng(r.part4), 0);
+
+    const totalBiếtAll = matrix.reduce((acc, r) => acc + getBiết(r.part1) + getBiết(r.part2) + getBiết(r.part3) + getBiết(r.part4), 0);
+    const totalHiểuAll = matrix.reduce((acc, r) => acc + getHiểu(r.part1) + getHiểu(r.part2) + getHiểu(r.part3) + getHiểu(r.part4), 0);
+    const totalVậnDụngAll = matrix.reduce((acc, r) => acc + getVậnDụng(r.part1) + getVậnDụng(r.part2) + getVậnDụng(r.part3) + getVậnDụng(r.part4), 0);
+
+    matrixData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'Tổng số câu',
+      'Nội dung/đơn vị kiến thức': '',
+      'Nhiều lựa chọn (Biết)': '' as any,
+      'Nhiều lựa chọn (Hiểu)': '' as any,
+      'Nhiều lựa chọn (Vận dụng)': (totalP1 > 0 ? totalP1 : 12) as any,
+      '“Đúng – Sai”² (Biết)': '' as any,
+      '“Đúng – Sai”² (Hiểu)': '' as any,
+      '“Đúng – Sai”² (Vận dụng)': (totalP2 > 0 ? totalP2 : 2) as any,
+      'Trả lời ngắn³ (Biết)': '' as any,
+      'Trả lời ngắn³ (Hiểu)': '' as any,
+      'Trả lời ngắn³ (Vận dụng)': (totalP3 > 0 ? totalP3 : 4) as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': (totalP4 > 0 ? totalP4 : 2) as any,
+      'Tổng (Biết)': (totalBiếtAll > 0 ? totalBiếtAll : 9) as any,
+      'Tổng (Hiểu)': (totalHiểuAll > 0 ? totalHiểuAll : 6) as any,
+      'Tổng (Vận dụng)': (totalVậnDụngAll > 0 ? totalVậnDụngAll : 5) as any,
+      'Tỉ lệ % điểm': '' as any,
+    });
+
+    matrixData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'Tổng số điểm',
+      'Nội dung/đơn vị kiến thức': '',
+      'Nhiều lựa chọn (Biết)': '' as any,
+      'Nhiều lựa chọn (Hiểu)': '' as any,
+      'Nhiều lựa chọn (Vận dụng)': '3,0⁵' as any,
+      '“Đúng – Sai”² (Biết)': '' as any,
+      '“Đúng – Sai”² (Hiểu)': '' as any,
+      '“Đúng – Sai”² (Vận dụng)': '2,0' as any,
+      'Trả lời ngắn³ (Biết)': '' as any,
+      'Trả lời ngắn³ (Hiểu)': '' as any,
+      'Trả lời ngắn³ (Vận dụng)': '2,0' as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': '3,0' as any,
+      'Tổng (Biết)': '4,0' as any,
+      'Tổng (Hiểu)': '3,0' as any,
+      'Tổng (Vận dụng)': '3,0' as any,
+      'Tỉ lệ % điểm': '10,0' as any,
+    });
+
+    matrixData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'Tỉ lệ %',
+      'Nội dung/đơn vị kiến thức': '',
+      'Nhiều lựa chọn (Biết)': '' as any,
+      'Nhiều lựa chọn (Hiểu)': '' as any,
+      'Nhiều lựa chọn (Vận dụng)': '30' as any,
+      '“Đúng – Sai”² (Biết)': '' as any,
+      '“Đúng – Sai”² (Hiểu)': '' as any,
+      '“Đúng – Sai”² (Vận dụng)': '20' as any,
+      'Trả lời ngắn³ (Biết)': '' as any,
+      'Trả lời ngắn³ (Hiểu)': '' as any,
+      'Trả lời ngắn³ (Vận dụng)': '20' as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': '30' as any,
+      'Tổng (Biết)': '40' as any,
+      'Tổng (Hiểu)': '30' as any,
+      'Tổng (Vận dụng)': '30' as any,
+      'Tỉ lệ % điểm': '100%' as any,
+    });
+
+    // Footnotes row
+    matrixData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'GHI CHÚ CHÂN TRANG MA TRẬN:',
+      'Nội dung/đơn vị kiến thức': '² Mỗi câu hỏi bao gồm 4 ý nhỏ, mỗi ý học sinh phải chọn đúng hoặc sai.',
+      'Nhiều lựa chọn (Biết)': '³ Đối với môn học không sử dụng dạng này thì chuyển toàn bộ số điểm cho dạng “Đúng – Sai”.' as any,
+      'Nhiều lựa chọn (Hiểu)': '⁴ Có ở trong một số ô của ma trận, thể hiện số câu hỏi hoặc câu hỏi số bao nhiêu.' as any,
+      'Nhiều lựa chọn (Vận dụng)': '⁵ Lựa chọn sao cho được khoảng 3,0 điểm, tương ứng với tỉ lệ khoảng 30%; tương tự như thế đối với các dạng khác.' as any,
+      '“Đúng – Sai”² (Biết)': '' as any,
+      '“Đúng – Sai”² (Hiểu)': '' as any,
+      '“Đúng – Sai”² (Vận dụng)': '' as any,
+      'Trả lời ngắn³ (Biết)': '' as any,
+      'Trả lời ngắn³ (Hiểu)': '' as any,
+      'Trả lời ngắn³ (Vận dụng)': '' as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': '' as any,
+      'Tổng (Biết)': '' as any,
+      'Tổng (Hiểu)': '' as any,
+      'Tổng (Vận dụng)': '' as any,
+      'Tỉ lệ % điểm': '' as any,
     });
 
     const wsMatrix = XLSX.utils.json_to_sheet(matrixData);
-    XLSX.utils.book_append_sheet(wb, wsMatrix, 'Ma trận đề');
+    XLSX.utils.book_append_sheet(wb, wsMatrix, '1. Ma trận đề');
 
-    // --- SHEET 2: BẢNG ĐẶC TẢ ---
-    const primaryQuestions = examPack.exams[0]?.questions || [];
-    const specData = specification.map((row, rowIdx) => {
-      const details = getSpecRowQuestionDetails(row, rowIdx, specification, primaryQuestions);
+    // --- SHEET 2: 2. BẢN ĐẶC TẢ ĐỀ KIỂM TRA ĐỊNH KÌ ---
+    const specData = specification.map((row) => {
+      const p1Biết = getBiết(row.part1);
+      const p1Hiểu = getHiểu(row.part1);
+      const p1VậnDụng = getVậnDụng(row.part1);
+
+      const p2Biết = getBiết(row.part2);
+      const p2Hiểu = getHiểu(row.part2);
+      const p2VậnDụng = getVậnDụng(row.part2);
+
+      const p3Biết = getBiết(row.part3);
+      const p3Hiểu = getHiểu(row.part3);
+      const p3VậnDụng = getVậnDụng(row.part3);
+
+      const p4Biết = getBiết(row.part4);
+      const p4Hiểu = getHiểu(row.part4);
+      const p4VậnDụng = getVậnDụng(row.part4);
+
       return {
-        STT: row.stt,
-        'Chủ đề / Đơn vị kiến thức': cleanLatexForDocx(row.topic),
+        TT: row.stt,
+        'Chủ đề/Chương': cleanLatexForDocx(row.topic),
+        'Nội dung/đơn vị kiến thức': cleanLatexForDocx(row.subTopic),
         'Yêu cầu cần đạt': cleanLatexForDocx(row.requirements),
-        'Số câu / Dạng câu': details.join('; '),
-        'Điểm số': row.totalPoints,
+        'Nhiều lựa chọn (Biết)': row.cellTexts?.p1_rem || (p1Biết > 0 ? `(${p1Biết})` : ''),
+        'Nhiều lựa chọn (Hiểu)': row.cellTexts?.p1_und || (p1Hiểu > 0 ? `(${p1Hiểu})` : ''),
+        'Nhiều lựa chọn (Vận dụng)': row.cellTexts?.p1_app || (p1VậnDụng > 0 ? `(${p1VậnDụng})` : ''),
+        '“Đúng – Sai” (Biết)': row.cellTexts?.p2_rem || (p2Biết > 0 ? `(${p2Biết})` : ''),
+        '“Đúng – Sai” (Hiểu)': row.cellTexts?.p2_und || (p2Hiểu > 0 ? `(${p2Hiểu})` : ''),
+        '“Đúng – Sai” (Vận dụng)': row.cellTexts?.p2_app || (p2VậnDụng > 0 ? `(${p2VậnDụng})` : ''),
+        'Trả lời ngắn (Biết)': row.cellTexts?.p3_rem || (p3Biết > 0 ? `(${p3Biết})` : ''),
+        'Trả lời ngắn (Hiểu)': row.cellTexts?.p3_und || (p3Hiểu > 0 ? `(${p3Hiểu})` : ''),
+        'Trả lời ngắn (Vận dụng)': row.cellTexts?.p3_app || (p3VậnDụng > 0 ? `(${p3VậnDụng})` : ''),
+        'Tự luận (Biết)': row.cellTexts?.p4_rem || (p4Biết > 0 ? `(${p4Biết})` : ''),
+        'Tự luận (Hiểu)': row.cellTexts?.p4_und || (p4Hiểu > 0 ? `(${p4Hiểu})` : ''),
+        'Tự luận (Vận dụng)': row.cellTexts?.p4_app || (p4VậnDụng > 0 ? `(${p4VậnDụng})` : ''),
       };
     });
 
+    specData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'Tổng số câu',
+      'Nội dung/đơn vị kiến thức': '',
+      'Yêu cầu cần đạt': '',
+      'Nhiều lựa chọn (Biết)': '' as any,
+      'Nhiều lựa chọn (Hiểu)': '' as any,
+      'Nhiều lựa chọn (Vận dụng)': (totalP1 > 0 ? totalP1 : 12) as any,
+      '“Đúng – Sai” (Biết)': '' as any,
+      '“Đúng – Sai” (Hiểu)': '' as any,
+      '“Đúng – Sai” (Vận dụng)': (totalP2 > 0 ? totalP2 : 2) as any,
+      'Trả lời ngắn (Biết)': '' as any,
+      'Trả lời ngắn (Hiểu)': '' as any,
+      'Trả lời ngắn (Vận dụng)': (totalP3 > 0 ? totalP3 : 4) as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': (totalP4 > 0 ? totalP4 : 2) as any,
+    });
+
+    specData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'Tổng số điểm',
+      'Nội dung/đơn vị kiến thức': '',
+      'Yêu cầu cần đạt': '',
+      'Nhiều lựa chọn (Biết)': '' as any,
+      'Nhiều lựa chọn (Hiểu)': '' as any,
+      'Nhiều lựa chọn (Vận dụng)': '3,0' as any,
+      '“Đúng – Sai” (Biết)': '' as any,
+      '“Đúng – Sai” (Hiểu)': '' as any,
+      '“Đúng – Sai” (Vận dụng)': '2,0' as any,
+      'Trả lời ngắn (Biết)': '' as any,
+      'Trả lời ngắn (Hiểu)': '' as any,
+      'Trả lời ngắn (Vận dụng)': '2,0' as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': '3,0' as any,
+    });
+
+    specData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'Tỉ lệ %',
+      'Nội dung/đơn vị kiến thức': '',
+      'Yêu cầu cần đạt': '',
+      'Nhiều lựa chọn (Biết)': '' as any,
+      'Nhiều lựa chọn (Hiểu)': '' as any,
+      'Nhiều lựa chọn (Vận dụng)': '30' as any,
+      '“Đúng – Sai” (Biết)': '' as any,
+      '“Đúng – Sai” (Hiểu)': '' as any,
+      '“Đúng – Sai” (Vận dụng)': '20' as any,
+      'Trả lời ngắn (Biết)': '' as any,
+      'Trả lời ngắn (Hiểu)': '' as any,
+      'Trả lời ngắn (Vận dụng)': '20' as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': '30' as any,
+    });
+
+    specData.push({
+      TT: '' as any,
+      'Chủ đề/Chương': 'GHI CHÚ CHÂN TRANG ĐẶC TẢ:',
+      'Nội dung/đơn vị kiến thức': '⁶ Có ở trong một số ô của bản đặc tả, ghi tắt tên của năng lực (đã được quy định trong chương trình môn học/hoạt động giáo dục).',
+      'Yêu cầu cần đạt': '',
+      'Nhiều lựa chọn (Biết)': '' as any,
+      'Nhiều lựa chọn (Hiểu)': '' as any,
+      'Nhiều lựa chọn (Vận dụng)': '' as any,
+      '“Đúng – Sai” (Biết)': '' as any,
+      '“Đúng – Sai” (Hiểu)': '' as any,
+      '“Đúng – Sai” (Vận dụng)': '' as any,
+      'Trả lời ngắn (Biết)': '' as any,
+      'Trả lời ngắn (Hiểu)': '' as any,
+      'Trả lời ngắn (Vận dụng)': '' as any,
+      'Tự luận (Biết)': '' as any,
+      'Tự luận (Hiểu)': '' as any,
+      'Tự luận (Vận dụng)': '' as any,
+    });
+
     const wsSpec = XLSX.utils.json_to_sheet(specData);
-    XLSX.utils.book_append_sheet(wb, wsSpec, 'Bảng đặc tả');
+    XLSX.utils.book_append_sheet(wb, wsSpec, '2. Bản đặc tả');
 
     // --- SHEET 3: BẢNG ĐÁP ÁN TỔNG HỢP CÁC MÃ ĐỀ ---
     const answersData: any[] = [];

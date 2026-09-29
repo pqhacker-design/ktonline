@@ -152,6 +152,7 @@ export interface ExamMetadata {
   schoolYear: string;        // e.g. 2026 - 2027
   examTitle: string;         // e.g. Kiểm tra Giữa Học kỳ I
   chapterTitle: string;      // Tên chương / Chủ đề / Mạch kiến thức
+  topicsList?: string[];     // Danh sách các bài / mạch kiến thức cụ thể (khi người dùng nhập nhiều bài)
   durationMinutes: number;   // e.g. 45
   totalPoints: number;       // e.g. 10
   curriculum: CurriculumType;
@@ -219,28 +220,33 @@ export interface CognitiveBreakdown {
 }
 
 export interface MatrixRow {
-  stt: number;
-  topic: string;             // Mạch nội dung / Chủ đề
-  subTopic: string;          // Đơn vị kiến thức
+  stt: number | string;
+  topic: string;             // Mạch nội dung / Chủ đề / Chương
+  subTopic: string;          // Nội dung / Đơn vị kiến thức
   part1: CognitiveBreakdown; // Nhiều lựa chọn (số câu)
   part2: CognitiveBreakdown; // Đúng/Sai (số lệnh hỏi / câu)
   part3: CognitiveBreakdown; // Trả lời ngắn (số câu)
   part4: CognitiveBreakdown; // Tự luận (số câu)
-  totalQuestions: number;
-  totalPoints: number;
-  percentage: number;
+  totalQuestions?: number;
+  totalPoints?: number;
+  percentage?: number;
+  // Chuỗi tùy biến cho từng ô (vd: "(n)⁴", "(1)", "(C1)")
+  cellTexts?: Record<string, string>;
 }
 
 export interface SpecRow {
-  stt: number;
-  topic: string;
-  subTopic: string;
+  stt: number | string;
+  topic: string;             // Chủ đề / Chương
+  subTopic: string;          // Nội dung / Đơn vị kiến thức
   requirements: string;      // Yêu cầu cần đạt (YCCĐ)
-  part1: CognitiveBreakdown;
-  part2: CognitiveBreakdown;
-  part3: CognitiveBreakdown;
-  part4: CognitiveBreakdown;
-  totalPoints: number;
+  part1: CognitiveBreakdown; // Nhiều lựa chọn
+  part2: CognitiveBreakdown; // Đúng/Sai
+  part3: CognitiveBreakdown; // Trả lời ngắn
+  part4: CognitiveBreakdown; // Tự luận
+  totalPoints?: number;
+  // Chuỗi tùy biến cho từng ô đặc tả (vd: "(n)\n(NL?)⁶", "(1)\n(NLT_1)")
+  cellTexts?: Record<string, string>;
+  competency?: string;      // Mã năng lực ghi tắt (NL)
 }
 
 export interface CodeExam {

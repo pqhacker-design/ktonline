@@ -20,6 +20,8 @@ import {
   X,
 } from 'lucide-react';
 import { OnlineExamService, StudentResultItem, OnlineExamItem } from '../services/onlineExamService';
+import { StorageEngine } from '../services/storageEngine';
+import { useAuth } from '../auth/useAuth';
 import { ExportExcel } from '../services/exportExcel';
 import { ClassItem, StudentItem } from '../types';
 import { sortStudentsDefault, naturalCompare } from '../utils/vietnameseSort';
@@ -58,6 +60,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
   selectedExamCode = 'ALL',
   onNavigateTab,
 }) => {
+  const { user } = useAuth();
   const [results, setResults] = useState<StudentResultItem[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [students, setStudents] = useState<StudentItem[]>([]);
@@ -116,7 +119,14 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
 
   useEffect(() => {
     fetchData();
-  }, [examCodeFilter]);
+  }, [examCodeFilter, user?.id, user?.username]);
+
+  useEffect(() => {
+    const unsubscribe = StorageEngine.subscribe(() => {
+      fetchData();
+    });
+    return unsubscribe;
+  }, []);
 
   const requestDeleteResult = (item: StudentResultItem) => {
     setConfirmModal({

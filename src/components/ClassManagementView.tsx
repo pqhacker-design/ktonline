@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import { ClassItem, StudentItem } from '../types';
 import { OnlineExamService } from '../services/onlineExamService';
+import { StorageEngine } from '../services/storageEngine';
+import { useAuth } from '../auth/useAuth';
 import { ExportExcel } from '../services/exportExcel';
 import {
   compareVietnameseNames,
@@ -44,6 +46,7 @@ interface ClassManagementViewProps {
 }
 
 export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavigateTab }) => {
+  const { user } = useAuth();
   const [classes, setClasses] = useState<ClassItem[]>(() => {
     try {
       return OnlineExamService.getLocalClasses();
@@ -155,6 +158,13 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
 
   useEffect(() => {
     loadClassesAndStudents();
+  }, [user?.id, user?.username]);
+
+  useEffect(() => {
+    const unsubscribe = StorageEngine.subscribe(() => {
+      loadClassesAndStudents();
+    });
+    return unsubscribe;
   }, []);
 
   const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0] || null;

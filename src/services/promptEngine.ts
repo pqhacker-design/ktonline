@@ -48,6 +48,7 @@ BẮT BUỘC TUÂN THỦ CÁC NGUYÊN TẮC SAU:
       schoolYear,
       examTitle,
       chapterTitle,
+      topicsList,
       durationMinutes,
       totalPoints,
       curriculum,
@@ -55,6 +56,24 @@ BẮT BUỘC TUÂN THỦ CÁC NGUYÊN TẮC SAU:
       questionCounts,
       cognitiveRatio,
     } = metadata;
+
+    const cleanTopics = (topicsList || [])
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+
+    let topicsSection = '';
+    if (cleanTopics.length > 0) {
+      topicsSection = `
+📚 DANH SÁCH CÁC BÀI HỌC / MẠCH KIẾN THỨC CỤ THỂ CẦN KIỂM TRA (${cleanTopics.length} bài/mạch nội dung):
+${cleanTopics.map((t, idx) => `  Bài ${idx + 1}: ${t}`).join('\n')}
+
+🎯 QUY TẮC BẮT BUỘC VỀ MA TRẬN, BẢNG ĐẶC TẢ VÀ CÂU HỎI THEO TỪNG BÀI:
+1. XÂY DỰNG MA TRẬN ("matrix"): Phải có các dòng ma trận tương ứng trực tiếp với ${cleanTopics.length} bài/mạch nội dung trên. Mỗi bài học/mạch nội dung là ít nhất một dòng trong ma trận với trường "topic" là chính xác tên bài học tương ứng (VD: "${cleanTopics[0]}").
+2. BẢNG ĐẶC TẢ ("specification"): Phải có các mục tương ứng với từng bài trong danh sách trên, nêu rõ yêu cầu cần đạt chuẩn CT GDPT 2018 cho từng bài.
+3. PHÂN BỔ CÂU HỎI BAO PHỦ: Phân bổ các câu hỏi (Phần I, Phần II, Phần III, Phần IV) trải đều và hợp lý vào TẤT CẢ ${cleanTopics.length} bài trên. KHÔNG được bỏ sót bất kỳ bài nào và TUYỆT ĐỐI KHÔNG sinh câu hỏi nằm ngoài danh sách bài này.
+4. MỖI CÂU HỎI trong danh sách "questions" BẮT BUỘC gán trường "topic" chính xác là một trong ${cleanTopics.length} bài trên.
+`;
+    }
 
     let modeDescription = '';
     if (examMode === 'MCQ_ESSAY') {
@@ -93,7 +112,8 @@ HÃY SINH MA TRẬN, BẢNG ĐẶC TẢ VÀ ĐỀ KIỂM TRA CHUẨN CÔNG VĂN 
 - Khối lớp: ${grade}
 - Học kỳ: ${semester} | Năm học: ${schoolYear}
 - Tên kỳ thi / Bài kiểm tra: ${examTitle}
-- Tên bài / Chương / Chủ đề: ${chapterTitle}
+- Tên bài / Chương / Chủ đề chung: ${chapterTitle}
+${topicsSection}
 - Bộ sách giáo khoa: ${curriculum}
 - Thời gian làm bài: ${durationMinutes} phút
 - Thang điểm tổng: ${totalPoints} điểm
