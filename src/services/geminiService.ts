@@ -1,11 +1,38 @@
-import { ExamMetadata, ExamPackage } from '../types';
+import { ExamMetadata, ExamPackage, Question } from '../types';
 import { PromptEngine } from './promptEngine';
 import { ShuffleEngine } from './shuffleEngine';
 import { ValidationEngine } from './validationEngine';
 import { StorageEngine } from './storageEngine';
 import { callGeminiApi } from './geminiClient';
+import { LatexValidator } from './latexValidator';
 
 export class GeminiService {
+  /**
+   * Bộ kiểm tra định dạng toán học (LaTeX Validator)
+   */
+  static latexValidator = LatexValidator;
+
+  /**
+   * Phương thức kiểm tra và sửa lỗi cú pháp LaTeX cho văn bản bất kỳ
+   */
+  static validateAndRepairLatex(text: string) {
+    return LatexValidator.validateAndRepairString(text);
+  }
+
+  /**
+   * Phương thức kiểm tra và sửa lỗi cú pháp LaTeX cho câu hỏi
+   */
+  static validateAndRepairQuestion(q: Question) {
+    return LatexValidator.validateAndRepairQuestion(q);
+  }
+
+  /**
+   * Phương thức kiểm tra và sửa lỗi cú pháp LaTeX cho toàn bộ gói đề thi
+   */
+  static validateAndRepairExamPackage(pkg: ExamPackage) {
+    return LatexValidator.validateAndRepairExamPackage(pkg);
+  }
+
   /**
    * Gọi backend API hoặc Client SDK để sinh Đề kiểm tra, Ma trận, Bảng đặc tả và Đáp án
    */
@@ -62,9 +89,7 @@ export class GeminiService {
       metadata.codeCount || 1
     );
 
-    if (onProgress) onProgress('Đã hoàn tất khởi tạo gói đề thi!');
-
-    const examPackage: ExamPackage = {
+    const initialPackage: ExamPackage = {
       id: `exam-pack-${Date.now()}`,
       createdAt: new Date().toISOString(),
       metadata,
@@ -74,7 +99,27 @@ export class GeminiService {
       answerKeys,
     };
 
-    return examPackage;
+    // Tự động rà soát và sửa các lỗi hiển thị ký hiệu toán học phổ biến (dấu đóng ngoặc, căn thức, phân số,...)
+    if (onProgress) {
+      onProgress('Đang tự động rà soát & sửa lỗi ký hiệu toán học (LaTeX Validator)...');
+    }
+
+    const { repairedPackage, totalIssuesFixed } = LatexValidator.validateAndRepairExamPackage(initialPackage);
+
+    if (totalIssuesFixed > 0 && onProgress) {
+      onProgress(`Đã tự động chuẩn hóa ${totalIssuesFixed} ký hiệu toán học (căn thức, đóng mở ngoặc, phân số).`);
+    }
+
+    // Tự động lưu gói đề thi đã chuẩn hóa vào StorageEngine
+    try {
+      StorageEngine.saveExamPackage(repairedPackage);
+    } catch (saveErr) {
+      console.warn('Lỗi tự động lưu gói đề thi vào StorageEngine:', saveErr);
+    }
+
+    if (onProgress) onProgress('Đã hoàn tất khởi tạo và lưu trữ gói đề thi!');
+
+    return repairedPackage;
   }
 
   static async generateExam(

@@ -1,5 +1,6 @@
 import { AppSettings, ExamPackage, QuestionBankItem } from '../types';
 import { UserDataSync } from './userDataSync';
+import { LatexValidator } from './latexValidator';
 
 const STORAGE_KEYS = {
   SETTINGS: 'aitest_settings_v1',
@@ -118,8 +119,9 @@ export class StorageEngine {
 
   static saveExamPackage(examPackage: ExamPackage): void {
     try {
+      const { repairedPackage } = LatexValidator.validateAndRepairExamPackage(examPackage);
       const history = this.getExamHistory();
-      const updated = [examPackage, ...history.filter((e) => e.id !== examPackage.id)];
+      const updated = [repairedPackage, ...history.filter((e) => e.id !== repairedPackage.id)];
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
 
@@ -207,9 +209,9 @@ export class StorageEngine {
 
   static saveQuestionBank(questions: QuestionBankItem[]): void {
     try {
-      const clean = (questions || []).filter(
-        (q) => q && q.id && !q.id.includes('sample') && !q.id.includes('qb-sample')
-      );
+      const clean = (questions || [])
+        .filter((q) => q && q.id && !q.id.includes('sample') && !q.id.includes('qb-sample'))
+        .map((q) => LatexValidator.validateAndRepairQuestion(q) as QuestionBankItem);
       const key = this.getKey(STORAGE_KEYS.QUESTION_BANK);
       localStorage.setItem(key, JSON.stringify(clean));
 
