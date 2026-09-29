@@ -28,12 +28,30 @@ export const MathText: React.FC<MathTextProps> = ({ content, text, className = '
     const mathRegex = /(\$\$.*?\$\$|\$.*?\$)/gs;
     const parts = formattedContent.split(mathRegex);
 
+    const cleanMath = (input: string) => {
+      let s = input.trim();
+      s = s.replace(/\\rac(?=\{|\s|[0-9a-zA-Z])/g, '\\frac');
+      s = s.replace(/\\egin\{/g, '\\begin{');
+      s = s.replace(/\\riangle\b/g, '\\triangle');
+      s = s.replace(/\\imes\b/g, '\\times');
+      s = s.replace(/\\ext\{/g, '\\text{');
+      s = s.replace(/\\heta\b/g, '\\theta');
+      s = s.replace(/\\ight\b/g, '\\right');
+      s = s.replace(/\\ightarrow\b/g, '\\rightarrow');
+      s = s.replace(/([0-9a-zA-Z\)])\s*\*\s*([0-9a-zA-Z\(])/g, '$1 \\cdot $2');
+      s = s.replace(/=\s*\{\s*([^{}]+?)\s*\}/g, '= \\{ $1 \\}');
+      s = s.replace(/(\d+)\s*(?:°|\\\^?\{?circ\}?|\^\s*[0o]\b)/g, '$1^\\circ');
+      s = s.replace(/\\vec\s+([A-Z]{1,2})\b/g, '\\vec{$1}');
+      s = s.replace(/\\widehat\s+([A-Z]{2,4})\b/g, '\\widehat{$1}');
+      return s;
+    };
+
     parts.forEach((part) => {
       if (!part) return;
 
       if (part.startsWith('$$') && part.endsWith('$$')) {
         // Display Math Block
-        const mathStr = part.slice(2, -2);
+        const mathStr = cleanMath(part.slice(2, -2));
         const span = document.createElement('span');
         span.className = 'my-2 block text-center overflow-x-auto py-1 font-sans';
         try {
@@ -44,7 +62,7 @@ export const MathText: React.FC<MathTextProps> = ({ content, text, className = '
         el.appendChild(span);
       } else if (part.startsWith('$') && part.endsWith('$')) {
         // Inline Math (Tự động chuyển sang displayMode nếu chứa môi trường nhiều dòng như hệ phương trình cases)
-        const mathStr = part.slice(1, -1);
+        const mathStr = cleanMath(part.slice(1, -1));
         const isMultiLineEnv = /\\begin\{(cases|aligned|array|matrix|pmatrix|bmatrix)\}/.test(mathStr);
         const span = document.createElement('span');
         span.className = isMultiLineEnv

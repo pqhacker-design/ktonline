@@ -1,6 +1,7 @@
 import { ExamMetadata, MatrixRow, Question, SpecRow } from '../types';
 import { safeJsonParse } from './jsonRepair';
 import { autoAssignQuestionsAndCompetencies } from '../utils/competencies';
+import { autoWrapUnwrappedLatex } from './exportDocx';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -15,21 +16,11 @@ export function cleanQuestionText(text: string): string {
   if (!text) return text;
   let str = text;
 
-  // 1. Loại bỏ các nhãn mã mức độ thừa như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [NB],...
-  str = str.replace(/\s*\[(NB|TH|VD|VDC|REMEMBER|UNDERSTAND|APPLY|ADVANCED)(_(TL|TN|TF|SA))?\]\s*/gi, ' ');
+  // 1. Khôi phục escape, sửa ký tự điều khiển \x08, \x0C, bọc math, chuẩn hóa phân số, căn thức, hệ pt, góc, vectơ
+  str = autoWrapUnwrappedLatex(str);
 
-  // 2. Chuyển mã TeX accent / \text{} đặc biệt sang Unicode Tiếng Việt chuẩn
-  str = str.replace(/\\text\{\\dh\}/gi, 'đ');
-  str = str.replace(/\\text\{\\DH\}/gi, 'Đ');
-  str = str.replace(/\\text\{\\textquoteright\}/gi, "'");
-  str = str.replace(/\\text\{\\underline\{u\}\}/gi, 'ư');
-  str = str.replace(/\\text\{\\hat\{o\}\}/gi, 'ô');
-  str = str.replace(/\\text\{\\hat\{e\}\}/gi, 'ê');
-  str = str.replace(/\\text\{\\hat\{a\}\}/gi, 'â');
-  str = str.replace(/v\\grave\{?a\}?/gi, 'và');
-  str = str.replace(/c\\'o/gi, 'có');
-  str = str.replace(/c\\'a/gi, 'cá');
-  str = str.replace(/b\\`ang/gi, 'bằng');
+  // 2. Loại bỏ các nhãn mã mức độ thừa như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [NB],...
+  str = str.replace(/\s*\[(NB|TH|VD|VDC|REMEMBER|UNDERSTAND|APPLY|ADVANCED)(_(TL|TN|TF|SA))?\]\s*/gi, ' ');
 
   // 3. Xử lý khoảng trắng quanh dấu phẩy phẩy biến số phẩy (A 'B' -> A'B', A ' -> A')
   str = str.replace(/([A-Z])\s+'\s*([A-Z])/g, "$1'$2");

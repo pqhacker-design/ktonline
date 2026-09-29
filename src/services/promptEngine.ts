@@ -234,10 +234,15 @@ YÊU CẦU ĐẦU RA JSON CHÍNH XÁC THEO SCHEMA SAU:
 
 Chú ý: Hãy đảm bảo số lượng câu hỏi trong danh sách "questions" khớp CHÍNH XÁC với số lượng khai báo ở trên!
 
-📐 QUY TẮC BẮT BUỘC VỀ TRÌNH BÀY CÔNG THỨC TOÁN VÀ LATEX:
-1. BẮT BUỘC BỌC TẤT CẢ công thức toán học, tập hợp, biến số, phép tính trong cặp dấu $...$ (ví dụ: $x$, $y$, $A$, $B = \\{x \\in \\mathbb{N} \\mid 15 \\le x < 28\\}$, $x \\vdots 12$, $4^2 \\cdot 5$, $S = 25 \\cdot 74 + 25 \\cdot 26 - 500$). TUYỆT ĐỐI KHÔNG để bất kỳ lệnh LaTeX hay biểu thức toán nào đứng ngoài cặp dấu $.
-2. DÙNG '\\cdot' cho dấu nhân (ví dụ $4^2 \\cdot 5$, $25 \\cdot 74$), DÙNG '\\vdots' cho quan hệ chia hết (ví dụ $x \\vdots 12$ và $x \\vdots 18$), DÙNG '\\mid' cho gạch đứng biểu diễn tập hợp (ví dụ $x \\in \\mathbb{N} \\mid 15 \\le x < 28$), DÙNG '\\le', '\\ge' cho nhỏ hơn/lớn hơn hoặc bằng (ví dụ $8 < x \\le 14$).
-3. Với tập hợp số, dùng '\\mathbb{N}', '\\mathbb{Z}', '\\mathbb{Q}', '\\mathbb{R}'. Toàn bộ tên tập hợp và biểu thức tập hợp PHẢI bọc trong dấu $, ví dụ: $A = \\{x \\in \\mathbb{N} \\mid 8 < x \\le 14\\}$.
+📐 QUY TẮC BẮT BUỘC VỀ TRÌNH BÀY CÔNG THỨC TOÁN VÀ LATEX (CHỐNG LỖI HIỂN THỊ 100%):
+1. BẮT BUỘC BỌC TẤT CẢ công thức toán học, tập hợp, biến số, phép tính trong cặp dấu $...$ (ví dụ: $x$, $y$, $A$, $B = \\{x \\in \\mathbb{N} \\mid 15 \\le x < 28\\}$, $x \\vdots 12$, $4^2 \\cdot 5$, $S = 25 \\cdot 74 + 25 \\cdot 26 - 500$, $P = \\frac{x+1}{x-1}$). TUYỆT ĐỐI KHÔNG để bất kỳ lệnh LaTeX hay biểu thức toán nào đứng ngoài cặp dấu $.
+2. TRONG CHUỖI JSON, BẮT BUỘC DÙNG DẤU GẠCH CHÉO KÉP '\\\\' cho mọi lệnh LaTeX: '\\\\frac', '\\\\sqrt', '\\\\cdot', '\\\\vdots', '\\\\le', '\\\\ge', '\\\\neq', '\\\\angle', '\\\\widehat', '\\\\triangle', '\\\\vec', '\\\\in', '\\\\notin', '\\\\subset', '\\\\parallel', '\\\\perp', '\\\\approx', '\\\\begin{cases}...\\\\end{cases}'.
+3. PHÉP NHÂN: DÙNG '\\\\cdot' (ví dụ $4^2 \\cdot 5$, $25 \\cdot 74$), TUYỆT ĐỐI KHÔNG dùng dấu '*' hoặc '.' thô.
+4. QUAN HỆ CHIA HẾT: DÙNG '\\\\vdots' (ví dụ $x \\vdots 12$ và $x \\vdots 18$).
+5. TẬP HỢP: BẮT BUỘC DÙNG '\\\\{' và '\\\\}' để hiển thị ngoặc nhọn (ví dụ: $A = \\{1; 2; 3; 4\\}$, $B = \\{x \\in \\mathbb{N} \\mid 8 < x \\le 14\\}$). TUYỆT ĐỐI KHÔNG viết '{1; 2; 3}' trần vì KaTeX sẽ làm biến mất ngoặc nhọn. Dùng '\\\\mid' cho gạch đứng điều kiện tập hợp.
+6. HỆ PHƯƠNG TRÌNH: DÙNG '\\\\begin{cases} ... \\\\end{cases}', các dòng cách nhau bằng '\\\\\\\\'.
+7. ĐƠN VỊ ĐỘ: DÙNG '^\\\\circ' (ví dụ: $60^\\circ$, $90^\\circ$). TUYỆT ĐỐI KHÔNG viết '^0' hay '^o'.
+8. GÓC VÀ VECTƠ: DÙNG '\\\\widehat{ABC}' hoặc '\\\\angle A', và '\\\\vec{AB}' hoặc '\\\\overrightarrow{AB}'.
 `;
   }
 }

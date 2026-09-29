@@ -302,7 +302,9 @@ export function cleanLatexForDocx(latex: string): string {
   str = str.replace(/\\vdots\b/g, '⋮').replace(/\\cdots\b/g, '⋯').replace(/\\ldots\b/g, '…').replace(/\\dots\b/g, '…').replace(/\\ddots\b/g, '⋱');
   str = str.replace(/\\mid\b/g, '|').replace(/\\nmid\b/g, '∤').replace(/\\div\b/g, '÷');
   str = str.replace(/\\triangle\b/g, '△').replace(/\\cong\b/g, '≅').replace(/\\equiv\b/g, '≡');
-  str = str.replace(/\\(Leftrightarrow|Rightarrow|rightarrow|to)/g, '⇔');
+  str = str.replace(/\\Leftrightarrow/g, '⇔');
+  str = str.replace(/\\Rightarrow/g, '⇒');
+  str = str.replace(/\\(rightarrow|to)/g, '→');
   str = str.replace(/\\forall/g, '∀').replace(/\\exists/g, '∃');
   str = str.replace(/\\([a-zA-Z]+)/g, '$1');
   return str;
@@ -985,7 +987,7 @@ function processPlainPart(plain: string): string {
   });
 
   // 8c. Bọc độc lập các biểu thức/lệnh LaTeX còn sót lại chưa được bọc $...$
-  const discreteLatexRegex = /(\\d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\sqrt\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\widehat\{[^{}]+\}|\\vec\{[^{}]+\}|\\mathbb\{[^{}]+\}|\\Delta\s*[A-Z0-9_\']+|\\(alpha|beta|gamma|delta|epsilon|theta|lambda|pi|sigma|phi|omega|Omega|angle|triangle|sim|perp|parallel|cong|equiv|le|geq|leq|ge|neq|approx|degree|cdot|times|pm|div|xrightleftharpoons|xrightarrow|xleftarrow|rightleftharpoons|uparrow|downarrow|Rightarrow|Leftarrow|Leftrightarrow)\b)/g;
+  const discreteLatexRegex = /(\\d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\sqrt(?:\[[^\]]*\])?\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\widehat\{[^{}]+\}|\\vec\{[^{}]+\}|\\mathbb\{[^{}]+\}|\\Delta\s*[A-Z0-9_\']+|\\(alpha|beta|gamma|delta|epsilon|theta|lambda|pi|sigma|phi|omega|Delta|Omega|angle|triangle|sim|perp|parallel|cong|equiv|le|geq|leq|ge|neq|approx|degree|cdot|vdots|times|pm|div|xrightleftharpoons|xrightarrow|xleftarrow|rightleftharpoons|uparrow|downarrow|Rightarrow|Leftarrow|Leftrightarrow|in|notin|subset|subseteq|cup|cap|emptyset|mid|forall|exists|sum|int|lim|log|ln|infty)\b)/g;
 
   str = str.replace(discreteLatexRegex, (match) => {
     const trimmed = match.trim();
@@ -1006,17 +1008,57 @@ export function sanitizeLatexControlChars(text: string): string {
   if (!text) return text;
   let str = text;
 
-  // 1. Khôi phục các ký tự điều khiển ASCII do JSON.parse lỡ chuyển đổi từ \b, \f, \t, \r
-  str = str.replace(/\x08(egin|ar|eta|ox|ullet|inom|old|box)/g, '\\$1');
-  str = str.replace(/\x08([a-zA-Z]+)/g, '\\$1');
+  // 1. Khôi phục các ký tự điều khiển ASCII do JSON.parse chuyển đổi nhầm từ \b, \f, \t, \r, \n
+  // 1a. \x08 (Backspace) ban đầu là lệnh \b
+  str = str.replace(/\x08egin\b/g, '\\begin');
+  str = str.replace(/\x08ar\b/g, '\\bar');
+  str = str.replace(/\x08eta\b/g, '\\beta');
+  str = str.replace(/\x08inom\b/g, '\\binom');
+  str = str.replace(/\x08ox\b/g, '\\box');
+  str = str.replace(/\x08ullet\b/g, '\\bullet');
+  str = str.replace(/\x08old\b/g, '\\bold');
+  str = str.replace(/\x08matrix\b/g, '\\bmatrix');
+  str = str.replace(/\x08([a-zA-Z]+)/g, '\\b$1');
   str = str.replace(/\x08/g, ' ');
 
-  str = str.replace(/\x0C(rac|lat|rown|forall)/g, '\\$1');
-  str = str.replace(/\x0C([a-zA-Z]+)/g, '\\$1');
+  // 1b. \x0C (Form Feed) ban đầu là lệnh \f
+  str = str.replace(/\x0Crac\b/g, '\\frac');
+  str = str.replace(/\x0Clat\b/g, '\\flat');
+  str = str.replace(/\x0Corall\b/g, '\\forall');
+  str = str.replace(/\x0C([a-zA-Z]+)/g, '\\f$1');
   str = str.replace(/\x0C/g, '');
 
-  str = str.replace(/\t(ext|heta|imes|an|au|ilde|riangle)\b/g, '\\$1');
-  str = str.replace(/\r(ight|ho|eal|ightarrow)\b/g, '\\$1');
+  // 1c. \x09 (\t - Tab) ban đầu là lệnh \t
+  str = str.replace(/\x09ext\b|\text\b/g, '\\text');
+  str = str.replace(/\x09heta\b|\theta\b/g, '\\theta');
+  str = str.replace(/\x09imes\b|\times\b/g, '\\times');
+  str = str.replace(/\x09an\b|\tan\b/g, '\\tan');
+  str = str.replace(/\x09au\b|\tau\b/g, '\\tau');
+  str = str.replace(/\x09ilde\b|\tilde\b/g, '\\tilde');
+  str = str.replace(/\x09riangle\b|\triangle\b/g, '\\triangle');
+  str = str.replace(/\t(ext|heta|imes|an|au|ilde|riangle)\b/g, (m, p1) => '\\t' + p1);
+
+  // 1d. \x0D (\r - Carriage Return) ban đầu là lệnh \r
+  str = str.replace(/\x0Dightarrow\b|\rightarrow\b/g, '\\rightarrow');
+  str = str.replace(/\x0Dight\b|\right\b/g, '\\right');
+  str = str.replace(/\x0Dho\b|\rho\b/g, '\\rho');
+  str = str.replace(/\x0Deal\b|\real\b/g, '\\real');
+  str = str.replace(/\r(ight|ho|eal|ightarrow)\b/g, (m, p1) => '\\r' + p1);
+
+  // 1e. \x0A (\n - Newline) dính vào các lệnh LaTeX bắt đầu bằng n
+  str = str.replace(/\n\s*eq\b/g, '\\neq');
+  str = str.replace(/\n\s*notin\b/g, '\\notin');
+  str = str.replace(/\n\s*abla\b/g, '\\nabla');
+
+  // 1f. Khắc phục các lệnh LaTeX bị mất chữ cái đầu do lỗi parsing trước đây
+  str = str.replace(/\\rac(?=\{|\s|[0-9a-zA-Z])/g, '\\frac');
+  str = str.replace(/\\egin\{/g, '\\begin{');
+  str = str.replace(/\\riangle\b/g, '\\triangle');
+  str = str.replace(/\\imes\b/g, '\\times');
+  str = str.replace(/\\ext\{/g, '\\text{');
+  str = str.replace(/\\heta\b/g, '\\theta');
+  str = str.replace(/\\ight\b/g, '\\right');
+  str = str.replace(/\\ightarrow\b/g, '\\rightarrow');
 
   // 2. Làm sạch TeX accent và chuyển đổi sang Unicode tiếng Việt chuẩn
   str = cleanTexVietnameseAccents(str);
@@ -1025,7 +1067,14 @@ export function sanitizeLatexControlChars(text: string): string {
   str = str.replace(/(^|[^\\])\b(begin|end)\{(cases|aligned|array|matrix|pmatrix|bmatrix)\}/g, '$1\\$2{$3}');
 
   // 4. Sửa các lệnh LaTeX phổ biến bị mất dấu \ phía trước
-  str = str.replace(/(^|[^\\a-zA-Z])\b(mathbb|sqrt|d?frac|widehat|overline|vec|Delta|alpha|beta|gamma|delta|epsilon|theta|lambda|pi|sigma|phi|omega|Omega|angle|triangle|cong|equiv|approx|degree|Leftrightarrow|Rightarrow|rightarrow|forall|exists|notin|xrightleftharpoons|xrightarrow|xleftarrow|rightleftharpoons|uparrow|downarrow)\b/g, '$1\\$2');
+  str = str.replace(/(^|[^\\a-zA-Z])\b(mathbb|sqrt|d?frac|widehat|overline|vec|Delta|alpha|beta|gamma|delta|epsilon|theta|lambda|pi|sigma|phi|omega|Omega|angle|triangle|cong|equiv|approx|degree|Leftrightarrow|Rightarrow|rightarrow|forall|exists|notin|xrightleftharpoons|xrightarrow|xleftarrow|rightleftharpoons|uparrow|downarrow|cdot|vdots|times|parallel|perp|sim|pm|neq|leq|geq|subset|subseteq|cup|cap|emptyset)\b/g, '$1\\$2');
+
+  // 5. Chuẩn hóa góc: 60°, 60\circ, 60^o, 60^0 -> 60^\circ
+  str = str.replace(/(\d+)\s*(?:°|\\\^?\{?circ\}?|\^\s*[0o]\b)/g, '$1^\\circ');
+
+  // 6. Chuẩn hóa vectơ và góc: \vec AB -> \vec{AB}, \widehat ABC -> \widehat{ABC}
+  str = str.replace(/\\vec\s+([A-Z]{1,2})\b/g, '\\vec{$1}');
+  str = str.replace(/\\widehat\s+([A-Z]{2,4})\b/g, '\\widehat{$1}');
 
   return str;
 }
@@ -1035,10 +1084,16 @@ export function fixCasesLatex(rawText: string): string {
   let str = sanitizeLatexControlChars(rawText);
 
   // 1. Chuyển các ký hiệu hệ phương trình gõ dạng { eq1 ; eq2 } hoặc \{ eq1 ; eq2 \} hoặc { eq1 \\ eq2 } thành \begin{cases} eq1 \\ eq2 \end{cases}
+  // LƯU Ý: Không chuyển nếu đây là biểu diễn TẬP HỢP (chứa \in, \notin, \mid, \subset, \cap, \cup...)
   str = str.replace(/\\?\{\s*([^{}]+?)\s*\\?\}/g, (m, inner) => {
     const trimmed = inner.trim();
     if (/^(text|frac|dfrac|sqrt|widehat|hat|vec|mathbb|mathrm|mathbf|mathit)\b/.test(trimmed)) {
       return m;
+    }
+
+    // Nếu chứa các ký hiệu tập hợp thì giữ nguyên dạng tập hợp \{ ... \}
+    if (/(\\in|\\notin|\\mid|\\subset|\\subseteq|\\cup|\\cap|\\setminus)\b/.test(trimmed)) {
+      return `\\{ ${trimmed} \\}`;
     }
 
     const hasEq = /=|>|<|\\le|\\ge|\\neq/.test(trimmed);
@@ -1087,23 +1142,27 @@ export function fixCasesLatex(rawText: string): string {
 export function autoWrapUnwrappedLatex(text: string): string {
   if (!text) return text;
 
-  // 0. Phục hồi và làm sạch các ký tự điều khiển ASCII, TeX accents và backslash bị thiếu
-  let cleanedText = sanitizeLatexControlChars(text);
+  // 0. Chuẩn hóa trước các ký hiệu \[ ... \] -> $$ ... $$ và \( ... \) -> $ ... $
+  let cleanedText = text.replace(/\\\[([\s\S]*?)\\\]/g, '$$$$1$$$');
+  cleanedText = cleanedText.replace(/\\\(([\s\S]*?)\\\)/g, '$$$1$');
 
-  // 1. Tự động sửa và chuẩn hóa cú pháp hệ phương trình
+  // 1. Phục hồi và làm sạch các ký tự điều khiển ASCII, TeX accents và backslash bị thiếu
+  cleanedText = sanitizeLatexControlChars(cleanedText);
+
+  // 2. Tự động sửa và chuẩn hóa cú pháp hệ phương trình
   cleanedText = fixCasesLatex(cleanedText);
 
-  // 2. Tự động bọc $$...$$ cho các môi trường LaTeX nhiều dòng như \begin{cases} ... \end{cases} chưa bọc $ hoặc $$
+  // 3. Tự động bọc $$...$$ cho các môi trường LaTeX nhiều dòng như \begin{cases} ... \end{cases} chưa bọc $ hoặc $$
   cleanedText = cleanedText.replace(
     /(^|[^\$])(\\begin\{(cases|aligned|array|matrix|pmatrix|bmatrix)\}[\s\S]*?\\end\{\3\})([^\$]|$)/g,
     (m, p1, p2, p3, p4) => `${p1} $$${p2}$$ ${p4}`
   );
 
-  // 3. Tách bóc các từ tiếng Việt ra khỏi những khối $...$ bị bọc nhầm
+  // 4. Tách bóc các từ tiếng Việt ra khỏi những khối $...$ bị bọc nhầm
   cleanedText = unwrapVietnameseFromMathBlocks(cleanedText);
 
-  // 4. Tách text thành các khối đã bọc sẵn ($...$, $$...$$, \(...\), \[...\]) và phần text thường
-  const mathBlockRegex = /(\$\$.*?\$\$|\$.*?\$|\\\[.*?\\\]|\\\([^\)]*\\\))/gs;
+  // 5. Tách text thành các khối đã bọc sẵn ($...$, $$...$$) và phần text thường
+  const mathBlockRegex = /(\$\$.*?\$\$|\$.*?\$)/gs;
   const parts: string[] = [];
   let lastIdx = 0;
   let match: RegExpExecArray | null;
@@ -1112,7 +1171,13 @@ export function autoWrapUnwrappedLatex(text: string): string {
     if (match.index > lastIdx) {
       parts.push(processPlainPart(cleanedText.substring(lastIdx, match.index)));
     }
-    parts.push(match[0]);
+    // Chuẩn hóa nội dung bên trong khối math
+    let mathInner = match[0];
+    // Chuẩn hóa dấu nhân * thành \cdot trong biểu thức toán
+    mathInner = mathInner.replace(/([0-9a-zA-Z\)])\s*\*\s*([0-9a-zA-Z\(])/g, '$1 \\cdot $2');
+    // Chuẩn hóa tập hợp bare curly braces: A = {1; 2; 3} -> A = \{1; 2; 3\}
+    mathInner = mathInner.replace(/=\s*\{\s*([^{}]+?)\s*\}/g, '= \\{ $1 \\}');
+    parts.push(mathInner);
     lastIdx = mathBlockRegex.lastIndex;
   }
   if (lastIdx < cleanedText.length) {

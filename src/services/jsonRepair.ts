@@ -3,8 +3,15 @@
  * Tự chủ 100%, chống mọi lỗi escape LaTeX, ký tự điều khiển, ngắt dòng và ngoặc nhọn.
  */
 
-// Danh sách các lệnh LaTeX phổ biến thường bắt đầu bằng các chữ cái escape của JSON (b, f, n, r, t, u)
-const LATEX_COMMAND_STARTS_WITH_ESCAPE_CHAR = /^(?:frac|dfrac|cfrac|text|textbf|textit|textrm|texttt|times|theta|tau|to|tan|cot|cos|sec|csc|bar|beta|begin|bold|bullet|right|rho|rangle|rfloor|rceil|ne|neq|nabla|notin|ni|nu|underline|uparrow|Uparrow|union|upsilon|Upsilon|underbrace|overbrace|overline)\b/i;
+// Danh sách toàn diện các lệnh LaTeX bắt đầu bằng các chữ cái escape của JSON (b, f, n, r, t, u)
+const LATEX_COMMAND_STARTS_WITH_ESCAPE_CHAR = /^(?:frac|dfrac|cfrac|flat|forall|text|textbf|textit|textrm|texttt|times|theta|tau|to|tan|cot|cos|sec|csc|tilde|triangle|therefore|top|bar|beta|begin|bold|bullet|binom|bmatrix|bmod|bigcap|bigcup|right|rho|rangle|rfloor|rceil|rightarrow|Rightarrow|rightharpoonup|real|ne|neq|nabla|notin|ni|nu|nleq|ngeq|nmid|underline|uparrow|Uparrow|union|upsilon|Upsilon|underbrace|overbrace|overline)\b/i;
+
+// Kiểm tra xem chuỗi có chứa lệnh LaTeX chưa được escape dấu gạch chéo kép \\ hay không
+function containsUnescapedLatexBackslash(str: string): boolean {
+  return /(?:[^\\]|^)\\(?:frac|dfrac|cfrac|sqrt|text|textbf|textit|mathrm|times|theta|tau|to|tan|cot|cos|sec|csc|tilde|triangle|bar|beta|begin|bold|bullet|binom|right|rho|ne|neq|notin|nabla|alpha|gamma|delta|epsilon|lambda|pi|sigma|phi|omega|Delta|Omega|angle|cdot|vdots|parallel|perp|sim|pm|div|left|mid|in|subset|subseteq|cup|cap|emptyset|le|ge|leq|geq|forall|exists|degree)\b/i.test(
+    str
+  );
+}
 
 /**
  * Chuẩn hóa và làm sạch chuỗi JSON thô từ AI
@@ -45,12 +52,15 @@ export function repairJsonString(rawText: string): string {
     str = str.substring(startIdx, endIdx + 1);
   }
 
-  // Thử parse nhanh
-  try {
-    JSON.parse(str);
-    return str;
-  } catch {
-    // Tiếp tục tiến trình sửa chữa chi tiết
+  // Thử parse nhanh CHỈ KHI chuỗi không chứa lệnh LaTeX với single-backslash
+  // (tránh trường hợp \f bị JSON.parse biến thành FormFeed \x0C, \b thành Backspace \x08, \t thành Tab...)
+  if (!containsUnescapedLatexBackslash(str)) {
+    try {
+      JSON.parse(str);
+      return str;
+    } catch {
+      // Tiếp tục tiến trình sửa chữa chi tiết
+    }
   }
 
   // 3. State-Machine Lexer để xử lý escape LaTeX và chuỗi string an toàn
@@ -281,11 +291,13 @@ function extractFallbackExamData(rawText: string): any {
 export function safeJsonParse<T = any>(rawText: string): T {
   if (!rawText || !rawText.trim()) throw new Error('Dữ liệu JSON phản hồi rỗng.');
 
-  // Pass 1: Parse trực tiếp nếu chuỗi đã là JSON chuẩn
-  try {
-    return JSON.parse(rawText.trim());
-  } catch {
-    // Tiếp tục Pass 2
+  // Pass 1: Parse trực tiếp CHỈ KHI chuỗi không chứa lệnh LaTeX với single-backslash
+  if (!containsUnescapedLatexBackslash(rawText)) {
+    try {
+      return JSON.parse(rawText.trim());
+    } catch {
+      // Tiếp tục Pass 2
+    }
   }
 
   // Pass 2: Sử dụng State-Machine Repair Engine
