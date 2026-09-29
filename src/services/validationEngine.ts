@@ -1,5 +1,6 @@
 import { ExamMetadata, MatrixRow, Question, SpecRow } from '../types';
 import { safeJsonParse } from './jsonRepair';
+import { autoAssignQuestionsAndCompetencies } from '../utils/competencies';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -244,16 +245,18 @@ export class ValidationEngine {
         part4: s.part4 || { remember: 0, understand: 0, apply: 0, advanced: 1 },
         totalPoints: typeof s.totalPoints === 'number' ? s.totalPoints : 2.0,
         cellTexts: s.cellTexts || undefined,
-        competency: s.competency || 'NL_gqvđ',
+        competency: s.competency || 'Tư duy và lập luận toán học',
       };
     });
+
+    const finalizedSpec = autoAssignQuestionsAndCompetencies(repairedSpec, metadata.subject || 'Toán');
 
     return {
       isValid: errors.length === 0,
       errors,
       warnings,
       matrix: repairedMatrix,
-      specification: repairedSpec,
+      specification: finalizedSpec,
       questions: repairedQuestions,
     };
   }

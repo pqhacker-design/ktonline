@@ -28,6 +28,7 @@ import {
 import { ExamMetadata, ExamPackage, MatrixRow, Question, SpecRow, getCognitiveTag, getSpecRowQuestionDetails } from '../types';
 import { DiagramEngine } from './diagramEngine';
 import { OFFICIAL_MATRIX_FOOTNOTES, OFFICIAL_SPEC_FOOTNOTES } from './officialTemplateData';
+import { getCompetencyFullName } from '../utils/competencies';
 
 /**
  * Sinh khối tiêu đề bài thi / đáp án chuẩn bộ mẫu hành chính cho Word (.docx)
@@ -1977,14 +1978,35 @@ export function buildSpecDocxTable(specification: SpecRow[], metadata?: ExamMeta
     const customText = row.cellTexts?.[cellKey];
     if (customText) {
       const lines = customText.split('\n');
-      return lines.map(
-        (l) =>
+      const qText = lines[0] || '';
+      const nlText = lines.slice(1).join(' ') || '';
+
+      const paras: Paragraph[] = [
+        new Paragraph({
+          children: [new TextRun({ text: qText, font: 'Times New Roman', size: 16, bold: true })],
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 8, after: nlText ? 2 : 8 },
+        }),
+      ];
+
+      if (nlText) {
+        paras.push(
           new Paragraph({
-            children: [new TextRun({ text: l, font: 'Times New Roman', size: 17, bold: true })],
+            children: [
+              new TextRun({
+                text: nlText.startsWith('(') ? nlText : `(${nlText})`,
+                font: 'Times New Roman',
+                size: 14,
+                italics: true,
+                color: '006666',
+              }),
+            ],
             alignment: AlignmentType.CENTER,
-            spacing: { before: 10, after: 10 },
+            spacing: { before: 2, after: 8 },
           })
-      );
+        );
+      }
+      return paras;
     }
 
     const part = row[partKey];
@@ -1996,24 +2018,33 @@ export function buildSpecDocxTable(specification: SpecRow[], metadata?: ExamMeta
     if (num > 0) {
       const paras = [
         new Paragraph({
-          children: [new TextRun({ text: `(${num})`, font: 'Times New Roman', size: 17, bold: true })],
+          children: [new TextRun({ text: num === 1 ? '1 câu' : `${num} câu`, font: 'Times New Roman', size: 16, bold: true })],
           alignment: AlignmentType.CENTER,
-          spacing: { before: 10, after: 5 },
+          spacing: { before: 8, after: 2 },
         }),
       ];
-      if (row.competency) {
+      const compName = getCompetencyFullName(row.competency, metadata.subject);
+      if (compName) {
         paras.push(
           new Paragraph({
-            children: [new TextRun({ text: `(${row.competency})⁶`, font: 'Times New Roman', size: 16, italics: true })],
+            children: [
+              new TextRun({
+                text: `(${compName})`,
+                font: 'Times New Roman',
+                size: 14,
+                italics: true,
+                color: '006666',
+              }),
+            ],
             alignment: AlignmentType.CENTER,
-            spacing: { before: 0, after: 10 },
+            spacing: { before: 2, after: 8 },
           })
         );
       }
       return paras;
     }
 
-    return [new Paragraph({ children: [new TextRun({ text: '', size: 17, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })];
+    return [new Paragraph({ children: [new TextRun({ text: '-', size: 16, font: 'Times New Roman', color: '888888' })], alignment: AlignmentType.CENTER })];
   };
 
   const dataRows = specification.map((row) => {

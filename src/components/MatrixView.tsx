@@ -350,16 +350,16 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 lg:p-10 shadow-lg border border-slate-200 dark:border-slate-800 overflow-x-auto text-slate-900 dark:text-slate-100">
         {/* Document Header Title matching image */}
         <div className="text-center mb-6">
-          <h1 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white uppercase tracking-wider font-serif">
+          <h1 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white uppercase tracking-normal font-document">
             1. MA TRẬN ĐỀ KIỂM TRA ĐỊNH KÌ
           </h1>
-          <div className="text-xs text-slate-500 font-serif italic mt-1">
+          <div className="text-xs text-slate-600 dark:text-slate-400 font-document italic mt-1">
             Môn: {metadata.subject} - Lớp {metadata.grade} ({metadata.schoolYear || '2026 - 2027'})
           </div>
         </div>
 
         {/* 19-Column Matrix Table */}
-        <table className="w-full text-xs text-left border-collapse border border-black dark:border-slate-600 font-serif">
+        <table className="w-full text-xs text-left border-collapse border border-black dark:border-slate-600 font-document table-document">
           <thead>
             {/* Header Row 1 */}
             <tr className="text-black dark:text-white font-bold text-center bg-slate-50 dark:bg-slate-800/80">
@@ -686,7 +686,7 @@ export const MatrixView: React.FC<MatrixViewProps> = ({
         </table>
 
         {/* Footnotes Section Below Table (Strictly Matching Image 1) */}
-        <div className="mt-8 pt-4 border-t border-slate-400 dark:border-slate-600 font-serif text-[11.5px] leading-relaxed text-slate-700 dark:text-slate-300 space-y-1.5 max-w-5xl">
+        <div className="mt-8 pt-4 border-t border-slate-400 dark:border-slate-600 font-document text-[11.5px] leading-relaxed text-slate-700 dark:text-slate-300 space-y-1.5 max-w-5xl">
           <div className="w-32 border-b-2 border-black dark:border-slate-400 mb-2"></div>
           {OFFICIAL_MATRIX_FOOTNOTES.map((fn, fIdx) => (
             <div key={fIdx} className="flex items-start space-x-1">

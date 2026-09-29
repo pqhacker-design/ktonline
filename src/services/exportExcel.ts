@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { ExamPackage, QuestionBankItem, getSpecRowQuestionDetails } from '../types';
 import { cleanLatexForDocx } from './exportDocx';
+import { getCompetencyFullName } from '../utils/competencies';
 
 export class ExportExcel {
   /**
@@ -185,18 +186,18 @@ export class ExportExcel {
         'Chủ đề/Chương': cleanLatexForDocx(row.topic),
         'Nội dung/đơn vị kiến thức': cleanLatexForDocx(row.subTopic),
         'Yêu cầu cần đạt': cleanLatexForDocx(row.requirements),
-        'Nhiều lựa chọn (Biết)': row.cellTexts?.p1_rem || (p1Biết > 0 ? `(${p1Biết})` : ''),
-        'Nhiều lựa chọn (Hiểu)': row.cellTexts?.p1_und || (p1Hiểu > 0 ? `(${p1Hiểu})` : ''),
-        'Nhiều lựa chọn (Vận dụng)': row.cellTexts?.p1_app || (p1VậnDụng > 0 ? `(${p1VậnDụng})` : ''),
-        '“Đúng – Sai” (Biết)': row.cellTexts?.p2_rem || (p2Biết > 0 ? `(${p2Biết})` : ''),
-        '“Đúng – Sai” (Hiểu)': row.cellTexts?.p2_und || (p2Hiểu > 0 ? `(${p2Hiểu})` : ''),
-        '“Đúng – Sai” (Vận dụng)': row.cellTexts?.p2_app || (p2VậnDụng > 0 ? `(${p2VậnDụng})` : ''),
-        'Trả lời ngắn (Biết)': row.cellTexts?.p3_rem || (p3Biết > 0 ? `(${p3Biết})` : ''),
-        'Trả lời ngắn (Hiểu)': row.cellTexts?.p3_und || (p3Hiểu > 0 ? `(${p3Hiểu})` : ''),
-        'Trả lời ngắn (Vận dụng)': row.cellTexts?.p3_app || (p3VậnDụng > 0 ? `(${p3VậnDụng})` : ''),
-        'Tự luận (Biết)': row.cellTexts?.p4_rem || (p4Biết > 0 ? `(${p4Biết})` : ''),
-        'Tự luận (Hiểu)': row.cellTexts?.p4_und || (p4Hiểu > 0 ? `(${p4Hiểu})` : ''),
-        'Tự luận (Vận dụng)': row.cellTexts?.p4_app || (p4VậnDụng > 0 ? `(${p4VậnDụng})` : ''),
+        'Nhiều lựa chọn (Biết)': row.cellTexts?.p1_rem || (p1Biết > 0 ? `${p1Biết === 1 ? '1 câu' : `${p1Biết} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Nhiều lựa chọn (Hiểu)': row.cellTexts?.p1_und || (p1Hiểu > 0 ? `${p1Hiểu === 1 ? '1 câu' : `${p1Hiểu} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Nhiều lựa chọn (Vận dụng)': row.cellTexts?.p1_app || (p1VậnDụng > 0 ? `${p1VậnDụng === 1 ? '1 câu' : `${p1VậnDụng} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        '“Đúng – Sai” (Biết)': row.cellTexts?.p2_rem || (p2Biết > 0 ? `${p2Biết === 1 ? '1 câu' : `${p2Biết} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        '“Đúng – Sai” (Hiểu)': row.cellTexts?.p2_und || (p2Hiểu > 0 ? `${p2Hiểu === 1 ? '1 câu' : `${p2Hiểu} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        '“Đúng – Sai” (Vận dụng)': row.cellTexts?.p2_app || (p2VậnDụng > 0 ? `${p2VậnDụng === 1 ? '1 câu' : `${p2VậnDụng} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Trả lời ngắn (Biết)': row.cellTexts?.p3_rem || (p3Biết > 0 ? `${p3Biết === 1 ? '1 câu' : `${p3Biết} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Trả lời ngắn (Hiểu)': row.cellTexts?.p3_und || (p3Hiểu > 0 ? `${p3Hiểu === 1 ? '1 câu' : `${p3Hiểu} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Trả lời ngắn (Vận dụng)': row.cellTexts?.p3_app || (p3VậnDụng > 0 ? `${p3VậnDụng === 1 ? '1 câu' : `${p3VậnDụng} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Tự luận (Biết)': row.cellTexts?.p4_rem || (p4Biết > 0 ? `${p4Biết === 1 ? '1 câu' : `${p4Biết} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Tự luận (Hiểu)': row.cellTexts?.p4_und || (p4Hiểu > 0 ? `${p4Hiểu === 1 ? '1 câu' : `${p4Hiểu} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
+        'Tự luận (Vận dụng)': row.cellTexts?.p4_app || (p4VậnDụng > 0 ? `${p4VậnDụng === 1 ? '1 câu' : `${p4VậnDụng} câu`}\n(${getCompetencyFullName(row.competency, metadata.subject)})` : ''),
       };
     });
 

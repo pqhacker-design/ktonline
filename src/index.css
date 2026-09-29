@@ -3,7 +3,36 @@
 @layer base {
   body {
     font-family: 'Be Vietnam Pro', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: normal;
+    word-spacing: normal;
   }
+}
+
+/* Chuẩn hóa font chữ tiếng Việt cho Ma trận, Bảng đặc tả và Văn bản Bộ GD&ĐT */
+.font-document,
+.font-serif {
+  font-family: "Times New Roman", "Times", "Noto Serif", serif !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Triệt tiêu lỗi khoảng cách ký tự tiếng Việt do tracking hoặc wrap */
+.table-document {
+  font-family: "Times New Roman", "Times", "Noto Serif", serif !important;
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  border-collapse: collapse;
+}
+
+.table-document th,
+.table-document td {
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+  text-rendering: optimizeLegibility;
 }
 
 /* Apple VisionOS & AI Dashboard Glassmorphism Utility Classes */
