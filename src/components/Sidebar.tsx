@@ -15,7 +15,6 @@ import {
   QrCode,
   School,
   Settings,
-  Shield,
   Sun,
   UserCheck,
   Users,
@@ -82,14 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'specification', label: 'Bảng đặc tả YCCĐ', icon: Layers },
     { id: 'bank', label: 'Ngân hàng câu hỏi', icon: BookOpen },
     { id: 'answers', label: 'Đáp án & Rubric', icon: CheckSquare },
-    { id: 'settings', label: 'Cài đặt hệ thống', icon: Settings, badge: 'API key' },
-    ...(isAdmin ? [{ 
-      id: 'user_management' as TabType, 
-      label: 'Quản trị hệ thống', 
-      icon: Shield, 
-      badge: 'ADMIN', 
-      glowColor: 'indigo' 
-    }] : []),
+    { id: 'settings', label: 'Cài đặt & API Key', icon: Settings, badge: 'API key' },
     { id: 'student_exam', label: 'Học sinh làm bài', icon: Laptop, badge: 'ONLINE', glowColor: 'indigo' },
   ];
 

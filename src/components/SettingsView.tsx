@@ -69,7 +69,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSaveSettings,
   onClearAllData,
 }) => {
-  const { user: authUser, updateProfile, role } = useAuth();
+  const { user: authUser, updateProfile, role, isAdmin } = useAuth();
   const [profileUsername, setProfileUsername] = useState(authUser?.username || '');
   const [profileDisplayName, setProfileDisplayName] = useState(authUser?.displayName || '');
   const [newProfilePassword, setNewProfilePassword] = useState('');
@@ -256,7 +256,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 flex items-center space-x-1">
             <Shield className="w-3 h-3 text-indigo-500" />
-            <span>Quản trị viên Hệ thống (Admin)</span>
+            <span>{isAdmin ? 'Quản trị viên (Admin)' : 'Tài khoản Giáo viên'}</span>
           </span>
         </div>
 
@@ -701,68 +701,70 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </button>
       </div>
 
-      {/* 9. Master Danger Zone - Wipe All System Data */}
-      <div className="bg-gradient-to-r from-rose-950/90 via-slate-900 to-rose-950/80 p-6 rounded-3xl border border-rose-800 shadow-2xl space-y-4 text-white">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-800/60 pb-3">
-          <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-2xl border border-rose-500/30">
-              <Flame className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="font-black text-lg text-rose-200">
-                  9. Xóa Tất Cả Dữ Liệu Hệ Thống
-                </h3>
-                <span className="text-[10px] bg-rose-900 text-rose-200 font-extrabold px-2 py-0.5 rounded-full border border-rose-700">
-                  Toàn Diện
-                </span>
+      {/* 9. Master Danger Zone - Wipe All System Data (Chỉ Quản Trị Viên mới thấy) */}
+      {isAdmin && (
+        <div className="bg-gradient-to-r from-rose-950/90 via-slate-900 to-rose-950/80 p-6 rounded-3xl border border-rose-800 shadow-2xl space-y-4 text-white">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-800/60 pb-3">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-rose-500/20 text-rose-400 rounded-2xl border border-rose-500/30">
+                <Flame className="w-6 h-6" />
               </div>
-              <p className="text-xs text-slate-300">
-                Xóa sạch toàn bộ dữ liệu Cloud Firestore (đề thi, bài nộp, học sinh, giáo viên) và bộ nhớ máy.
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-black text-lg text-rose-200">
+                    9. Quản Trị Dữ Liệu: Xóa Sạch Hệ Thống
+                  </h3>
+                  <span className="text-[10px] bg-rose-900 text-rose-200 font-extrabold px-2 py-0.5 rounded-full border border-rose-700">
+                    Chỉ Admin
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Xóa sạch toàn bộ dữ liệu Cloud Firestore (đề thi, bài nộp, học sinh, giáo viên) và làm mới hệ thống.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSystemWipeConfirmText('');
+                setSystemWipeResult(null);
+                setSystemWipeMessage('');
+                setSystemWipeProgress(0);
+                setShowSystemWipeModal(true);
+              }}
+              className="px-5 py-3 bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-extrabold text-xs rounded-2xl shadow-xl shadow-rose-600/30 flex items-center justify-center space-x-2 transition-all active:scale-95 cursor-pointer shrink-0"
+            >
+              <AlertOctagon className="w-4 h-4 text-white" />
+              <span>Xóa Toàn Bộ Dữ Liệu Hệ Thống</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] text-slate-300">
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-rose-900/40 space-y-1">
+              <p className="font-bold text-rose-300 flex items-center space-x-1.5">
+                <Database className="w-3.5 h-3.5 text-rose-400" />
+                <span>Cloud Firestore</span>
               </p>
+              <p className="text-slate-400 text-[10px]">Xóa published_exams, student_results, system_classes, system_students, user_data</p>
+            </div>
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-rose-900/40 space-y-1">
+              <p className="font-bold text-emerald-300 flex items-center space-x-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Tài Khoản Quản Trị</span>
+              </p>
+              <p className="text-slate-400 text-[10px]">Tự động bảo lưu tài khoản Quản trị viên cấp cao (<code className="text-emerald-400">{authUser?.username || 'admin'}</code>)</p>
+            </div>
+            <div className="p-3 bg-slate-950/60 rounded-xl border border-rose-900/40 space-y-1">
+              <p className="font-bold text-cyan-300 flex items-center space-x-1.5">
+                <HardDrive className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Bộ Nhớ Trình Duyệt</span>
+              </p>
+              <p className="text-slate-400 text-[10px]">Làm sạch kho lưu trữ LocalStorage, lịch sử tạo đề và câu hỏi tạm</p>
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSystemWipeConfirmText('');
-              setSystemWipeResult(null);
-              setSystemWipeMessage('');
-              setSystemWipeProgress(0);
-              setShowSystemWipeModal(true);
-            }}
-            className="px-5 py-3 bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 text-white font-extrabold text-xs rounded-2xl shadow-xl shadow-rose-600/30 flex items-center justify-center space-x-2 transition-all active:scale-95 cursor-pointer shrink-0"
-          >
-            <AlertOctagon className="w-4 h-4 text-white" />
-            <span>Xóa Toàn Bộ Dữ Liệu Hệ Thống</span>
-          </button>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] text-slate-300">
-          <div className="p-3 bg-slate-950/60 rounded-xl border border-rose-900/40 space-y-1">
-            <p className="font-bold text-rose-300 flex items-center space-x-1.5">
-              <Database className="w-3.5 h-3.5 text-rose-400" />
-              <span>Cloud Firestore</span>
-            </p>
-            <p className="text-slate-400 text-[10px]">Xóa published_exams, student_results, system_classes, system_students, user_data</p>
-          </div>
-          <div className="p-3 bg-slate-950/60 rounded-xl border border-rose-900/40 space-y-1">
-            <p className="font-bold text-emerald-300 flex items-center space-x-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Tài Khoản Quản Trị</span>
-            </p>
-            <p className="text-slate-400 text-[10px]">Tự động bảo lưu/khôi phục tài khoản Admin <code className="text-emerald-400">pqhacker@gamil.com</code> (pass: <code className="text-emerald-400">Hungdiemly300506</code>)</p>
-          </div>
-          <div className="p-3 bg-slate-950/60 rounded-xl border border-rose-900/40 space-y-1">
-            <p className="font-bold text-cyan-300 flex items-center space-x-1.5">
-              <HardDrive className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Bộ Nhớ Trình Duyệt</span>
-            </p>
-            <p className="text-slate-400 text-[10px]">Làm sạch kho lưu trữ LocalStorage, lịch sử tạo đề và câu hỏi tạm</p>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Confirmation Modal for Clear LocalStorage */}
       {showClearConfirmModal && (

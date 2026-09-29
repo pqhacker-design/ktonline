@@ -704,7 +704,7 @@ export default function App() {
                   ? 'Đáp Án & Rubric Chấm Bài'
                   : activeTab === 'user_management'
                   ? 'Quản Lý Tài Khoản USER'
-                  : 'Cài Đặt Hệ Thống'
+                  : 'Cài Đặt & API Key'
               }
               subtitle="Đánh giá năng lực học sinh THCS & THPT toàn quốc"
               onOpenMobileMenu={() => setIsSidebarOpen(true)}

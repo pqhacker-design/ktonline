@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Download, FileCode, Menu, Sparkles, UserCheck, FileText, CheckCircle2, Share2, LogOut, Shield, KeyRound, AlertTriangle, Loader2, Check, Users, GraduationCap } from 'lucide-react';
+import { ChevronDown, Download, FileCode, Menu, Sparkles, UserCheck, FileText, CheckCircle2, Share2, LogOut, Shield, KeyRound, AlertTriangle, Loader2, Check } from 'lucide-react';
 import { AppSettings, ExamPackage } from '../types';
 import { useAuth } from '../auth/useAuth';
 
@@ -14,7 +14,6 @@ interface HeaderProps {
   onExportWord?: (mode?: 'full' | 'exams' | 'answers') => void;
   onExportPdf?: () => void;
   onExportExcel?: () => void;
-  onNavigateTab?: (tab: any) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,7 +26,6 @@ export const Header: React.FC<HeaderProps> = ({
   onExportWord,
   onExportPdf,
   onExportExcel,
-  onNavigateTab,
 }) => {
   const { user, role, isAdmin, logout, changePassword } = useAuth();
   const [isWordDropdownOpen, setIsWordDropdownOpen] = useState(false);
@@ -241,32 +239,18 @@ export const Header: React.FC<HeaderProps> = ({
                 {user?.displayName || user?.username || (isAdmin ? 'Quản trị viên' : 'Giáo viên')}
               </p>
               <div className="flex items-center justify-end space-x-1 mt-0.5">
-                {isAdmin ? (
-                  <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700">
-                    Quản Trị Viên
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-teal-950 text-teal-300 border border-teal-700">
-                    Giáo Viên
-                  </span>
-                )}
+                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700">
+                  {isAdmin ? 'Quản Trị Viên' : 'Giáo Viên'}
+                </span>
                 <span className="text-[10px] text-slate-500 truncate max-w-[120px] font-mono">{user?.username}</span>
               </div>
             </div>
 
             {/* Avatar */}
             <div className="relative">
-              <div className={`w-9 h-9 rounded-2xl p-[1.5px] shadow-sm ${
-                isAdmin 
-                  ? 'bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500' 
-                  : 'bg-gradient-to-br from-emerald-500 via-cyan-500 to-indigo-600'
-              }`}>
-                <div className="w-full h-full bg-white dark:bg-slate-900 rounded-[14px] flex items-center justify-center font-black text-xs">
-                  {isAdmin ? (
-                    <Shield className="w-4 h-4 text-indigo-400" />
-                  ) : (
-                    <GraduationCap className="w-4 h-4 text-emerald-400" />
-                  )}
+              <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-emerald-500 via-cyan-500 to-indigo-600 p-[1.5px] shadow-sm">
+                <div className="w-full h-full bg-white dark:bg-slate-900 rounded-[14px] flex items-center justify-center font-black text-xs text-emerald-500">
+                  <Shield className="w-4 h-4 text-indigo-400" />
                 </div>
               </div>
             </div>
@@ -285,34 +269,14 @@ export const Header: React.FC<HeaderProps> = ({
                   Tên ĐN: {user?.username}
                 </div>
                 <div className="pt-1 flex items-center space-x-1">
-                  {isAdmin ? (
-                    <span className="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-black px-2 py-0.5 rounded-md flex items-center space-x-1">
-                      <Shield className="w-3 h-3" />
-                      <span>Quản Trị Viên Hệ Thống</span>
-                    </span>
-                  ) : (
-                    <span className="text-[10px] bg-teal-500/20 text-teal-400 border border-teal-500/30 font-black px-2 py-0.5 rounded-md flex items-center space-x-1">
-                      <GraduationCap className="w-3 h-3" />
-                      <span>Giáo Viên Bộ Môn</span>
-                    </span>
-                  )}
+                  <span className="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-black px-2 py-0.5 rounded-md flex items-center space-x-1">
+                    <Shield className="w-3 h-3" />
+                    <span>{isAdmin ? 'Quản Trị Viên' : 'Tài Khoản Giáo Viên'}</span>
+                  </span>
                 </div>
               </div>
 
               <div className="border-t border-slate-200/60 dark:border-slate-800/80 pt-2 space-y-1">
-                {isAdmin && onNavigateTab && (
-                  <button
-                    onClick={() => {
-                      setIsUserMenuOpen(false);
-                      onNavigateTab('user_management');
-                    }}
-                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center space-x-2 transition-colors cursor-pointer"
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>Quản Trị Hệ Thống & Phân Quyền</span>
-                  </button>
-                )}
-
                 <button
                   onClick={() => {
                     setIsUserMenuOpen(false);
