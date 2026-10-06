@@ -81,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'specification', label: 'Bảng đặc tả YCCĐ', icon: Layers },
     { id: 'bank', label: 'Ngân hàng câu hỏi', icon: BookOpen },
     { id: 'answers', label: 'Đáp án & Rubric', icon: CheckSquare },
+    ...(isAdmin ? [{ id: 'user_management' as TabType, label: 'Quản trị người dùng', icon: Users, badge: 'ADMIN', glowColor: 'rose' }] : []),
     { id: 'settings', label: 'Cài đặt & API Key', icon: Settings, badge: 'API key' },
     { id: 'student_exam', label: 'Học sinh làm bài', icon: Laptop, badge: 'ONLINE', glowColor: 'indigo' },
   ];

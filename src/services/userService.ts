@@ -110,7 +110,7 @@ export const userService = {
   },
 
   /**
-   * Authenticate user with username/email & password
+   * Authenticate user with username/email & password (Instant response & resilient fallback)
    */
   async authenticateUser(usernameInput: string, passwordInput: string): Promise<AppUser> {
     const cleanUsername = usernameInput.trim().toLowerCase();
@@ -138,47 +138,92 @@ export const userService = {
         active: true,
         createdAt: new Date().toISOString(),
       };
-      // Trigger background sync to Firestore
+      // Non-blocking sync to server & Firestore
       this.ensureDefaultAdmin().catch(() => {});
+      fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: cleanUsername, password: cleanPassword })
+      }).catch(() => {});
       return defaultAdmin;
     }
 
-    // 1. Check doc ID directly (e.g. 'admin' or formatted doc ID)
     const formattedId = cleanUsername.replace(/[^a-zA-Z0-9]/g, '_');
-    const userDocRef = doc(db, USERS_COLLECTION, formattedId);
     let matchedUser: AppUser | null = null;
     let matchedId = '';
 
-    try {
-      const userDocSnap = await fetchWithTimeout(getDoc(userDocRef), 1500);
-      if (userDocSnap && userDocSnap.exists()) {
-        matchedUser = userDocSnap.data() as AppUser;
-        matchedId = userDocSnap.id;
+    // Step 0: Check in-memory & LocalStorage user cache FIRST (Instant 0ms, zero network delay!)
+    const cachedMatch = _cachedUsers.find((u) => {
+      const uName = (u.username || '').toLowerCase();
+      const uEmail = (u.email || '').toLowerCase();
+      const uId = (u.id || '').toLowerCase();
+      return uName === cleanUsername || uEmail === cleanUsername || uId === formattedId;
+    });
+
+    if (cachedMatch) {
+      matchedUser = cachedMatch;
+      matchedId = cachedMatch.id || formattedId;
+      // If password in cache matches, return immediately!
+      if (matchedUser.password === cleanPassword) {
+        if (matchedUser.active === false) {
+          throw new Error('Tài khoản này đã bị khóa hoặc chưa được kích hoạt bởi Admin.');
+        }
+        return matchedUser;
       }
-    } catch (e) {
-      // Silent catch
     }
 
+    // Step 1: Call Backend REST API (Ultra fast ~10ms, checks data/users.json)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: cleanUsername, password: cleanPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.user) {
+        matchedUser = data.user as AppUser;
+        matchedId = data.user.id || formattedId;
+        updateLocalUsersCache([matchedUser, ..._cachedUsers.filter((u) => u.id !== matchedId)]);
+        return matchedUser;
+      } else if (data.error && data.error.includes('khóa')) {
+        throw new Error(data.error);
+      }
+    } catch (apiErr: any) {
+      if (apiErr?.message && apiErr.message.includes('khóa')) {
+        throw apiErr;
+      }
+      // If server returned non-lock error, continue to Firestore fallback
+    }
+
+    // Step 2: Firestore fallback if server unreachable or offline
     if (!matchedUser) {
-      // 2. Query by username or email field
+      const userDocRef = doc(db, USERS_COLLECTION, formattedId);
       try {
-        const qUsername = query(collection(db, USERS_COLLECTION), where('username', '==', cleanUsername));
-        const qSnapUsername = await fetchWithTimeout(getDocs(qUsername), 1500);
-
-        if (qSnapUsername && !qSnapUsername.empty) {
-          matchedUser = qSnapUsername.docs[0].data() as AppUser;
-          matchedId = qSnapUsername.docs[0].id;
-        } else {
-          const qEmail = query(collection(db, USERS_COLLECTION), where('email', '==', cleanUsername));
-          const qSnapEmail = await fetchWithTimeout(getDocs(qEmail), 1500);
-
-          if (qSnapEmail && !qSnapEmail.empty) {
-            matchedUser = qSnapEmail.docs[0].data() as AppUser;
-            matchedId = qSnapEmail.docs[0].id;
-          }
+        const userDocSnap = await fetchWithTimeout(getDoc(userDocRef), 800);
+        if (userDocSnap && userDocSnap.exists()) {
+          matchedUser = userDocSnap.data() as AppUser;
+          matchedId = userDocSnap.id;
         }
-      } catch (e) {
-        // Silent catch
+      } catch (e) {}
+
+      if (!matchedUser) {
+        try {
+          const qUsername = query(collection(db, USERS_COLLECTION), where('username', '==', cleanUsername));
+          const qSnapUsername = await fetchWithTimeout(getDocs(qUsername), 800);
+
+          if (qSnapUsername && !qSnapUsername.empty) {
+            matchedUser = qSnapUsername.docs[0].data() as AppUser;
+            matchedId = qSnapUsername.docs[0].id;
+          } else {
+            const qEmail = query(collection(db, USERS_COLLECTION), where('email', '==', cleanUsername));
+            const qSnapEmail = await fetchWithTimeout(getDocs(qEmail), 800);
+
+            if (qSnapEmail && !qSnapEmail.empty) {
+              matchedUser = qSnapEmail.docs[0].data() as AppUser;
+              matchedId = qSnapEmail.docs[0].id;
+            }
+          }
+        } catch (e) {}
       }
     }
 
@@ -214,16 +259,21 @@ export const userService = {
       throw new Error('Tài khoản này đã bị khóa hoặc chưa được kích hoạt bởi Admin.');
     }
 
-    return {
+    const finalUser: AppUser = {
       ...matchedUser,
-      id: matchedId || 'admin',
+      id: matchedId || matchedUser.id || formattedId,
       username: matchedUser.username || matchedUser.email || cleanUsername,
       email: matchedUser.email || matchedUser.username || cleanUsername,
     };
+
+    // Update local cache so next actions/reloads are instant
+    updateLocalUsersCache([finalUser, ..._cachedUsers.filter((u) => u.id !== finalUser.id)]);
+
+    return finalUser;
   },
 
   /**
-   * Fetch single user profile by doc ID
+   * Fetch single user profile by doc ID with robust cache fallback
    */
   async getUserById(docId: string): Promise<AppUser | null> {
     if (docId === 'admin') {
@@ -239,21 +289,27 @@ export const userService = {
       };
     }
 
+    const cached = _cachedUsers.find((u) => u.id === docId || u.username === docId);
+
     try {
       const userDocRef = doc(db, USERS_COLLECTION, docId);
-      const snap = await fetchWithTimeout(getDoc(userDocRef), 1500);
+      const snap = await fetchWithTimeout(getDoc(userDocRef), 1000);
       if (snap && snap.exists()) {
         const data = snap.data() as AppUser;
-        return {
+        const freshUser: AppUser = {
           ...data,
           id: snap.id,
           username: data.username || data.email || snap.id,
           email: data.email || data.username || snap.id,
         };
+        updateLocalUsersCache([freshUser, ..._cachedUsers.filter((u) => u.id !== docId)]);
+        return freshUser;
       }
     } catch (err) {
       // Silent catch
     }
+
+    if (cached) return cached;
     return null;
   },
 
@@ -288,10 +344,18 @@ export const userService = {
       throw new Error('Mật khẩu mới không được trùng với mật khẩu hiện tại.');
     }
 
-    await updateDoc(userDocRef, {
-      password: cleanNew,
-      updatedAt: new Date().toISOString(),
-    });
+    try {
+      const writePromise = updateDoc(userDocRef, {
+        password: cleanNew,
+        updatedAt: new Date().toISOString(),
+      });
+      await Promise.race([
+        writePromise,
+        new Promise((resolve) => setTimeout(resolve, 800))
+      ]);
+    } catch (e) {
+      console.warn('Lỗi ghi Firestore password (tiếp tục chạy ngầm):', e);
+    }
   },
 
   /**
@@ -356,21 +420,6 @@ export const userService = {
       throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
     }
 
-    // 2. Safely check remote Firestore if online, without crashing if client is offline
-    const userDocRef = doc(db, USERS_COLLECTION, docId);
-    try {
-      const existingSnap = await fetchWithTimeout(getDoc(userDocRef), 1200);
-      if (existingSnap && existingSnap.exists()) {
-        throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
-      }
-    } catch (err: any) {
-      if (err?.message && err.message.includes('đã tồn tại')) {
-        throw err;
-      }
-      // Silently catch offline errors ("Failed to get document because the client is offline")
-      console.warn('Bỏ qua kiểm tra mạng Firestore (sử dụng cache & tiếp tục lưu):', err?.message || err);
-    }
-
     const appUserData: AppUser = {
       id: docId,
       username: cleanUsername,
@@ -382,18 +431,39 @@ export const userService = {
       createdAt: new Date().toISOString(),
     };
 
-    // Update local cache immediately so UI reflects the new user right away
+    // 2. Immediately update local cache so login and UI are instantaneous
     updateLocalUsersCache([appUserData, ..._cachedUsers.filter((u) => u.id !== docId)]);
 
-    // Write to Firestore (setDoc writes to local storage and syncs to server in background)
+    // 3. Register to backend server (/api/auth/register)
     try {
-      await setDoc(userDocRef, appUserData, { merge: true });
-    } catch (err: any) {
-      console.warn('Ghi nhận lưu Firestore (sẽ đồng bộ lại khi có kết nối):', err?.message || err);
-      if (err?.code === 'permission-denied') {
-        throw new Error('Bạn không có quyền thực hiện thao tác này.');
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanUsername,
+          password: newUser.password.trim(),
+          displayName: newUser.displayName || cleanUsername,
+          role: newUser.role,
+        })
+      });
+      const data = await res.json();
+      if (!res.ok && data.error) {
+        // Rollback local cache if server says duplicate
+        updateLocalUsersCache(_cachedUsers.filter((u) => u.id !== docId));
+        throw new Error(data.error);
       }
+    } catch (apiErr: any) {
+      if (apiErr?.message && apiErr.message.includes('đã tồn tại')) {
+        throw apiErr;
+      }
+      // If server is not responding (e.g. offline dev), continue with local cache & firestore
     }
+
+    // 4. Fire-and-forget sync to Firestore in background (non-blocking, never blocks user UI)
+    const userDocRef = doc(db, USERS_COLLECTION, docId);
+    setDoc(userDocRef, appUserData, { merge: true }).catch((err) => {
+      console.warn('Ghi nhận Firestore user chạy ngầm:', err?.message || err);
+    });
   },
 
   /**
@@ -449,7 +519,11 @@ export const userService = {
     updateLocalUsersCache(_cachedUsers.map((u) => u.id === docId ? { ...u, ...payload } : u));
 
     try {
-      await setDoc(userDocRef, payload, { merge: true });
+      const writePromise = setDoc(userDocRef, payload, { merge: true });
+      await Promise.race([
+        writePromise,
+        new Promise((resolve) => setTimeout(resolve, 800))
+      ]);
     } catch (err: any) {
       console.warn('Lỗi ghi Firestore (sẽ đồng bộ lại khi có kết nối):', err?.message || err);
       if (err?.code === 'permission-denied') {
@@ -531,7 +605,11 @@ export const userService = {
     updateLocalUsersCache(_cachedUsers.map((u) => u.id === docId ? { ...u, ...payload } : u));
 
     try {
-      await setDoc(userDocRef, payload, { merge: true });
+      const writePromise = setDoc(userDocRef, payload, { merge: true });
+      await Promise.race([
+        writePromise,
+        new Promise((resolve) => setTimeout(resolve, 800))
+      ]);
     } catch (err: any) {
       console.warn('Lỗi ghi Firestore profile:', err?.message || err);
     }

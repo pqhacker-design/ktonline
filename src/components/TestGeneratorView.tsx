@@ -23,6 +23,11 @@ import {
   ListPlus,
   ArrowUp,
   ArrowDown,
+  Compass,
+  Languages,
+  PenTool,
+  Bookmark,
+  Check,
 } from 'lucide-react';
 import { ApiKeyInputModal, QuotaExceededModal } from './ApiModals';
 import {
@@ -35,6 +40,7 @@ import {
   SubjectType,
   calculateExamScores,
 } from '../types';
+import { getSubjectProfile } from '../services/subjectProfiles';
 
 interface TestGeneratorViewProps {
   settings: AppSettings;
@@ -72,6 +78,19 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
   const [topicInput, setTopicInput] = useState('');
   const [showBulkTopicModal, setShowBulkTopicModal] = useState(false);
   const [bulkTopicText, setBulkTopicText] = useState('');
+
+  // Cấu hình đặc thù chuyên môn cho từng môn học
+  const [literatureGenre, setLiteratureGenre] = useState<'truyen' | 'tho' | 'nghi_luan' | 'thong_tin' | 'ky' | 'auto'>('truyen');
+  const [literatureEssayTopic, setLiteratureEssayTopic] = useState('');
+  const [englishLevel, setEnglishLevel] = useState<'A2' | 'B1' | 'B2' | 'auto'>('auto');
+  const [englishFocusAreas, setEnglishFocusAreas] = useState<string[]>([
+    'phonetics',
+    'grammar_vocab',
+    'reading_cloze',
+    'reading_comprehension',
+    'sentence_rewrite',
+  ]);
+  const [presetAppliedToast, setPresetAppliedToast] = useState(false);
 
   const handleAddTopic = () => {
     const val = topicInput.trim();
@@ -117,6 +136,38 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
     setBulkTopicText('');
     setShowBulkTopicModal(false);
   };
+
+  const handleApplySubjectPreset = (subj: SubjectType, targetGrade = grade) => {
+    const profile = getSubjectProfile(subj);
+    setDurationMinutes(profile.defaultDuration);
+    setExamMode(profile.defaultExamMode);
+    setQuestionCounts({ ...profile.recommendedQuestionCounts });
+    if (profile.sampleChaptersByGrade[targetGrade]) {
+      setChapterTitle(profile.sampleChaptersByGrade[targetGrade]);
+    }
+    if (profile.sampleTopicsByGrade[targetGrade]) {
+      setTopicsList([...profile.sampleTopicsByGrade[targetGrade]]);
+    }
+    setPresetAppliedToast(true);
+    setTimeout(() => setPresetAppliedToast(false), 3000);
+  };
+
+  const handleSubjectChange = (newSubj: SubjectType) => {
+    setSubject(newSubj);
+    handleApplySubjectPreset(newSubj, grade);
+  };
+
+  const handleGradeChange = (newGrade: string) => {
+    setGrade(newGrade);
+    const profile = getSubjectProfile(subject);
+    if (profile.sampleChaptersByGrade[newGrade]) {
+      setChapterTitle(profile.sampleChaptersByGrade[newGrade]);
+    }
+    if (profile.sampleTopicsByGrade[newGrade]) {
+      setTopicsList([...profile.sampleTopicsByGrade[newGrade]]);
+    }
+  };
+
   const [durationMinutes, setDurationMinutes] = useState(45);
   const [totalPoints, setTotalPoints] = useState(10);
   const [curriculum, setCurriculum] = useState<CurriculumType>('Kết nối tri thức với cuộc sống');
@@ -488,6 +539,12 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
       codeCount,
       referenceContext,
       referenceImages,
+      subjectSpecificConfig: {
+        literatureGenre,
+        literatureEssayTopic: literatureEssayTopic.trim(),
+        englishLevel,
+        englishFocusAreas,
+      },
     };
 
     try {
@@ -593,14 +650,19 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
               </label>
               <select
                 value={subject}
-                onChange={(e) => setSubject(e.target.value as SubjectType)}
+                onChange={(e) => handleSubjectChange(e.target.value as SubjectType)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none font-medium"
               >
                 <option value="Toán">Toán học</option>
                 <option value="Ngữ văn">Ngữ văn</option>
                 <option value="Tiếng Anh">Tiếng Anh</option>
-                <option value="KHTN">KHTN (Vật lí, Hóa học, Sinh học)</option>
-                <option value="Lịch sử và Địa lí">Lịch sử và Địa lí</option>
+                <option value="KHTN">KHTN (Khoa học tự nhiên THCS)</option>
+                <option value="Vật lí">Vật lí (THPT)</option>
+                <option value="Hóa học">Hóa học (THPT)</option>
+                <option value="Sinh học">Sinh học (THPT)</option>
+                <option value="Lịch sử và Địa lí">Lịch sử và Địa lí (THCS)</option>
+                <option value="Lịch sử">Lịch sử (THPT)</option>
+                <option value="Địa lí">Địa lí (THPT)</option>
                 <option value="GDCD / GDKT&PL">GDCD / GD Kinh tế & Pháp luật</option>
                 <option value="Tin học">Tin học</option>
                 <option value="Công nghệ">Công nghệ</option>
@@ -617,7 +679,7 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
               </label>
               <select
                 value={grade}
-                onChange={(e) => setGrade(e.target.value)}
+                onChange={(e) => handleGradeChange(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none font-medium"
               >
                 <option value="Khối 6">Khối 6 (THCS)</option>
@@ -1016,6 +1078,195 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
             </div>
           </div>
         </div>
+
+        {/* ĐẶC THÙ MÔN HỌC & TỐI ƯU HÓA AI (CHUẨN GDPT 2018) */}
+        {(() => {
+          const profile = getSubjectProfile(subject);
+          return (
+            <div className="bg-gradient-to-br from-indigo-950/20 via-slate-900/60 to-teal-950/20 dark:from-indigo-950/40 dark:via-slate-900/90 dark:to-teal-950/40 rounded-2xl p-6 shadow-sm border border-indigo-300/40 dark:border-indigo-800/60 space-y-5 relative overflow-hidden">
+              <div className="absolute top-0 right-0 -mt-10 -mr-10 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+
+              {/* Header with quick preset button */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-200/40 dark:border-indigo-900/50 pb-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-teal-500 p-0.5 text-white flex items-center justify-center shadow-md">
+                    {subject === 'Ngữ văn' ? (
+                      <PenTool className="w-5 h-5" />
+                    ) : subject === 'Tiếng Anh' ? (
+                      <Languages className="w-5 h-5" />
+                    ) : (
+                      <Sparkles className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                        Đặc Thù Môn {subject} (AI Tối Ưu Hóa GDPT 2018)
+                      </h3>
+                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-md bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                        {profile.category}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                      {profile.shortDesc}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleApplySubjectPreset(subject)}
+                    className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center space-x-1.5 cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Áp dụng cấu trúc chuẩn môn {subject}</span>
+                  </button>
+                  {presetAppliedToast && (
+                    <span className="text-xs text-emerald-500 font-bold flex items-center space-x-1 animate-fade-in">
+                      <Check className="w-4 h-4" />
+                      <span>Đã áp dụng!</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Subject Pedagogical Feature Badges */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                {profile.features.map((feat, fIdx) => (
+                  <div
+                    key={fIdx}
+                    className={`p-3 rounded-xl border text-xs flex items-start space-x-2 ${
+                      feat.highlight
+                        ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700/80 text-indigo-950 dark:text-indigo-200 font-medium'
+                        : 'bg-white/70 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700/60 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <Bookmark className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${feat.highlight ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                    <div>
+                      <div className="font-bold">{feat.label}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">{feat.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Ngữ văn Specific Controls */}
+              {subject === 'Ngữ văn' && (
+                <div className="pt-3 border-t border-indigo-200/40 dark:border-indigo-900/40 space-y-3 bg-indigo-50/40 dark:bg-slate-900/50 p-4 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40">
+                  <div className="flex items-center space-x-2 text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                    <PenTool className="w-4 h-4 text-indigo-500" />
+                    <span>Tùy Chọn Chuyên Sâu Cho Môn Ngữ Văn:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Thể loại ngữ liệu đọc hiểu ngoài SGK:
+                      </label>
+                      <select
+                        value={literatureGenre}
+                        onChange={(e) => setLiteratureGenre(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                      >
+                        <option value="truyen">Truyện ngắn / Trích đoạn tiểu thuyết / Truyện đồng thoại</option>
+                        <option value="tho">Thơ (Thơ tự do, 5 chữ, 7 chữ, lục bát...)</option>
+                        <option value="nghi_luan">Văn bản nghị luận xã hội / tư tưởng đạo lý</option>
+                        <option value="thong_tin">Văn bản thông tin nhật dụng / thuyết minh đời sống</option>
+                        <option value="ky">Ký / Tản văn / Tùy bút</option>
+                      </select>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        AI sẽ tìm hoặc sáng tác ngữ liệu mới ngoài SGK bám sát thể loại này kèm nguồn trích dẫn.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Định hướng chủ đề Làm văn / Nghị luận (Tùy chọn):
+                      </label>
+                      <input
+                        type="text"
+                        value={literatureEssayTopic}
+                        onChange={(e) => setLiteratureEssayTopic(e.target.value)}
+                        placeholder="VD: Bàn về lòng thấu cảm của giới trẻ / Khát vọng cống hiến..."
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                      />
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        Để trống nếu muốn AI tự động đề xuất vấn đề nghị luận sát với ngữ liệu đọc hiểu.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tiếng Anh Specific Controls */}
+              {subject === 'Tiếng Anh' && (
+                <div className="pt-3 border-t border-indigo-200/40 dark:border-indigo-900/40 space-y-3 bg-indigo-50/40 dark:bg-slate-900/50 p-4 rounded-xl border border-indigo-200/60 dark:border-indigo-800/40">
+                  <div className="flex items-center space-x-2 text-xs font-bold text-indigo-900 dark:text-indigo-200">
+                    <Languages className="w-4 h-4 text-indigo-500" />
+                    <span>Tùy Chọn Chuyên Sâu Cho Môn Tiếng Anh:</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Khung năng lực ngoại ngữ (CEFR Level):
+                      </label>
+                      <select
+                        value={englishLevel}
+                        onChange={(e) => setEnglishLevel(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                      >
+                        <option value="auto">Tự động điều chỉnh theo khối lớp ({grade})</option>
+                        <option value="A2">Cấp độ A2 (Cơ bản - THCS)</option>
+                        <option value="B1">Cấp độ B1 (Trung cấp - THCS cuối cấp / THPT)</option>
+                        <option value="B2">Cấp độ B2 (Khá - Giỏi THPT)</option>
+                      </select>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        Từ vựng và độ phức tạp cấu trúc câu sẽ được tinh chỉnh theo khung năng lực này.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Dạng bài kiểm tra trọng tâm:
+                      </label>
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {[
+                          { id: 'phonetics', label: 'Phát âm & Trọng âm' },
+                          { id: 'grammar_vocab', label: 'Từ vựng & Ngữ pháp' },
+                          { id: 'reading_cloze', label: 'Đọc điền từ (Cloze)' },
+                          { id: 'reading_comprehension', label: 'Đọc hiểu đoạn văn' },
+                          { id: 'sentence_rewrite', label: 'Viết lại câu' },
+                        ].map((area) => {
+                          const active = englishFocusAreas.includes(area.id);
+                          return (
+                            <button
+                              key={area.id}
+                              type="button"
+                              onClick={() => {
+                                setEnglishFocusAreas((prev) =>
+                                  active ? prev.filter((a) => a !== area.id) : [...prev, area.id]
+                                );
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                                active
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                              }`}
+                            >
+                              {area.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* 2. Chọn loại đề */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-xs border border-slate-200 dark:border-slate-800 space-y-4">

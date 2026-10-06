@@ -42,7 +42,7 @@ export class GeminiService {
   ): Promise<ExamPackage> {
     if (onProgress) onProgress('Đang tạo Prompt chuẩn Công văn 7991/BGDĐT...');
 
-    const systemInstruction = PromptEngine.getSystemInstruction();
+    const systemInstruction = PromptEngine.getSystemInstruction(metadata.subject);
     const prompt = PromptEngine.buildGenerationPrompt(metadata);
     const settings = StorageEngine.getSettings();
     const customApiKey = settings.customApiKey;

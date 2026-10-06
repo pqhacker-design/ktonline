@@ -8,6 +8,11 @@ export type SubjectType =
   | 'Ngữ văn'
   | 'Tiếng Anh'
   | 'KHTN'
+  | 'Vật lí'
+  | 'Hóa học'
+  | 'Sinh học'
+  | 'Lịch sử'
+  | 'Địa lí'
   | 'Lịch sử và Địa lí'
   | 'GDCD / GDKT&PL'
   | 'Tin học'
@@ -16,6 +21,29 @@ export type SubjectType =
   | 'Âm nhạc'
   | 'Giáo dục thể chất'
   | 'Khác';
+
+export interface SubjectSpecificConfig {
+  // Ngữ văn
+  literatureGenre?: 'truyen' | 'tho' | 'nghi_luan' | 'thong_tin' | 'ky' | 'auto';
+  literatureExcerptType?: 'ngoai_sgk' | 'trong_sgk' | 'tuy_chon';
+  literatureEssayTopic?: string;
+  literatureIncludeRubric5?: boolean;
+
+  // Tiếng Anh
+  englishLevel?: 'A2' | 'B1' | 'B2' | 'auto';
+  englishFocusAreas?: string[];
+  englishLanguageOnly?: boolean;
+  englishIncludeVietnameseExplanation?: boolean;
+
+  // Khoa học tự nhiên (Vật lí, Hóa học, Sinh học, KHTN)
+  scienceIupacNaming?: boolean;
+  scienceUnitStandardSI?: boolean;
+  scienceGeneticsFormat?: boolean;
+
+  // Lịch sử & Địa lí
+  historyChronology?: boolean;
+  geographyDataTables?: boolean;
+}
 
 export type CurriculumType =
   | 'Kết nối tri thức với cuộc sống'
@@ -163,6 +191,7 @@ export interface ExamMetadata {
   referenceContext?: string; // Giới hạn kiến thức / Mô tả nội dung bài học chi tiết từ SGK
   referenceImages?: string[]; // Danh sách ảnh đính kèm (SGK, trang sách, ảnh mục lục, v.v...)
   onlineExamCode?: string;   // Mã đề thi trực tuyến (nếu đã xuất bản)
+  subjectSpecificConfig?: SubjectSpecificConfig; // Cấu hình đặc thù chuyên môn theo từng môn học
 }
 
 export interface MCQOption {

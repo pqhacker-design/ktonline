@@ -7,12 +7,16 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   requiredRole?: 'admin' | 'user';
   fallback?: React.ReactNode;
+  onGoToStudentExam?: () => void;
 }
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
+  requiredRole,
+  fallback,
+  onGoToStudentExam,
 }) => {
-  const { user, loading } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
 
   if (loading) {
     return (
@@ -25,7 +29,23 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Not logged in
   if (!user) {
-    return <Login />;
+    return <Login onGoToStudentExam={onGoToStudentExam} />;
+  }
+
+  // Role requirement check
+  if (requiredRole === 'admin' && !isAdmin) {
+    if (fallback) return <>{fallback}</>;
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 text-center space-y-4">
+        <div className="w-14 h-14 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-center justify-center text-rose-400">
+          <ShieldAlert className="w-7 h-7" />
+        </div>
+        <h3 className="text-lg font-black text-white">Yêu Cầu Quyền Quản Trị Viên</h3>
+        <p className="text-xs text-slate-400 max-w-md">
+          Khu vực này chỉ dành cho Quản trị viên (Admin) quản lý người dùng và cấu hình hệ thống.
+        </p>
+      </div>
+    );
   }
 
   return <>{children}</>;

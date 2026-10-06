@@ -662,10 +662,14 @@ export default function App() {
         <div className="w-full min-h-screen">
           <StudentExamView
             initialCode={studentInitialCode}
+            onExit={() => {
+              setStudentInitialCode('');
+              setActiveTab(user ? 'dashboard' : 'generator');
+            }}
           />
         </div>
       ) : (
-        <ProtectedRoute>
+        <ProtectedRoute onGoToStudentExam={() => setActiveTab('student_exam')}>
           {/* Sidebar Navigation */}
           <Sidebar
             activeTab={activeTab}
@@ -717,6 +721,7 @@ export default function App() {
               onExportWord={(mode) => handleExportWord(mode)}
               onExportPdf={() => handleExportPdf()}
               onExportExcel={() => handleExportExcel()}
+              onNavigateTab={(tab) => setActiveTab(tab)}
             />
 
             <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">

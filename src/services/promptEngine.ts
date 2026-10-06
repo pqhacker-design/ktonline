@@ -1,10 +1,65 @@
-import { ExamMetadata } from '../types';
+import { ExamMetadata, SubjectType } from '../types';
+import { getSubjectProfile } from './subjectProfiles';
 
 export class PromptEngine {
   /**
-   * Tạo System Instruction chuẩn chuyên gia giáo dục Công văn 7991/BGDĐT
+   * Tạo System Instruction chuẩn chuyên gia giáo dục Công văn 7991/BGDĐT tối ưu hóa theo môn học
    */
-  static getSystemInstruction(): string {
+  static getSystemInstruction(subject?: SubjectType | string): string {
+    const isLiterature = subject === 'Ngữ văn';
+    const isEnglish = subject === 'Tiếng Anh';
+    const profile = subject ? getSubjectProfile(subject) : null;
+
+    let subjectSpecificCoreRules = '';
+
+    if (isLiterature) {
+      subjectSpecificCoreRules = `
+🎭 QUY TẮC CỐT LÕI ĐẶC THÙ CHO MÔN NGỮ VĂN (CHƯƠNG TRÌNH GDPT 2018):
+1. VĂN BẢN NGỮ LIỆU ĐỌC HIỂU:
+   - BẮT BUỘC dùng văn bản MỚI NGOÀI SÁCH GIÁO KHOA (đúng tinh thần đổi mới đánh giá của Bộ GD&ĐT).
+   - Thể loại: Truyện ngắn, thơ, tản văn, nghị luận xã hội hoặc văn bản thông tin nhật dụng giàu tính nhân văn.
+   - BẮT BUỘC ghi rõ NGUỒN TRÍCH DẪN: (Tên tác phẩm, tác giả, nhà xuất bản, năm xuất bản hoặc nguồn báo chí).
+   - Ngữ liệu được đưa vào phần mở đầu đề thi trong trường "content" của câu đầu tiên hoặc phần dẫn đề.
+2. CÁC CÂU HỎI ĐỌC HIỂU:
+   - Trải đều 4 mức độ nhận thức: Nhận biết (thể loại, chi tiết, phương thức biểu đạt, BPTT), Thông hiểu (ý nghĩa, tác dụng BPTT, tình cảm tác giả), Vận dụng (thông điệp, bài học cuộc sống, liên hệ).
+3. PHẦN VIẾT / TỰ LUẬN:
+   - Câu 1: Viết đoạn văn nghị luận xã hội khoảng 200 chữ về vấn đề tư tưởng đạo lý hoặc lối sống gợi ra từ ngữ liệu đọc hiểu.
+   - Câu 2: Viết bài văn hoàn chỉnh khoảng 600 chữ phân tích chủ đề & nghệ thuật của ngữ liệu hoặc bàn luận hiện tượng đời sống.
+4. BAREME RUBRIC 5 TIÊU CHÍ BỘ GD&ĐT:
+   - Bắt buộc đủ 5 tiêu chí: a) Cấu trúc đoạn/bài; b) Xác định đúng vấn đề; c) Triển khai luận điểm & dẫn chứng; d) Chính tả, ngữ pháp; e) Sáng tạo.
+5. TUYỆT ĐỐI KHÔNG DÙNG CÔNG THỨC TOÁN LATEX:
+   - Tuyệt đối không dùng dấu $ hoặc mã TeX. Chữ viết tiếng Việt có dấu chuẩn Unicode 100%.`;
+    } else if (isEnglish) {
+      subjectSpecificCoreRules = `
+🇬🇧 QUY TẮC CỐT LÕI ĐẶC THÙ CHO MÔN TIẾNG ANH (CEFR & CV 7991):
+1. 100% TIẾNG ANH CHUẨN MỰC:
+   - Toàn bộ câu hỏi, yêu cầu, đoạn văn đọc hiểu, và 4 phương án lựa chọn A, B, C, D BẮT BUỘC 100% BẰNG TIẾNG ANH TỰ NHIÊN, CHUẨN XÁC.
+   - Căn chỉnh độ khó theo khối lớp: THCS (A2 - B1), THPT (B1 - B2).
+2. DẠNG BÀI ĐẶC THÙ MÔN TIẾNG ANH:
+   - Phonetics: Phát âm (-s/es, -ed, nguyên âm) & Trọng âm (2-3 âm tiết).
+   - Lexico-Grammar: Thì động từ, câu bị động, câu điều kiện, mệnh đề quan hệ, phrasal verbs, collocations.
+   - Everyday Communication: Tình huống giao tiếp hàng ngày.
+   - Synonyms & Antonyms: CLOSEST and OPPOSITE in meaning.
+   - Guided Cloze Test: Bài đọc điền từ vào chỗ trống trong đoạn văn 150-200 từ.
+   - Reading Comprehension: Đoạn văn đọc hiểu 200-350 từ bám sát chủ đề với các câu hỏi: Main idea, Detail, Vocabulary in context, Inference, Pronoun reference.
+   - Writing / Sentence Transformation: Viết lại câu không đổi nghĩa.
+3. HƯỚNG DẪN GIẢI SONG NGỮ:
+   - Trong trường "explanation", cung cấp dịch nghĩa tiếng Việt và phân tích ngữ pháp chi tiết để giáo viên & học sinh dễ đối chiếu.
+4. TUYỆT ĐỐI KHÔNG dùng ký hiệu công thức LaTeX $.`;
+    } else {
+      subjectSpecificCoreRules = `
+📐 QUY TẮC CÔNG THỨC TOÁN HỌC, HÓA HỌC & TIẾNG VIỆT (BẮT BUỘC TUÂN THỦ 100%):
+1. CHỈ bọc KÝ HIỆU HOẶC BIỂU THỨC TOÁN HỌC / HÓA HỌC bằng dấu $...$ (ví dụ: $\\Delta ABC$, $AB = 4\\text{ cm}$, $\\widehat{A} = 60^\\circ$, $k = \\frac{2}{3}$, $\\forall x \\in \\mathbb{R}$).
+2. MỌI CÔNG THỨC HÓA HỌC ($C_2H_5OH$, $CH_3COOH$, $H_2SO_4$, $CO_2$, $H_2O$, $NaHCO_3$), PHƯƠNG TRÌNH HÓA HỌC VÀ ĐẠI LƯỢNG $n_{acid}$, $m_{\\text{ester}}$, $CO_2\\uparrow$, $BaSO_4\\downarrow$ BẮT BUỘC BỌC TRONG $...$. Danh pháp hóa học tuân theo chuẩn quốc tế IUPAC mới của SGK GDPT 2018.
+3. Mũi tên phản ứng thuận nghịch dùng $\\xrightleftharpoons[chất\\ phụ]{điều\\ kiện}$ hoặc $\\rightleftharpoons$, mũi tên 1 chiều dùng $\\xrightarrow{điều\\ kiện}$ hoặc $\\rightarrow$, ký hiệu khí bay lên dùng $\\uparrow$, kết tủa dùng \\downarrow.
+4. Dùng \\text{...} cho phần chữ tiếng Việt trong chỉ số/điều kiện phản ứng (ví dụ: $n_{\\text{ester lý thuyết}}$, $\\xrightarrow{\\text{men giấm}}$, $\\xrightleftharpoons[t^\\circ]{H_2SO_4\\ \\text{đặc}}$).
+5. TUYỆT ĐỐI KHÔNG bọc văn bản hay từ ngữ Tiếng Việt vào trong dấu $...$ (KHÔNG viết "$Cho tam giác ABC có$", KHÔNG viết "$Biết chu vi$", KHÔNG viết "$độ dài$").
+6. TUYỆT ĐỐI KHÔNG dùng mã TeX accent cho tiếng Việt (KHÔNG viết "v\\grave{a}", "c\\'o", "m\\text{\\hat{o}}t"). Bắt buộc viết chữ tiếng Việt có dấu chuẩn Unicode.
+7. Biểu thức phân số hoặc đẳng thức phức tạp phải bọc TRỌN VẸN trong 1 cặp $...$ duy nhất (ví dụ: $\\frac{AB}{A'B'} = \\frac{BC}{B'C'}$).
+8. HỆ PHƯƠNG TRÌNH bắt buộc dùng môi trường \\begin{cases} ... \\end{cases} và phân cách giữa các phương trình bằng dấu xuống dòng hàng kép '\\\\'.
+9. HÌNH HỌC VÀ ĐỒ THỊ: Nếu là bài tập hình học hoặc hàm số, BẮT BUỘC cung cấp chuỗi mã SVG chuẩn trong "svgDiagram" và "solutionDiagramSvg".`;
+    }
+
     return `Bạn là Chuyên gia Giáo dục Hàng đầu Việt Nam + Chuyên gia Đánh giá Năng lực theo Công văn 7991/BGDĐT của Bộ Giáo dục và Đào tạo.
 Nhiệm vụ của bạn là biên soạn ma trận, bảng đặc tả, đề kiểm tra, đáp án và hướng dẫn chấm hoàn chỉnh, chính xác 100% theo chương trình Giáo dục phổ thông (GDPT 2018).
 
@@ -17,23 +72,10 @@ BẮT BUỘC TUÂN THỦ CÁC NGUYÊN TẮC SAU:
    - PHẦN III: Trắc nghiệm Trả lời ngắn (Học sinh điền kết quả ngắn, số hoặc cụm từ).
    - PHẦN IV: Tự luận (Các câu hỏi tự luận bao gồm ĐẦY ĐỦ CẢ 4 MỨC ĐỘ NHẬN THỨC: Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao kèm Thang điểm & Rubric chi tiết).
 4. Phân bổ đúng tỷ lệ mức độ nhận thức: Nhận biết (REMEMBER / NB), Thông hiểu (UNDERSTAND / TH), Vận dụng (APPLY / VD), Vận dụng cao (ADVANCED / VDC). Với phần Tự luận (Phần IV), BẮT BUỘC phải bao gồm đầy đủ cả 4 mức độ nhận thức này.
-5. QUY TẮC CÔNG THỨC TOÁN HỌC, HÓA HỌC & TIẾNG VIỆT (BẮT BUỘC TUÂN THỦ 100%):
-   - CHỈ bọc KÝ HIỆU HOẶC BIỂU THỨC TOÁN HỌC / HÓA HỌC bằng dấu $...$ (ví dụ: $\Delta ABC$, $AB = 4\\text{ cm}$, $\\widehat{A} = 60^\\circ$, $k = \\frac{2}{3}$, $\\forall x \\in \\mathbb{R}$).
-   - MỌI CÔNG THỨC HÓA HỌC ($C_2H_5OH$, $CH_3COOH$, $H_2SO_4$, $CO_2$, $H_2O$, $NaHCO_3$), PHƯƠNG TRÌNH HÓA HỌC VÀ ĐẠI LƯỢNG $n_{acid}$, $m_{\\text{ester}}$, $CO_2\\uparrow$, $BaSO_4\\downarrow$ BẮT BUỘC BỌC TRONG $...$.
-   - Mũi tên phản ứng thuận nghịch dùng $\\xrightleftharpoons[chất\\ phụ]{điều\\ kiện}$ hoặc $\\rightleftharpoons$, mũi tên 1 chiều dùng $\\xrightarrow{điều\\ kiện}$ hoặc $\\rightarrow$, ký hiệu khí bay lên dùng $\\uparrow$, kết tủa dùng \\downarrow.
-   - Dùng \\text{...} cho phần chữ tiếng Việt trong chỉ số/điều kiện phản ứng (ví dụ: $n_{\\text{ester lý thuyết}}$, $\\xrightarrow{\\text{men giấm}}$, $\\xrightleftharpoons[t^\\circ]{H_2SO_4\\ \\text{đặc}}$).
-   - TUYỆT ĐỐI KHÔNG bọc văn bản hay từ ngữ Tiếng Việt vào trong dấu $...$ (KHÔNG viết "$Cho tam giác ABC có$", KHÔNG viết "$Biết chu vi$", KHÔNG viết "$độ dài$").
-   - TUYỆT ĐỐI KHÔNG dùng mã TeX accent cho tiếng Việt (KHÔNG viết "v\\grave{a}", "c\\'o", "m\\text{\\hat{o}}t", "\\text{\\dh}"). Bắt buộc viết chữ tiếng Việt có dấu chuẩn Unicode (ví dụ: "và", "có", "một", "độ dài").
-   - Biểu thức phân số hoặc đẳng thức phức tạp phải bọc TRỌN VẸN trong 1 cặp $...$ duy nhất (ví dụ: $\frac{AB}{A'B'} = \frac{BC}{B'C'}$). TUYỆT ĐỐI KHÔNG được ngắt dấu $ giữa chừng (như $\frac{AB}{A$ 'B' $}$).
-   - Ký hiệu góc dùng $\widehat{A}$, độ dùng $60^\circ$, tam giác phẩy dùng $\Delta A'B'C'$ (bọc trọn gói vào $...$).
-   - HỆ PHƯƠNG TRÌNH bắt buộc dùng môi trường \\begin{cases} ... \\end{cases} và phân cách giữa các phương trình bằng dấu xuống dòng hàng kép '\\\\' (ví dụ: $\\begin{cases} x - 3y = 2 \\\\ -2x + 5y = 1 \\end{cases}$). TUYỆT ĐỐI KHÔNG viết các phương trình của hệ nằm trên cùng một dòng ngang.
-6. TUYỆT ĐỐI KHÔNG chèn các nhãn mã như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [TH_TN] vào cuối hoặc trong chuỗi văn bản 'content', 'explanation', 'essayAnswerGuide' của câu hỏi. Mức độ nhận thức CHỈ ĐƯỢC khai báo thông qua trường JSON 'cognitiveLevel' ('REMEMBER', 'UNDERSTAND', 'APPLY', 'ADVANCED').
-7. TRONG CHUỖI JSON TRẢ VỀ, MỌI DẤU GẠCH CHÉO NGƯỢC '\\' CỦA LATEX BẮT BUỘC PHẢI ĐƯỢC ESCAPE THÀNH '\\\\' (VÍ DỤ VIẾT '\\\\frac', '\\\\sqrt', '\\\\alpha', '\\\\begin', VÀ DẤU XUỐNG DÒNG HỆ PHƯƠNG TRÌNH PHẢI VIẾT LÀ '\\\\\\\\' TRONG JSON CHUẨN) ĐỂ JSON KHÔNG BỊ LỖI CÚ PHÁP.
-7. Trả về đúng 1 đối tượng JSON duy nhất theo đúng cấu trúc schema được yêu cầu, không có lời mở đầu hay kết luận thừa ngoài JSON.
-7. ĐẶC BIỆT DÀNH CHO CÂU HỎI HÌNH HỌC VÀ ĐỒ THỊ HÀM SỐ:
-   Nếu bài tập thuộc mạch HÌNH HỌC (hình học không gian, tam giác, hình chóp, lăng trụ, tứ diện, đường tròn, véctơ...) hoặc HÀM SỐ / VẼ ĐỒ THỊ (hàm bậc nhất, bậc hai, bậc ba, hàm nhất biến...):
-   - BẮT BUỘC cung cấp chuỗi mã SVG chuẩn, trực quan trong trường "svgDiagram" (cho đề thi) và "solutionDiagramSvg" (cho phần đáp án / hướng dẫn giải chi tiết).
-   - Mã SVG phải chứa thẻ <svg viewBox="0 0 400 300" ...>, màu sắc sắc nét, nét vẽ đứt đoạn cho nét khuất hình học (stroke-dasharray="4,4"), và các nhãn tên điểm / trục tọa độ ($A, B, C, D, S, H, Ox, Oy, O...$).`;
+${subjectSpecificCoreRules}
+5. TUYỆT ĐỐI KHÔNG chèn các nhãn mã như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [TH_TN] vào cuối hoặc trong chuỗi văn bản 'content', 'explanation', 'essayAnswerGuide' của câu hỏi. Mức độ nhận thức CHỈ ĐƯỢC khai báo thông qua trường JSON 'cognitiveLevel' ('REMEMBER', 'UNDERSTAND', 'APPLY', 'ADVANCED').
+6. TRONG CHUỖI JSON TRẢ VỀ, MỌI DẤU GẠCH CHÉO NGƯỢC '\\' CỦA LATEX BẮT BUỘC PHẢI ĐƯỢC ESCAPE THÀNH '\\\\' ĐỂ JSON KHÔNG BỊ LỖI CÚ PHÁP.
+7. Trả về đúng 1 đối tượng JSON duy nhất theo đúng cấu trúc schema được yêu cầu, không có lời mở đầu hay kết luận thừa ngoài JSON.`;
   }
 
   /**
@@ -55,7 +97,10 @@ BẮT BUỘC TUÂN THỦ CÁC NGUYÊN TẮC SAU:
       examMode,
       questionCounts,
       cognitiveRatio,
+      subjectSpecificConfig,
     } = metadata;
+
+    const profile = getSubjectProfile(subject);
 
     const cleanTopics = (topicsList || [])
       .map((t) => t.trim())
@@ -92,7 +137,7 @@ ${metadata.referenceContext.trim()}
 
 🎯 YÊU CẦU QUAN TRỌNG VỀ PHẠM VI KIẾN THỨC:
 1. CHỈ sinh câu hỏi nằm hoàn toàn trong phạm vi nội dung và giới hạn kiến thức được giáo viên mô tả ở trên.
-2. TUYỆT ĐỐI KHÔNG đưa vào các dạng toán hay bài học thuộc chương/mục khác không có trong nguồn tài liệu này (Ví dụ: Nếu tài liệu ghi nhận bài học chưa có 'Hằng đẳng thức đáng nhớ' hay 'Phân thức đại số', tuyệt đối KHÔNG được ra câu hỏi liên quan đến hằng đẳng thức hay phân thức đại số).
+2. TUYỆT ĐỐI KHÔNG đưa vào các dạng bài thuộc chương/mục khác không có trong nguồn tài liệu này.
 `;
     }
 
@@ -100,6 +145,37 @@ ${metadata.referenceContext.trim()}
       referenceSection += `
 📸 TÀI LIỆU HÌNH ẢNH / TRANG SÁCH GIÁO KHOA / MỤC LỤC ĐÍNH KÈM:
 Đã gửi kèm ${metadata.referenceImages.length} ảnh trang sách giáo khoa / ảnh chụp bài học / mục lục. Hãy phân tích kỹ nội dung trong các bức ảnh này để trích xuất đúng phạm vi bài học và giới hạn câu hỏi chuẩn xác 100%.
+`;
+    }
+
+    // Đặc thù chuyên môn theo từng môn học
+    let subjectSpecificSection = `
+🌟 HƯỚNG DẪN ĐẶC THÙ CHUYÊN MÔN CHO MÔN ${subject.toUpperCase()} (BẮT BUỘC TUÂN THỦ):
+${profile.promptRules}
+`;
+
+    if (subject === 'Ngữ văn') {
+      const genre = subjectSpecificConfig?.literatureGenre || 'truyen';
+      const essayTopic = subjectSpecificConfig?.literatureEssayTopic || '';
+      subjectSpecificSection += `
+📖 YÊU CẦU ĐẶC BIỆT DÀNH CHO MÔN NGỮ VĂN:
+- Thể loại văn bản đọc hiểu yêu cầu: ${genre === 'truyen' ? 'Truyện ngắn / Trích đoạn tiểu thuyết / Truyện đồng thoại' : genre === 'tho' ? 'Thơ trữ tình (thơ tự do, 5 chữ, 7 chữ hoặc lục bát)' : genre === 'nghi_luan' ? 'Văn bản nghị luận xã hội / tư tưởng đạo lý' : genre === 'thong_tin' ? 'Văn bản thông tin nhật dụng' : 'Tản văn / Ký'}.
+- Ngữ liệu đọc hiểu: BẮT BUỘC là văn bản mới ngoài SGK, kèm trích dẫn tác giả, tác phẩm, xuất bản rõ ràng.
+${essayTopic ? `- Định hướng vấn đề làm văn/nghị luận: "${essayTopic}".` : ''}
+- Bắt buộc đủ các câu hỏi Đọc hiểu theo 4 cấp độ và câu Tự luận làm văn (Đoạn văn 200 chữ & Bài văn 600 chữ) kèm Rubric 5 tiêu chí của Bộ GD&ĐT.
+- TUYỆT ĐỐI KHÔNG dùng ký hiệu công thức LaTeX $.
+`;
+    } else if (subject === 'Tiếng Anh') {
+      const level = subjectSpecificConfig?.englishLevel || 'auto';
+      const focusAreas = subjectSpecificConfig?.englishFocusAreas || ['phonetics', 'grammar_vocab', 'reading_cloze', 'reading_comprehension', 'sentence_rewrite'];
+      subjectSpecificSection += `
+🇬🇧 YÊU CẦU ĐẶC BIỆT DÀNH CHO MÔN TIẾNG ANH:
+- Ngôn ngữ: 100% đề thi, câu hỏi và 4 phương án bằng TIẾNG ANH CHUẨN MỰC.
+- Trình độ mục tiêu: ${level === 'auto' ? 'Phù hợp chuẩn khối lớp ' + grade : 'Khung năng lực ' + level}.
+- Các mạch dạng bài trọng tâm: ${focusAreas.join(', ')}.
+- Phải có bài phát âm/trọng âm (Phonetics/Stress), trắc nghiệm từ vựng ngữ pháp, bài đọc điền từ (Guided Cloze), bài đọc hiểu đoạn văn (Reading Comprehension) và viết lại câu.
+- Phần giải thích (explanation) cung cấp dịch nghĩa tiếng Việt và phân tích ngữ pháp chi tiết.
+- TUYỆT ĐỐI KHÔNG dùng ký hiệu công thức LaTeX $.
 `;
     }
 
@@ -119,6 +195,8 @@ ${topicsSection}
 - Thang điểm tổng: ${totalPoints} điểm
 - Chế độ đề: ${modeDescription}
 ${referenceSection}
+${subjectSpecificSection}
+
 📊 CẤU TRÚC SỐ LƯỢNG CÂU HỎI THEO DẠNG VÀ THANG ĐIỂM CHI TIẾT:
 - Phần I (Trắc nghiệm 4 lựa chọn): ${questionCounts.part1_MCQSingle} câu (Mỗi câu ${questionCounts.part1_PointsPerQuestion ?? 0.25} điểm)
 - Phần II (Trắc nghiệm Đúng/Sai): ${questionCounts.part2_MCQTrueFalse} câu (Mỗi câu ${questionCounts.part2_PointsPerQuestion ?? 1.0} điểm, gồm chính xác ${questionCounts.part2_TFStatementsPerQuestion ?? 4} ý Đúng/Sai, điểm chia đều: ${((questionCounts.part2_PointsPerQuestion ?? 1.0) / (questionCounts.part2_TFStatementsPerQuestion ?? 4)).toFixed(2)}đ/ý)
@@ -193,7 +271,6 @@ YÊU CẦU ĐẦU RA JSON CHÍNH XÁC THEO SCHEMA SAU:
       "points": 1.0,
       "topic": "Tên chủ đề",
       "trueFalseStatements": [
-        // BẮT BUỘC tạo đúng ${questionCounts.part2_TFStatementsPerQuestion ?? 4} ý (ký hiệu a, b, c, d, e...)
         { "key": "a", "content": "Ý a...", "isCorrect": true },
         { "key": "b", "content": "Ý b...", "isCorrect": false }
       ],
@@ -205,11 +282,11 @@ YÊU CẦU ĐẦU RA JSON CHÍNH XÁC THEO SCHEMA SAU:
       "partType": "PART3",
       "partTitle": "PHẦN III. Câu hỏi trắc nghiệm trả lời ngắn",
       "number": 1,
-      "content": "Nội dung câu hỏi yêu cầu tính ra số/kết quả ngắn...",
+      "content": "Nội dung câu hỏi yêu cầu kết quả ngắn...",
       "cognitiveLevel": "APPLY",
       "points": 0.25,
       "topic": "Tên chủ đề",
-      "shortAnswer": "Đáp án ngắn (VD: 15 hoặc x = 3)",
+      "shortAnswer": "Đáp án ngắn",
       "explanation": "Các bước tính ra kết quả..."
     },
     // Với PHẦN IV (Tự luận):
@@ -233,16 +310,6 @@ YÊU CẦU ĐẦU RA JSON CHÍNH XÁC THEO SCHEMA SAU:
 }
 
 Chú ý: Hãy đảm bảo số lượng câu hỏi trong danh sách "questions" khớp CHÍNH XÁC với số lượng khai báo ở trên!
-
-📐 QUY TẮC BẮT BUỘC VỀ TRÌNH BÀY CÔNG THỨC TOÁN VÀ LATEX (CHỐNG LỖI HIỂN THỊ 100%):
-1. BẮT BUỘC BỌC TẤT CẢ công thức toán học, tập hợp, biến số, phép tính trong cặp dấu $...$ (ví dụ: $x$, $y$, $A$, $B = \\{x \\in \\mathbb{N} \\mid 15 \\le x < 28\\}$, $x \\vdots 12$, $4^2 \\cdot 5$, $S = 25 \\cdot 74 + 25 \\cdot 26 - 500$, $P = \\frac{x+1}{x-1}$). TUYỆT ĐỐI KHÔNG để bất kỳ lệnh LaTeX hay biểu thức toán nào đứng ngoài cặp dấu $.
-2. TRONG CHUỖI JSON, BẮT BUỘC DÙNG DẤU GẠCH CHÉO KÉP '\\\\' cho mọi lệnh LaTeX: '\\\\frac', '\\\\sqrt', '\\\\cdot', '\\\\vdots', '\\\\le', '\\\\ge', '\\\\neq', '\\\\angle', '\\\\widehat', '\\\\triangle', '\\\\vec', '\\\\in', '\\\\notin', '\\\\subset', '\\\\parallel', '\\\\perp', '\\\\approx', '\\\\begin{cases}...\\\\end{cases}'.
-3. PHÉP NHÂN: DÙNG '\\\\cdot' (ví dụ $4^2 \\cdot 5$, $25 \\cdot 74$), TUYỆT ĐỐI KHÔNG dùng dấu '*' hoặc '.' thô.
-4. QUAN HỆ CHIA HẾT: DÙNG '\\\\vdots' (ví dụ $x \\vdots 12$ và $x \\vdots 18$).
-5. TẬP HỢP: BẮT BUỘC DÙNG '\\\\{' và '\\\\}' để hiển thị ngoặc nhọn (ví dụ: $A = \\{1; 2; 3; 4\\}$, $B = \\{x \\in \\mathbb{N} \\mid 8 < x \\le 14\\}$). TUYỆT ĐỐI KHÔNG viết '{1; 2; 3}' trần vì KaTeX sẽ làm biến mất ngoặc nhọn. Dùng '\\\\mid' cho gạch đứng điều kiện tập hợp.
-6. HỆ PHƯƠNG TRÌNH: DÙNG '\\\\begin{cases} ... \\\\end{cases}', các dòng cách nhau bằng '\\\\\\\\'.
-7. ĐƠN VỊ ĐỘ: DÙNG '^\\\\circ' (ví dụ: $60^\\circ$, $90^\\circ$). TUYỆT ĐỐI KHÔNG viết '^0' hay '^o'.
-8. GÓC VÀ VECTƠ: DÙNG '\\\\widehat{ABC}' hoặc '\\\\angle A', và '\\\\vec{AB}' hoặc '\\\\overrightarrow{AB}'.
 `;
   }
 }

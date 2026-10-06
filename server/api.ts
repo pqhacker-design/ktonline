@@ -3,6 +3,8 @@ import { GoogleGenAI } from '@google/genai';
 import {
   ExamRepository,
   ClassRepository,
+  UserRepository,
+  ServerUser,
   ExamData,
   StudentSession,
   ActivityLogItem,
@@ -328,6 +330,134 @@ export function registerExamRoutes(app: express.Express) {
     } catch (err: any) {
       console.error('Lỗi Gemini API Backend:', err);
       return res.status(500).json({ error: err.message || 'Lỗi xử lý yêu cầu AI.' });
+    }
+  });
+
+  // ==========================================
+  // AUTHENTICATION & USER MANAGEMENT API
+  // ==========================================
+
+  // Register new user (Instant in-memory & file storage)
+  app.post('/api/auth/register', (req: Request, res: Response) => {
+    try {
+      const { username, password, displayName, role } = req.body;
+      const cleanUser = (username || '').trim().toLowerCase();
+      const cleanPass = (password || '').trim();
+
+      if (!cleanUser) {
+        return res.status(400).json({ error: 'Tên đăng nhập không được để trống.' });
+      }
+      if (!cleanPass || cleanPass.length < 4) {
+        return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 4 ký tự.' });
+      }
+
+      const existing = UserRepository.findUser(cleanUser);
+      if (existing) {
+        return res.status(400).json({ error: `Tên đăng nhập "${cleanUser}" đã tồn tại trong hệ thống!` });
+      }
+
+      const docId = cleanUser.replace(/[^a-zA-Z0-9]/g, '_');
+      const newUser: ServerUser = {
+        id: docId,
+        username: cleanUser,
+        email: cleanUser.includes('@') ? cleanUser : `${cleanUser}@system.local`,
+        password: cleanPass,
+        displayName: (displayName || '').trim() || cleanUser,
+        role: role === 'admin' ? 'admin' : 'user',
+        active: true,
+        createdAt: new Date().toISOString(),
+      };
+
+      const saved = UserRepository.saveUser(newUser);
+      return res.json({ success: true, user: saved });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Lỗi đăng ký tài khoản: ' + err.message });
+    }
+  });
+
+  // Login user (Instant in-memory & file storage)
+  app.post('/api/auth/login', (req: Request, res: Response) => {
+    try {
+      const { username, password } = req.body;
+      const cleanUser = (username || '').trim().toLowerCase();
+      const cleanPass = (password || '').trim();
+
+      if (!cleanUser || !cleanPass) {
+        return res.status(400).json({ error: 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.' });
+      }
+
+      const isAdminLogin = 
+        cleanUser === 'pqhacker@gamil.com' || 
+        cleanUser === 'pqhacker@gmail.com' || 
+        cleanUser === 'pqhacker@gmai.com' ||
+        cleanUser === 'admin';
+
+      if (isAdminLogin && (cleanPass === 'Hungdiemly300506' || cleanPass === '300506')) {
+        const defaultAdmin: ServerUser = {
+          id: 'admin',
+          username: 'pqhacker@gamil.com',
+          email: 'pqhacker@gamil.com',
+          password: 'Hungdiemly300506',
+          displayName: 'Quản trị viên Hệ thống',
+          role: 'admin',
+          active: true,
+          createdAt: new Date().toISOString()
+        };
+        UserRepository.saveUser(defaultAdmin);
+        return res.json({ success: true, user: defaultAdmin });
+      }
+
+      const user = UserRepository.findUser(cleanUser);
+      if (!user) {
+        return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
+      }
+
+      if (user.password !== cleanPass) {
+        return res.status(401).json({ error: 'Tên đăng nhập hoặc mật khẩu không chính xác.' });
+      }
+
+      if (!user.active) {
+        return res.status(403).json({ error: 'Tài khoản này đã bị khóa hoặc chưa được kích hoạt bởi Admin.' });
+      }
+
+      return res.json({ success: true, user });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Lỗi đăng nhập: ' + err.message });
+    }
+  });
+
+  // Get all users (for Admin)
+  app.get('/api/auth/users', (_req: Request, res: Response) => {
+    try {
+      const users = UserRepository.getUsers();
+      return res.json({ success: true, users });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Lỗi lấy danh sách người dùng: ' + err.message });
+    }
+  });
+
+  // Update user
+  app.post('/api/auth/update-user', (req: Request, res: Response) => {
+    try {
+      const { id, updates } = req.body;
+      if (!id) return res.status(400).json({ error: 'Thiếu ID người dùng.' });
+      const updated = UserRepository.updateUser(id, updates);
+      if (!updated) return res.status(404).json({ error: 'Không tìm thấy người dùng.' });
+      return res.json({ success: true, user: updated });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Lỗi cập nhật người dùng: ' + err.message });
+    }
+  });
+
+  // Delete user
+  app.post('/api/auth/delete-user', (req: Request, res: Response) => {
+    try {
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: 'Thiếu ID người dùng.' });
+      const deleted = UserRepository.deleteUser(id);
+      return res.json({ success: deleted });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Lỗi xóa người dùng: ' + err.message });
     }
   });
 

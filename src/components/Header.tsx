@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Download, FileCode, Menu, Sparkles, UserCheck, FileText, CheckCircle2, Share2, LogOut, Shield, KeyRound, AlertTriangle, Loader2, Check } from 'lucide-react';
+import { ChevronDown, Download, FileCode, Menu, Sparkles, UserCheck, FileText, CheckCircle2, Share2, LogOut, Shield, KeyRound, AlertTriangle, Loader2, Check, Users } from 'lucide-react';
 import { AppSettings, ExamPackage } from '../types';
 import { useAuth } from '../auth/useAuth';
 
@@ -14,6 +14,7 @@ interface HeaderProps {
   onExportWord?: (mode?: 'full' | 'exams' | 'answers') => void;
   onExportPdf?: () => void;
   onExportExcel?: () => void;
+  onNavigateTab?: (tab: any) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -26,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   onExportWord,
   onExportPdf,
   onExportExcel,
+  onNavigateTab,
 }) => {
   const { user, role, isAdmin, logout, changePassword } = useAuth();
   const [isWordDropdownOpen, setIsWordDropdownOpen] = useState(false);
@@ -277,6 +279,19 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
 
               <div className="border-t border-slate-200/60 dark:border-slate-800/80 pt-2 space-y-1">
+                {isAdmin && onNavigateTab && (
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onNavigateTab('user_management');
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center space-x-2 transition-colors cursor-pointer"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Quản Trị Người Dùng</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     setIsUserMenuOpen(false);

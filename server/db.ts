@@ -477,3 +477,101 @@ export class ClassRepository {
     return students.find(matchStudent);
   }
 }
+
+export interface ServerUser {
+  id: string;
+  username: string;
+  email?: string;
+  password?: string;
+  displayName?: string;
+  role: 'admin' | 'user';
+  active: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+
+export class UserRepository {
+  static getUsers(): ServerUser[] {
+    const defaultAdmin: ServerUser = {
+      id: 'admin',
+      username: 'pqhacker@gamil.com',
+      email: 'pqhacker@gamil.com',
+      password: 'Hungdiemly300506',
+      displayName: 'Quản trị viên Hệ thống',
+      role: 'admin',
+      active: true,
+      createdAt: new Date().toISOString()
+    };
+
+    const users = readJsonFile<ServerUser[]>(USERS_FILE, [defaultAdmin]);
+    if (!users.some(u => u.username === 'pqhacker@gamil.com' || u.id === 'admin')) {
+      users.unshift(defaultAdmin);
+      writeJsonFile(USERS_FILE, users);
+    }
+    return users;
+  }
+
+  static findUser(identifier: string): ServerUser | undefined {
+    if (!identifier) return undefined;
+    const clean = identifier.trim().toLowerCase();
+    const formattedId = clean.replace(/[^a-zA-Z0-9]/g, '_');
+    const users = this.getUsers();
+    return users.find(u => 
+      (u.username && u.username.toLowerCase() === clean) || 
+      (u.email && u.email.toLowerCase() === clean) || 
+      (u.id && u.id.toLowerCase() === formattedId) ||
+      (u.id && u.id.toLowerCase() === clean)
+    );
+  }
+
+  static saveUser(user: ServerUser): ServerUser {
+    const users = this.getUsers();
+    const cleanUser = user.username.trim().toLowerCase();
+    const existingIndex = users.findIndex(u => 
+      (u.id && u.id === user.id) || 
+      (u.username && u.username.toLowerCase() === cleanUser)
+    );
+
+    if (existingIndex >= 0) {
+      users[existingIndex] = {
+        ...users[existingIndex],
+        ...user,
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      users.unshift(user);
+    }
+    writeJsonFile(USERS_FILE, users);
+    return user;
+  }
+
+  static updateUser(id: string, updates: Partial<ServerUser>): ServerUser | null {
+    const users = this.getUsers();
+    const cleanId = id.trim().toLowerCase();
+    const index = users.findIndex(u => u.id.toLowerCase() === cleanId || u.username.toLowerCase() === cleanId);
+    if (index === -1) return null;
+
+    users[index] = {
+      ...users[index],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    writeJsonFile(USERS_FILE, users);
+    return users[index];
+  }
+
+  static deleteUser(id: string): boolean {
+    if (id === 'admin' || id === 'pqhacker@gamil.com') return false;
+    let users = this.getUsers();
+    const initLen = users.length;
+    users = users.filter(u => u.id !== id && u.username !== id);
+    if (users.length !== initLen) {
+      writeJsonFile(USERS_FILE, users);
+      return true;
+    }
+    return false;
+  }
+}
+
