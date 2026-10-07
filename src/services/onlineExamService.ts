@@ -318,9 +318,44 @@ export class OnlineExamService {
 
   private static getLocalSessions(): any[] {
     try {
+      const map = new Map<string, any>();
+      // 1. Current user session store
       const keys = this.getStorageKeys();
-      const data = localStorage.getItem(keys.SESSIONS);
-      return data ? JSON.parse(data) : [];
+      const currentData = localStorage.getItem(keys.SESSIONS);
+      if (currentData) {
+        try {
+          const list = JSON.parse(currentData);
+          if (Array.isArray(list)) list.forEach((s) => s && s.id && map.set(s.id, s));
+        } catch {}
+      }
+
+      // 2. Also check guest / general local sessions so student submissions on same machine are always preserved
+      const guestKey = 'aitest_online_sessions_store_guest';
+      const guestData = localStorage.getItem(guestKey);
+      if (guestData) {
+        try {
+          const list = JSON.parse(guestData);
+          if (Array.isArray(list)) list.forEach((s) => s && s.id && !map.has(s.id) && map.set(s.id, s));
+        } catch {}
+      }
+
+      // 3. Scan all aitest_online_sessions_store keys in localStorage
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('aitest_online_sessions_store') && k !== keys.SESSIONS && k !== guestKey) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((s) => s && s.id && !map.has(s.id) && map.set(s.id, s));
+              }
+            }
+          } catch {}
+        }
+      }
+
+      return Array.from(map.values());
     } catch {
       return [];
     }
@@ -330,6 +365,20 @@ export class OnlineExamService {
     try {
       const keys = this.getStorageKeys();
       localStorage.setItem(keys.SESSIONS, JSON.stringify(sessions));
+      // Also mirror submitted sessions to guest store so student view can access
+      if (keys.SESSIONS !== 'aitest_online_sessions_store_guest') {
+        const submitted = sessions.filter((s) => s.status === 'submitted');
+        if (submitted.length > 0) {
+          try {
+            const raw = localStorage.getItem('aitest_online_sessions_store_guest');
+            const guestList = raw ? JSON.parse(raw) : [];
+            const gMap = new Map<string, any>();
+            if (Array.isArray(guestList)) guestList.forEach((s) => s && s.id && gMap.set(s.id, s));
+            submitted.forEach((s) => gMap.set(s.id, s));
+            localStorage.setItem('aitest_online_sessions_store_guest', JSON.stringify(Array.from(gMap.values())));
+          } catch {}
+        }
+      }
     } catch (e) {
       console.error('Lỗi lưu sessions local:', e);
     }
@@ -1124,13 +1173,15 @@ export class OnlineExamService {
       console.warn('Lỗi đọc published_exams từ Firestore:', e);
     }
 
-    // 4. Hợp nhất tất cả các nguồn đề và khử trùng lặp theo Mã đề (chỉ giữ đề của user hiện tại)
+    // 4. Hợp nhất tất cả các nguồn đề và khử trùng lặp theo Mã đề (giữ đề của user hiện tại hoặc toàn bộ nếu admin)
+    const isAdmin = userId === 'admin' || userId === 'pqhacker@gamil.com';
     const map = new Map<string, OnlineExamItem>();
     [...apiExams, ...firestoreExams, ...localItems, ...historyItems].forEach((item: any) => {
       if (item && item.code) {
         const key = item.code.trim().toUpperCase();
         if (deletedCodes.has(key)) return;
         const isOwner =
+          isAdmin ||
           Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && item.createdBy === userId) ||
           (!item.createdBy && localKnownCodes.has(key));
 
@@ -1158,7 +1209,7 @@ export class OnlineExamService {
       (a, b) => new Date(b.createdDate || 0).getTime() - new Date(a.createdDate || 0).getTime()
     );
 
-    // Cập nhật số lượng bài nộp thực tế từ Firestore student_results và local sessions
+    // Cập nhật số lượng bài nộp thực tế từ Firestore student_results, server API và local sessions
     try {
       const submissionIdMap = new Map<string, Set<string>>();
 
@@ -1188,7 +1239,9 @@ export class OnlineExamService {
         const codeKey = (exam.code || '').trim().toUpperCase();
         const submissionSet = submissionIdMap.get(codeKey);
         const count = submissionSet ? submissionSet.size : 0;
-        exam.submissionCount = Math.max(exam.submissionCount || 0, count);
+        const apiItem = apiExams.find((ae: any) => (ae.code || '').trim().toUpperCase() === codeKey);
+        const apiCount = apiItem?.submissionCount || 0;
+        exam.submissionCount = Math.max(exam.submissionCount || 0, count, apiCount);
       });
     } catch (e) {
       console.warn('Lỗi cập nhật submissionCount trong listExams:', e);
@@ -2232,7 +2285,32 @@ export class OnlineExamService {
           sessions[sIdx] = session;
           this.saveLocalSessions(sessions);
         }
+      } else if (resResult) {
+        session = {
+          id: sessionId,
+          examCode: examCode || resResult.examCode || cachedContext?.examInfo?.code || '',
+          studentName: resResult.studentName || '',
+          studentClass: resResult.studentClass || '',
+          studentId: resResult.studentId || '',
+          startTime: resResult.startTime || new Date().toISOString(),
+          submitTime: resResult.submitTime || new Date().toISOString(),
+          status: 'submitted',
+          score: resResult.score,
+          correctCount: resResult.correctCount,
+          incorrectCount: resResult.incorrectCount,
+          totalQuestions: resResult.totalQuestions,
+          activityLogs: [],
+        };
+        sessions.push(session);
+        this.saveLocalSessions(sessions);
       }
+
+      StorageEngine.notifyChange();
+      try {
+        window.dispatchEvent(
+          new CustomEvent('aitest_exam_submitted', { detail: { examCode, sessionId } })
+        );
+      } catch {}
 
       if (examCode) {
         // NON-BLOCKING: Trigger background sync without awaiting
@@ -2293,7 +2371,7 @@ export class OnlineExamService {
     const filteredLocal =
       codeUpper === 'ALL'
         ? sessions
-        : sessions.filter((s) => s.examCode.toUpperCase() === codeUpper);
+        : sessions.filter((s) => (s.examCode || '').trim().toUpperCase() === codeUpper);
 
     const localResults: StudentResultItem[] = filteredLocal.map((s) => {
       const tabSwitches = (s.activityLogs || []).filter((l: any) => l.event && l.event.includes('Chuyển tab')).length;
@@ -2324,6 +2402,7 @@ export class OnlineExamService {
     const firestoreResults = await this.getStudentResultsFromFirestore(codeUpper);
 
     const userId = this.getActiveUserId();
+    const isAdmin = userId === 'admin' || userId === 'pqhacker@gamil.com';
     const teacherExamsRes = await this.listExams();
     const examsList: any[] = Array.isArray(teacherExamsRes) ? teacherExamsRes : (teacherExamsRes?.exams || []);
     const teacherCodes = new Set(examsList.map((e: any) => (e.code || '').toUpperCase()));
@@ -2331,7 +2410,20 @@ export class OnlineExamService {
     const map = new Map<string, StudentResultItem>();
     [...apiResults, ...firestoreResults, ...localResults].forEach((item) => {
       if (item && item.id) {
-        if (teacherCodes.has((item.examCode || '').toUpperCase())) {
+        const itemCode = (item.examCode || '').trim().toUpperCase();
+        if (codeUpper !== 'ALL' && itemCode !== codeUpper) {
+          return;
+        }
+
+        const isAllowed =
+          codeUpper !== 'ALL' ||
+          isAdmin ||
+          teacherCodes.size === 0 ||
+          teacherCodes.has(itemCode) ||
+          item.teacherId === userId ||
+          item.createdBy === userId;
+
+        if (isAllowed) {
           map.set(item.id, item);
         }
       }

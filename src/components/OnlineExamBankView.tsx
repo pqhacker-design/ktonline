@@ -197,8 +197,15 @@ export const OnlineExamBankView: React.FC<OnlineExamBankViewProps> = ({
     const unsubscribe = StorageEngine.subscribe(() => {
       fetchExams();
     });
+    const handleSubmission = () => {
+      fetchExams();
+    };
+    window.addEventListener('storage', handleSubmission);
+    window.addEventListener('aitest_exam_submitted', handleSubmission);
     return () => {
       unsubscribe();
+      window.removeEventListener('storage', handleSubmission);
+      window.removeEventListener('aitest_exam_submitted', handleSubmission);
     };
   }, []);
 

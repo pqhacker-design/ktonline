@@ -23,10 +23,36 @@ import { OnlineExamService, StudentResultItem, OnlineExamItem } from '../service
 import { StorageEngine } from '../services/storageEngine';
 import { useAuth } from '../auth/useAuth';
 import { ExportExcel } from '../services/exportExcel';
-import { ClassItem, StudentItem } from '../types';
+import { ClassItem, StudentItem, normalizeClassName } from '../types';
 import { sortStudentsDefault, naturalCompare } from '../utils/vietnameseSort';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
+
+const normalizeStr = (s?: string) =>
+  (s || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFC')
+    .replace(/\s+/g, ' ');
+
+const normalizeAscii = (s?: string) =>
+  (s || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
+const normalizeSbd = (s?: string) =>
+  (s || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+
+const extractSbdNum = (s?: string) => {
+  const digits = (s || '').replace(/\D/g, '');
+  return digits ? parseInt(digits, 10) : null;
+};
 
 export interface UnifiedResultItem {
   id: string;
@@ -125,8 +151,17 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     const unsubscribe = StorageEngine.subscribe(() => {
       fetchData();
     });
-    return unsubscribe;
-  }, []);
+    const handleSubmissionEvent = () => {
+      fetchData();
+    };
+    window.addEventListener('storage', handleSubmissionEvent);
+    window.addEventListener('aitest_exam_submitted', handleSubmissionEvent);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', handleSubmissionEvent);
+      window.removeEventListener('aitest_exam_submitted', handleSubmissionEvent);
+    };
+  }, [examCodeFilter]);
 
   const requestDeleteResult = (item: StudentResultItem) => {
     setConfirmModal({
@@ -239,32 +274,71 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
       const sortedStudentsInClass = sortStudentsDefault(studentsByClass[clsKey]);
 
       sortedStudentsInClass.forEach((st, idx) => {
-        const stSbdNorm = (st.sbd || '').trim().toUpperCase();
-        const stNameNorm = (st.name || '').trim().toLowerCase();
-        const stClassNorm = (st.className || '').trim().toLowerCase();
+        const stSbdNorm = normalizeSbd(st.sbd);
+        const stSbdNum = extractSbdNum(st.sbd);
+        const stNameNfc = normalizeStr(st.name);
+        const stNameAscii = normalizeAscii(st.name);
+        const stClassNorm = normalizeClassName(st.className);
 
         let matchedRes: StudentResultItem | undefined;
 
-        // Ưu tiên khớp theo SBD
+        // 1. Khớp ưu tiên: SBD chính xác hoặc SBD số (nếu cùng lớp)
         if (stSbdNorm) {
           matchedRes = results.find((r) => {
             if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
               return false;
             }
-            const rSbd = (r.studentSbd || r.studentId || '').trim().toUpperCase();
-            return rSbd === stSbdNorm;
+            const rSbd = r.studentSbd || r.studentId || '';
+            const rSbdNorm = normalizeSbd(rSbd);
+            const rClassNorm = normalizeClassName(r.studentClass);
+            const classMatches = !stClassNorm || !rClassNorm || stClassNorm === rClassNorm;
+
+            // Khớp chuỗi SBD chính xác
+            if (rSbdNorm && rSbdNorm === stSbdNorm) return true;
+
+            // Khớp SBD theo số nếu cùng lớp
+            if (stSbdNum !== null && classMatches) {
+              const rSbdNum = extractSbdNum(rSbd);
+              if (rSbdNum !== null && rSbdNum === stSbdNum) return true;
+            }
+
+            return false;
           });
         }
 
-        // Nếu chưa khớp hoặc không có SBD, khớp theo Họ tên + Lớp
-        if (!matchedRes) {
+        // 2. Khớp theo ID học sinh trong hệ thống
+        if (!matchedRes && st.id) {
           matchedRes = results.find((r) => {
             if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
               return false;
             }
-            const rName = (r.studentName || '').trim().toLowerCase();
-            const rClass = (r.studentClass || '').trim().toLowerCase();
-            return rName === stNameNorm && (rClass === stClassNorm || !rClass || !stClassNorm);
+            return r.studentId === st.id || r.studentSbd === st.id;
+          });
+        }
+
+        // 3. Khớp theo Họ và Tên chuẩn tiếng Việt (NFC) + Lớp
+        if (!matchedRes && stNameNfc) {
+          matchedRes = results.find((r) => {
+            if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
+              return false;
+            }
+            const rNameNfc = normalizeStr(r.studentName);
+            const rClassNorm = normalizeClassName(r.studentClass);
+            const classMatches = !stClassNorm || !rClassNorm || stClassNorm === rClassNorm;
+            return rNameNfc === stNameNfc && classMatches;
+          });
+        }
+
+        // 4. Khớp theo Họ và Tên không phân biệt dấu tiếng Việt (Accent-insensitive) + Lớp
+        if (!matchedRes && stNameAscii) {
+          matchedRes = results.find((r) => {
+            if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
+              return false;
+            }
+            const rNameAscii = normalizeAscii(r.studentName);
+            const rClassNorm = normalizeClassName(r.studentClass);
+            const classMatches = !stClassNorm || !rClassNorm || stClassNorm === rClassNorm;
+            return rNameAscii === stNameAscii && classMatches;
           });
         }
 
@@ -325,7 +399,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
         if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
           return;
         }
-        if (classFilter !== 'ALL' && r.studentClass.trim().toLowerCase() !== classFilter.trim().toLowerCase()) {
+        if (classFilter !== 'ALL' && normalizeClassName(r.studentClass) !== normalizeClassName(classFilter)) {
           return;
         }
         unifiedList.push({

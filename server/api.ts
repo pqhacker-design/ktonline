@@ -1144,6 +1144,7 @@ export function registerExamRoutes(app: express.Express) {
           },
         ],
         status: 'in_progress',
+        teacherId: exam.createdBy || '',
       };
 
       ExamRepository.saveSession(newSession);

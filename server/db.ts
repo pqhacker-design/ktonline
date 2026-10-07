@@ -81,6 +81,7 @@ export interface StudentSession {
   originalAnswersMap?: Record<string, any>; // Grading reference map for shuffled paper
   activityLogs: ActivityLogItem[];
   status: 'in_progress' | 'submitted';
+  teacherId?: string;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -88,6 +89,7 @@ const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
 const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 const CLASSES_FILE = path.join(DATA_DIR, 'classes.json');
 const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -278,19 +280,26 @@ export class ExamRepository {
   static getResultsByExamCode(examCode?: string, userId?: string): StudentSession[] {
     const sessions = this.getSessions();
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
-    let filteredExams = exams;
-    if (userId && userId !== 'admin') {
-      filteredExams = exams.filter((e) => e.createdBy === userId || !e.createdBy);
-    }
+    const users = readJsonFile<any[]>(USERS_FILE, []);
+    const userObj = users.find((u) => u.id === userId || u.username === userId || u.email === userId);
+    const isAdmin = !userId || userId === 'admin' || userId === 'pqhacker@gamil.com' || userObj?.role === 'admin';
+
     const userExamCodes = new Set<string>();
-    filteredExams.forEach((e) => {
-      if (e.code) userExamCodes.add(e.code.toUpperCase());
-      if (e.examPackage?.metadata?.onlineExamCode) {
-        userExamCodes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+    exams.forEach((e) => {
+      const isOwner =
+        isAdmin ||
+        !e.createdBy ||
+        e.createdBy === userId ||
+        (userObj && (e.createdBy === userObj.id || e.createdBy === userObj.username));
+      if (isOwner) {
+        if (e.code) userExamCodes.add(e.code.toUpperCase());
+        if (e.examPackage?.metadata?.onlineExamCode) {
+          userExamCodes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+        }
+        (e.examPackage?.exams || []).forEach((sub: any) => {
+          if (sub.code) userExamCodes.add(sub.code.toUpperCase());
+        });
       }
-      (e.examPackage?.exams || []).forEach((sub: any) => {
-        if (sub.code) userExamCodes.add(sub.code.toUpperCase());
-      });
     });
 
     const normFilter = (examCode || 'ALL').trim().toUpperCase();
@@ -298,9 +307,36 @@ export class ExamRepository {
     return sessions.filter((s) => {
       if (s.status !== 'submitted') return false;
       const sExamCode = (s.examCode || '').trim().toUpperCase();
-      if (userId && userId !== 'admin' && !userExamCodes.has(sExamCode)) return false;
-      if (!examCode || normFilter === 'ALL') return true;
-      return sExamCode === normFilter;
+
+      // If specific code requested, match code
+      if (normFilter && normFilter !== 'ALL' && sExamCode !== normFilter) {
+        return false;
+      }
+
+      // Admin has full visibility
+      if (isAdmin) return true;
+
+      // Matching user exams
+      if (userExamCodes.has(sExamCode)) return true;
+      if (
+        s.teacherId &&
+        (s.teacherId === userId ||
+          (userObj && (s.teacherId === userObj.id || s.teacherId === userObj.username)))
+      ) {
+        return true;
+      }
+
+      // If specific code filter was explicitly given and matched sExamCode, keep it
+      if (normFilter && normFilter !== 'ALL') {
+        return true;
+      }
+
+      // If user has no registered exams on server, don't drop sessions
+      if (userExamCodes.size === 0) {
+        return true;
+      }
+
+      return false;
     });
   }
 }
@@ -544,8 +580,6 @@ export interface ServerUser {
   createdAt: string;
   updatedAt?: string;
 }
-
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
 
 export class UserRepository {
   static getUsers(): ServerUser[] {

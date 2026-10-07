@@ -46,6 +46,10 @@ export class StorageEngine {
     });
   }
 
+  static notifyChange(): void {
+    this.notifyListeners();
+  }
+
   static setCurrentUserId(userId: string | null) {
     if (this.currentUserId !== userId) {
       this.currentUserId = userId;
