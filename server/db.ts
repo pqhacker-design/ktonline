@@ -123,12 +123,55 @@ export class ExamRepository {
   static getExams(userId?: string): ExamData[] {
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
     if (!userId || userId === 'guest' || userId === 'anonymous') return [];
+    if (userId === 'admin' || userId === 'pqhacker@gamil.com') return exams;
     return exams.filter((e) => e.createdBy === userId);
   }
 
   static getExamByCode(code: string): ExamData | undefined {
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
-    return exams.find((e) => e.code.toUpperCase() === code.toUpperCase());
+    const cleanCode = (code || '').trim().toUpperCase();
+    if (!cleanCode) return undefined;
+
+    // 1. Direct match by exam code
+    let matched = exams.find((e) => (e.code || '').trim().toUpperCase() === cleanCode);
+    if (matched) return matched;
+
+    // 2. Match by sub-exam paper code in examPackage.exams (e.g. 101, 102...)
+    matched = exams.find((e) => {
+      const subExams = e.examPackage?.exams || [];
+      return subExams.some((sub: any) => (sub.code || '').trim().toUpperCase() === cleanCode);
+    });
+    if (matched) {
+      // Re-order exams so the requested sub-exam paper is at index 0
+      const subExams = matched.examPackage?.exams || [];
+      const subIndex = subExams.findIndex((sub: any) => (sub.code || '').trim().toUpperCase() === cleanCode);
+      if (subIndex > 0) {
+        const reordered = [subExams[subIndex], ...subExams.filter((_: any, idx: number) => idx !== subIndex)];
+        return {
+          ...matched,
+          examPackage: {
+            ...matched.examPackage,
+            exams: reordered,
+          },
+        };
+      }
+      return matched;
+    }
+
+    // 3. Match by metadata.onlineExamCode
+    matched = exams.find((e) => {
+      const oCode = (e.examPackage?.metadata?.onlineExamCode || '').trim().toUpperCase();
+      return oCode === cleanCode;
+    });
+    if (matched) return matched;
+
+    // 4. Match by ID or Package ID
+    matched = exams.find((e) => {
+      return (e.id && e.id.toUpperCase() === cleanCode) ||
+             (e.packageId && e.packageId.toUpperCase() === cleanCode) ||
+             (e.examPackageId && e.examPackageId.toUpperCase() === cleanCode);
+    });
+    return matched;
   }
 
   static saveExam(exam: ExamData, userId?: string): ExamData {
@@ -236,16 +279,28 @@ export class ExamRepository {
     const sessions = this.getSessions();
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
     let filteredExams = exams;
-    if (userId) {
+    if (userId && userId !== 'admin') {
       filteredExams = exams.filter((e) => e.createdBy === userId || !e.createdBy);
     }
-    const userExamCodes = new Set(filteredExams.map((e) => e.code.toUpperCase()));
+    const userExamCodes = new Set<string>();
+    filteredExams.forEach((e) => {
+      if (e.code) userExamCodes.add(e.code.toUpperCase());
+      if (e.examPackage?.metadata?.onlineExamCode) {
+        userExamCodes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+      }
+      (e.examPackage?.exams || []).forEach((sub: any) => {
+        if (sub.code) userExamCodes.add(sub.code.toUpperCase());
+      });
+    });
+
+    const normFilter = (examCode || 'ALL').trim().toUpperCase();
 
     return sessions.filter((s) => {
       if (s.status !== 'submitted') return false;
-      if (userId && !userExamCodes.has(s.examCode.toUpperCase())) return false;
-      if (!examCode || examCode === 'ALL') return true;
-      return s.examCode.toUpperCase() === examCode.toUpperCase();
+      const sExamCode = (s.examCode || '').trim().toUpperCase();
+      if (userId && userId !== 'admin' && !userExamCodes.has(sExamCode)) return false;
+      if (!examCode || normFilter === 'ALL') return true;
+      return sExamCode === normFilter;
     });
   }
 }

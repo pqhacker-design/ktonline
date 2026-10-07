@@ -19,9 +19,14 @@ export const defaultSettings: AppSettings = {
 };
 
 export type StorageChangeListener = () => void;
-
 export class StorageEngine {
-  private static currentUserId: string | null = null;
+  private static currentUserId: string | null = (() => {
+    try {
+      return localStorage.getItem('vision_test_app_user_id') || null;
+    } catch {
+      return null;
+    }
+  })();
   private static listeners: Set<StorageChangeListener> = new Set();
 
   static subscribe(listener: StorageChangeListener): () => void {

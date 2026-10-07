@@ -1,1 +1,47 @@
-[]
+[
+  {
+    "id": "exam_1791272075242_4s4c",
+    "code": "USER99",
+    "title": "Test User Exam",
+    "subject": "Toán",
+    "grade": "Khối 10",
+    "duration": 45,
+    "totalPoints": 10,
+    "topic": "",
+    "packageId": "pkg1",
+    "examPackageId": "pkg1",
+    "createdDate": "2026-10-06T07:34:35.242Z",
+    "status": "active",
+    "allowExplanations": true,
+    "allowedClasses": [],
+    "startTimeType": "immediate",
+    "createdBy": "gv_nguvan",
+    "antiCheat": {
+      "disallowPrevious": false,
+      "shuffleQuestions": true,
+      "shuffleOptions": true,
+      "autoSubmitOnTimeout": true,
+      "warnTabSwitch": true,
+      "tabSwitchLimit": 3
+    },
+    "examPackage": {
+      "id": "pkg1",
+      "exams": [
+        {
+          "code": "101",
+          "questions": [
+            {
+              "id": "q1",
+              "content": "Test",
+              "options": [
+                "A",
+                "B"
+              ],
+              "correctOptionIndex": 0
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

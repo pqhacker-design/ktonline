@@ -464,7 +464,7 @@ export function registerExamRoutes(app: express.Express) {
   // 1. Save or Create Exam
   app.post('/api/exam/save', (req: Request, res: Response) => {
     try {
-      const userId = (req.headers['x-user-id'] as string) || req.body.userId;
+      const userId = (req.headers['x-user-id'] as string) || req.body.userId || req.body.createdBy;
       const {
         code: inputCode,
         title,
@@ -871,10 +871,12 @@ export function registerExamRoutes(app: express.Express) {
         return res.status(403).json({ error: 'Đề đã kết thúc hoặc đang bị khóa.' });
       }
 
+      const requestedCode = (code || exam.code).trim().toUpperCase();
       return res.json({
         success: true,
         info: {
-          code: exam.code,
+          code: requestedCode,
+          originalCode: exam.code,
           title: exam.title,
           subject: exam.subject,
           grade: exam.grade,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Download, FileSpreadsheet, Eye, Printer, CheckCircle2, Lightbulb } from 'lucide-react';
+import { Copy, Download, FileSpreadsheet, Eye, Printer, CheckCircle2, Lightbulb, ExternalLink, Globe, Share2, Check } from 'lucide-react';
 import { ExamPackage } from '../types';
 import { QuestionDetailCard } from './QuestionDetailCard';
 
@@ -8,6 +8,8 @@ interface MultiCodeViewProps {
   onExportWord?: () => void;
   onExportPdf?: (code?: string) => void;
   onExportExcel?: () => void;
+  onOpenStudentExam?: (code: string) => void;
+  onPublishOnline?: (pkg: ExamPackage) => void;
 }
 
 export const MultiCodeView: React.FC<MultiCodeViewProps> = ({
@@ -15,6 +17,8 @@ export const MultiCodeView: React.FC<MultiCodeViewProps> = ({
   onExportWord,
   onExportPdf,
   onExportExcel,
+  onOpenStudentExam,
+  onPublishOnline,
 }) => {
   if (!examPackage) {
     return (
@@ -32,6 +36,7 @@ export const MultiCodeView: React.FC<MultiCodeViewProps> = ({
 
   const { metadata, exams, answerKeys } = examPackage;
   const [activeCodeTab, setActiveCodeTab] = useState<string>(exams[0]?.code || '101');
+  const [copiedOnlineCode, setCopiedOnlineCode] = useState(false);
 
   // Preview toggles for viewing details & answers
   const [showAnswersInPreview, setShowAnswersInPreview] = useState(true);
@@ -39,6 +44,7 @@ export const MultiCodeView: React.FC<MultiCodeViewProps> = ({
 
   const selectedExam = exams.find((e) => e.code === activeCodeTab) || exams[0];
   const selectedAK = answerKeys.find((ak) => ak.code === activeCodeTab) || answerKeys[0];
+  const onlineCode = metadata?.onlineExamCode || '';
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -81,6 +87,64 @@ export const MultiCodeView: React.FC<MultiCodeViewProps> = ({
             >
               <Printer className="w-4 h-4" />
               <span>In / PDF Tất Cả</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Online Exam Code Banner */}
+      <div className="bg-gradient-to-r from-teal-500/10 via-emerald-500/10 to-teal-500/10 border border-teal-300 dark:border-teal-700/60 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <Globe className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center space-x-2 flex-wrap">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-teal-800 dark:text-teal-300">
+                Mã dự thi trực tuyến:
+              </span>
+              <span className="font-mono font-black text-lg text-teal-600 dark:text-teal-400 bg-white dark:bg-slate-800 px-2.5 py-0.5 rounded-lg border border-teal-300/80 dark:border-teal-700 shadow-2xs">
+                {onlineCode || exams[0]?.code || 'CHƯA CẤP'}
+              </span>
+              <button
+                onClick={() => {
+                  const c = onlineCode || exams[0]?.code || '';
+                  if (c) {
+                    navigator.clipboard.writeText(c);
+                    setCopiedOnlineCode(true);
+                    setTimeout(() => setCopiedOnlineCode(false), 2000);
+                  }
+                }}
+                className="px-2.5 py-1 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg flex items-center space-x-1 cursor-pointer transition-colors shadow-2xs"
+                title="Sao chép mã thi"
+              >
+                {copiedOnlineCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedOnlineCode ? 'Đã chép!' : 'Chép mã'}</span>
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+              Học sinh có thể vào mục <strong>"Học sinh làm bài"</strong> nhập mã <strong>{onlineCode || exams[0]?.code}</strong> hoặc bất kỳ mã đề con ({exams.map(e => e.code).join(', ')}) để thi online ngay.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2 shrink-0 self-end sm:self-center">
+          {onOpenStudentExam && (
+            <button
+              onClick={() => onOpenStudentExam(onlineCode || exams[0]?.code)}
+              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Vào Thi Thử Nghiệm</span>
+            </button>
+          )}
+          {onPublishOnline && (
+            <button
+              onClick={() => onPublishOnline(examPackage)}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center space-x-1 transition-colors cursor-pointer"
+            >
+              <Share2 className="w-3.5 h-3.5 text-teal-600" />
+              <span>Chia sẻ mã</span>
             </button>
           )}
         </div>

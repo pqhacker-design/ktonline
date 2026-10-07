@@ -249,31 +249,42 @@ export default function App() {
           examPackage: generatedPackage,
         });
 
-        const pubRes = await Promise.race([
-          pubPromise,
-          new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Publish timeout')), 4000)),
-        ]);
-
-        if (pubRes && pubRes.success && pubRes.code) {
-          const pkgWithOnlineCode: ExamPackage = {
-            ...generatedPackage,
-            metadata: {
-              ...generatedPackage.metadata,
-              onlineExamCode: pubRes.code,
-            },
-          };
-          StorageEngine.saveExamPackage(pkgWithOnlineCode);
-          setExamHistory(StorageEngine.getExamHistory());
-          setCurrentExamPackage(pkgWithOnlineCode);
-
-          setShareModalState({
-            isOpen: true,
-            code: pubRes.code,
-            title: metadata.examTitle || 'Đề kiểm tra AI',
-          });
+        let pubCode = '';
+        try {
+          const pubRes = await Promise.race([
+            pubPromise,
+            new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Publish timeout')), 10000)),
+          ]);
+          if (pubRes && pubRes.success && pubRes.code) {
+            pubCode = pubRes.code;
+          }
+        } catch (pubErr) {
+          console.warn('Lỗi tự động lưu vào kho đề online:', pubErr);
         }
-      } catch (pubErr) {
-        console.warn('Lỗi tự động lưu vào kho đề online:', pubErr);
+
+        // Ensure onlineExamCode is assigned
+        if (!pubCode) {
+          pubCode = 'EX' + Math.floor(1000 + Math.random() * 9000);
+        }
+
+        const pkgWithOnlineCode: ExamPackage = {
+          ...generatedPackage,
+          metadata: {
+            ...generatedPackage.metadata,
+            onlineExamCode: pubCode,
+          },
+        };
+        StorageEngine.saveExamPackage(pkgWithOnlineCode);
+        setExamHistory(StorageEngine.getExamHistory());
+        setCurrentExamPackage(pkgWithOnlineCode);
+
+        setShareModalState({
+          isOpen: true,
+          code: pubCode,
+          title: metadata.examTitle || 'Đề kiểm tra AI',
+        });
+      } catch (err: any) {
+        console.warn('Lỗi quy trình lưu trữ đề:', err);
       }
 
       // Automatically navigate to Exam Paper view
@@ -816,6 +827,14 @@ export default function App() {
                   onExportWord={() => handleExportWord()}
                   onExportPdf={(code) => handleExportPdf(code)}
                   onExportExcel={() => handleExportExcel()}
+                  onOpenStudentExam={(code) => {
+                    setStudentInitialCode(code);
+                    setActiveTab('student_exam');
+                  }}
+                  onPublishOnline={(pkg) => {
+                    setPublishModalPackage(pkg);
+                    setShowPublishModal(true);
+                  }}
                 />
               )}
 

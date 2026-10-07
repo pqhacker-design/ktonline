@@ -19,6 +19,7 @@ export interface OnlineExamItem {
   packageId?: string;
   examPackageId?: string;
   examPackage?: any;
+  questions?: any[];
   createdDate: string;
   status: 'active' | 'locked';
   allowedClasses?: string[];
@@ -210,22 +211,84 @@ export class OnlineExamService {
     const localExams = this.getLocalExams();
     const localCodes = new Set(localExams.map((e) => (e.code || '').toUpperCase()));
 
-    for (let attempts = 0; attempts < 5; attempts++) {
+    for (let attempts = 0; attempts < 10; attempts++) {
       const code = this.generateRandomCode();
       if (localCodes.has(code)) {
         continue;
       }
       try {
-        const fsExam = await this.getPublishedExamFromFirestore(code);
-        if (fsExam) {
+        // Quick Firestore check on the specific document only with 500ms timeout
+        const docRef = doc(db, 'published_exams', code);
+        const snap = await Promise.race([
+          getDoc(docRef),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 500)),
+        ]);
+        if (snap && (snap as any).exists && (snap as any).exists()) {
           continue;
         }
       } catch {
-        // If firestore is slow or fails, accept code
+        // If network/firestore is slow, accept code
       }
       return code;
     }
     return this.generateRandomCode();
+  }
+
+  /**
+   * Quét toàn bộ LocalStorage của mọi tài khoản trên trình duyệt này để học sinh tìm thấy đề thi ngay
+   */
+  public static getAllLocalExamsAcrossAllUsers(): any[] {
+    const map = new Map<string, any>();
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('aitest_online_exams_store_') || key === 'aitest_online_exams_global_cache')) {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((item) => {
+                  if (item && item.code) {
+                    const c = item.code.trim().toUpperCase();
+                    if (!map.has(c)) map.set(c, item);
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+    return Array.from(map.values());
+  }
+
+  /**
+   * Quét toàn bộ Lịch sử tạo đề của mọi tài khoản trên trình duyệt này
+   */
+  public static getAllExamHistoriesAcrossAllUsers(): any[] {
+    const map = new Map<string, any>();
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('aitest_exam_history_v1') || key.startsWith('aitest_exam_history_'))) {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((item) => {
+                  if (item && item.id && !map.has(item.id)) {
+                    map.set(item.id, item);
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+    return Array.from(map.values());
   }
 
   public static getLocalExams(): any[] {
@@ -507,17 +570,57 @@ export class OnlineExamService {
       console.log(`[OnlineExamService] Bỏ qua đồng bộ mã đề ${codeUpper} vì đã bị xóa.`);
       return;
     }
+
     try {
       const docRef = doc(db, 'published_exams', codeUpper);
       const userId = this.getActiveUserId();
+
+      // Collect any sub-exam paper codes (e.g. 101, 102...)
+      const subCodes: string[] = [];
+      const subExamsList = exam.examPackage?.exams || exam.exams || [];
+      if (Array.isArray(subExamsList)) {
+        subExamsList.forEach((sub: any) => {
+          if (sub && sub.code) {
+            const sc = String(sub.code).trim().toUpperCase();
+            if (sc && sc !== codeUpper && !subCodes.includes(sc)) {
+              subCodes.push(sc);
+            }
+          }
+        });
+      }
+
       const cleanData = this.sanitizeExamForFirestore({
         ...exam,
         code: codeUpper,
+        subCodes,
         createdBy: userId || exam.createdBy || 'anonymous',
         updatedAt: new Date().toISOString(),
       });
+
+      // 1. Sync primary document
       await setDoc(docRef, cleanData, { merge: true });
       console.log(`[OnlineExamService] Đã đồng bộ mã đề ${codeUpper} lên Firestore thành công.`);
+
+      // 2. Also register aliases for all sub-exam paper codes (e.g. 101, 102) so students can enter either code
+      for (const sc of subCodes) {
+        try {
+          const subDocRef = doc(db, 'published_exams', sc);
+          // Position matching sub-exam paper at index 0 for this alias
+          const reorderedExams = subExamsList.filter((s: any) => (s?.code || '').trim().toUpperCase() === sc);
+          const otherExams = subExamsList.filter((s: any) => (s?.code || '').trim().toUpperCase() !== sc);
+          const aliasData = {
+            ...cleanData,
+            code: sc,
+            primaryExamCode: codeUpper,
+            subCodes,
+            examPackage: {
+              ...cleanData.examPackage,
+              exams: [...reorderedExams, ...otherExams],
+            },
+          };
+          setDoc(subDocRef, aliasData, { merge: true }).catch(() => {});
+        } catch {}
+      }
     } catch (e: any) {
       console.error(`[OnlineExamService] Lỗi đồng bộ mã đề ${codeUpper} tới Firestore:`, e);
       throw new Error(`Không thể đồng bộ mã đề ${codeUpper} lên Cloud: ${e.message || 'Lỗi mạng hoặc quyền truy cập'}`);
@@ -534,71 +637,97 @@ export class OnlineExamService {
     // 1. Kiểm tra trực tiếp document trong collection 'published_exams/{code}'
     try {
       const docRef = doc(db, 'published_exams', codeUpper);
-      const snap = await getDoc(docRef);
-      if (snap && snap.exists && snap.exists()) {
-        const data = snap.data();
+      const snap = await Promise.race([
+        getDoc(docRef),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+      ]);
+      if (snap && (snap as any).exists && (snap as any).exists()) {
+        const data = (snap as any).data();
         if (data) return data;
       }
     } catch (e) {
       console.warn('Lỗi đọc published_exams từ Firestore:', e);
     }
 
-    // 2. Fallback tìm kiếm trong collection 'user_data' (phòng trường hợp đề được tạo ở tài khoản giáo viên nhưng chưa sync sang published_exams)
+    // 2. Kiểm tra query theo subCodes (khi học sinh nhập 101, 102 của bộ đề xáo trộn)
+    try {
+      const colRef = collection(db, 'published_exams');
+      const q = query(colRef, where('subCodes', 'array-contains', codeUpper));
+      const qSnap = await Promise.race([
+        getDocs(q),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+      ]);
+      if (qSnap && (qSnap as any).docs && (qSnap as any).docs.length > 0) {
+        const data = (qSnap as any).docs[0].data();
+        if (data) return data;
+      }
+    } catch (e) {
+      console.warn('Lỗi query published_exams theo subCodes:', e);
+    }
+
+    // 3. Fallback nhanh tìm kiếm trong collection 'user_data' với timeout 1200ms
     try {
       const colRef = collection(db, 'user_data');
-      const snap = await getDocs(colRef);
-      for (const d of snap.docs) {
-        const uData = d.data() as any;
-        if (!uData) continue;
+      const snap = await Promise.race([
+        getDocs(colRef),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200)),
+      ]);
+      if (snap && (snap as any).docs) {
+        for (const d of (snap as any).docs) {
+          const uData = d.data() as any;
+          if (!uData) continue;
 
-        // Tìm trong onlineExams
-        if (Array.isArray(uData.onlineExams)) {
-          const matched = uData.onlineExams.find(
-            (oe: any) => oe && oe.code && oe.code.trim().toUpperCase() === codeUpper
-          );
-          if (matched) {
-            this.syncPublishedExamToFirestore(matched).catch(() => {});
-            return matched;
+          // Tìm trong onlineExams
+          if (Array.isArray(uData.onlineExams)) {
+            const matched = uData.onlineExams.find(
+              (oe: any) => oe && oe.code && oe.code.trim().toUpperCase() === codeUpper
+            );
+            if (matched) {
+              this.syncPublishedExamToFirestore(matched).catch(() => {});
+              return matched;
+            }
           }
-        }
 
-        // Tìm trong examHistory
-        if (Array.isArray(uData.examHistory)) {
-          const matchedPkg = uData.examHistory.find(
-            (p: any) => p?.metadata?.onlineExamCode?.trim().toUpperCase() === codeUpper
-          );
-          if (matchedPkg) {
-            const qCount = matchedPkg.exams?.[0]?.questions?.length || 10;
-            const recoveredExam: OnlineExamItem = {
-              id: matchedPkg.id || 'exam_hist_' + codeUpper,
-              code: codeUpper,
-              title: matchedPkg.metadata.examTitle || 'Đề kiểm tra',
-              subject: matchedPkg.metadata.subject || 'Toán',
-              grade: matchedPkg.metadata.grade || 'Khối 10',
-              duration: Number(matchedPkg.metadata.durationMinutes) || 45,
-              totalPoints: Number(matchedPkg.metadata.totalPoints) || 10.0,
-              topic: matchedPkg.metadata.chapterTitle || '',
-              packageId: matchedPkg.id,
-              examPackageId: matchedPkg.id,
-              examPackage: matchedPkg,
-              createdDate: matchedPkg.createdAt || new Date().toISOString(),
-              status: 'active',
-              allowedClasses: [],
-              questionCount: qCount,
-              submissionCount: 0,
-              activeSessionCount: 0,
-              antiCheat: {
-                disallowPrevious: false,
-                shuffleQuestions: true,
-                shuffleOptions: true,
-                autoSubmitOnTimeout: true,
-                warnTabSwitch: true,
-                tabSwitchLimit: 3,
-              },
-              createdBy: d.id,
-            };
-            this.syncPublishedExamToFirestore(recoveredExam).catch(() => {});
-            return recoveredExam;
+          // Tìm trong examHistory
+          if (Array.isArray(uData.examHistory)) {
+            const matchedPkg = uData.examHistory.find(
+              (p: any) =>
+                p?.metadata?.onlineExamCode?.trim().toUpperCase() === codeUpper ||
+                (p?.exams && p.exams.some((ex: any) => (ex.code || '').trim().toUpperCase() === codeUpper))
+            );
+            if (matchedPkg) {
+              const qCount = matchedPkg.exams?.[0]?.questions?.length || 10;
+              const recoveredExam: OnlineExamItem = {
+                id: matchedPkg.id || 'exam_hist_' + codeUpper,
+                code: codeUpper,
+                title: matchedPkg.metadata?.examTitle || 'Đề kiểm tra',
+                subject: matchedPkg.metadata?.subject || 'Toán',
+                grade: matchedPkg.metadata?.grade || 'Khối 10',
+                duration: Number(matchedPkg.metadata?.durationMinutes) || 45,
+                totalPoints: Number(matchedPkg.metadata?.totalPoints) || 10.0,
+                topic: matchedPkg.metadata?.chapterTitle || '',
+                packageId: matchedPkg.id,
+                examPackageId: matchedPkg.id,
+                examPackage: matchedPkg,
+                createdDate: matchedPkg.createdAt || new Date().toISOString(),
+                status: 'active',
+                allowedClasses: [],
+                questionCount: qCount,
+                submissionCount: 0,
+                activeSessionCount: 0,
+                antiCheat: {
+                  disallowPrevious: false,
+                  shuffleQuestions: true,
+                  shuffleOptions: true,
+                  autoSubmitOnTimeout: true,
+                  warnTabSwitch: true,
+                  tabSwitchLimit: 3,
+                },
+                createdBy: d.id,
+              };
+              this.syncPublishedExamToFirestore(recoveredExam).catch(() => {});
+              return recoveredExam;
+            }
           }
         }
       }
@@ -754,6 +883,7 @@ export class OnlineExamService {
     const payload = {
       ...data,
       code: requestedCode,
+      userId,
       createdBy: userId,
     };
 
@@ -822,7 +952,10 @@ export class OnlineExamService {
       if (!savedResult.exam.topic && (data.topic || data.examPackage?.metadata?.chapterTitle)) {
         savedResult.exam.topic = data.topic || data.examPackage?.metadata?.chapterTitle;
       }
-      await this.syncPublishedExamToFirestore(savedResult.exam);
+      // Async sync to Firestore without blocking the client response
+      this.syncPublishedExamToFirestore(savedResult.exam).catch((e) => {
+        console.warn('Lỗi đồng bộ Firestore khi lưu đề:', e);
+      });
       const localExams = this.getLocalExams();
       const updated = [
         savedResult.exam,
@@ -1086,50 +1219,103 @@ export class OnlineExamService {
       // ignore
     }
 
-    // 2. Kiểm tra bộ nhớ cục bộ LocalStorage
-    const exams = this.getLocalExams();
-    const exam = exams.find((e) => e.code.toUpperCase() === cleanCode);
-    if (exam) {
-      return { success: true, exam };
+    // 2. Kiểm tra bộ nhớ cục bộ LocalStorage (quét cả tài khoản hiện tại & mọi tài khoản trên máy này)
+    const allLocalExams = [...this.getLocalExams(), ...this.getAllLocalExamsAcrossAllUsers()];
+    for (const ex of allLocalExams) {
+      if (!ex) continue;
+      const exCode = (ex.code || '').trim().toUpperCase();
+      const metaCode = (ex.examPackage?.metadata?.onlineExamCode || '').trim().toUpperCase();
+      const subExams = ex.examPackage?.exams || ex.exams || [];
+      const subCodes = Array.isArray(subExams) ? subExams.map((s: any) => (s?.code || '').trim().toUpperCase()) : [];
+
+      if (exCode === cleanCode || metaCode === cleanCode || subCodes.includes(cleanCode)) {
+        // Nếu khớp đúng mã đề con (ví dụ 101), đảo bài thi con đó lên đầu để học sinh làm đúng đề 101
+        if (subCodes.includes(cleanCode) && Array.isArray(subExams) && subExams.length > 0) {
+          const matchSub = subExams.find((s: any) => (s?.code || '').trim().toUpperCase() === cleanCode);
+          if (matchSub) {
+            const reordered = [matchSub, ...subExams.filter((s: any) => (s?.code || '').trim().toUpperCase() !== cleanCode)];
+            return {
+              success: true,
+              exam: {
+                ...ex,
+                code: cleanCode,
+                questions: matchSub.questions || ex.questions,
+                examPackage: {
+                  ...ex.examPackage,
+                  exams: reordered,
+                },
+              },
+            };
+          }
+        }
+        return { success: true, exam: ex };
+      }
     }
 
-    // 3. Kiểm tra trong Lịch sử Đề thi đã tạo
-    const history = StorageEngine.getExamHistory();
-    const pkg = history.find((p) => p.metadata?.onlineExamCode?.toUpperCase() === cleanCode);
-    if (pkg) {
-      const historyExam: OnlineExamItem = {
-        id: pkg.id || 'exam_hist_' + cleanCode,
-        code: cleanCode,
-        title: pkg.metadata.examTitle || 'Đề kiểm tra',
-        subject: pkg.metadata.subject || 'Toán',
-        grade: pkg.metadata.grade || 'Khối 10',
-        duration: Number(pkg.metadata.durationMinutes) || 45,
-        totalPoints: Number(pkg.metadata.totalPoints) || 10.0,
-        topic: pkg.metadata.chapterTitle || '',
-        packageId: pkg.id,
-        examPackageId: pkg.id,
-        examPackage: pkg,
-        createdDate: pkg.createdAt || new Date().toISOString(),
-        status: 'active',
-        allowedClasses: [],
-        questionCount: pkg.exams?.[0]?.questions?.length || 10,
-        submissionCount: 0,
-        activeSessionCount: 0,
-        antiCheat: {
-          disallowPrevious: false,
-          shuffleQuestions: true,
-          shuffleOptions: true,
-          autoSubmitOnTimeout: true,
-          warnTabSwitch: true,
-          tabSwitchLimit: 3,
-        },
-      };
-      return { success: true, exam: historyExam };
+    // 3. Kiểm tra trong Lịch sử Đề thi đã tạo (quét cả tài khoản hiện tại & mọi tài khoản trên máy này)
+    const allHistories = [...StorageEngine.getExamHistory(), ...this.getAllExamHistoriesAcrossAllUsers()];
+    for (const pkg of allHistories) {
+      if (!pkg) continue;
+      const onlineCode = (pkg.metadata?.onlineExamCode || '').trim().toUpperCase();
+      const pkgSubExams = pkg.exams || [];
+      const subCodes = Array.isArray(pkgSubExams) ? pkgSubExams.map((s: any) => (s?.code || '').trim().toUpperCase()) : [];
+      const isIdMatch = (pkg.id && pkg.id.toUpperCase() === cleanCode);
+
+      if (onlineCode === cleanCode || subCodes.includes(cleanCode) || isIdMatch) {
+        // Re-order if matched sub-exam
+        let primaryExam = pkgSubExams[0];
+        let orderedExams = pkgSubExams;
+        if (subCodes.includes(cleanCode)) {
+          const matchSub = pkgSubExams.find((s: any) => (s?.code || '').trim().toUpperCase() === cleanCode);
+          if (matchSub) {
+            primaryExam = matchSub;
+            orderedExams = [matchSub, ...pkgSubExams.filter((s: any) => (s?.code || '').trim().toUpperCase() !== cleanCode)];
+          }
+        }
+
+        const historyExam: OnlineExamItem = {
+          id: pkg.id || 'exam_hist_' + cleanCode,
+          code: cleanCode,
+          title: pkg.metadata?.examTitle || 'Đề kiểm tra',
+          subject: pkg.metadata?.subject || 'Toán',
+          grade: pkg.metadata?.grade || 'Khối 10',
+          duration: Number(pkg.metadata?.durationMinutes) || 45,
+          totalPoints: Number(pkg.metadata?.totalPoints) || 10.0,
+          topic: pkg.metadata?.chapterTitle || '',
+          packageId: pkg.id,
+          examPackageId: pkg.id,
+          examPackage: {
+            ...pkg,
+            exams: orderedExams,
+          },
+          questions: primaryExam?.questions || [],
+          createdDate: pkg.createdAt || new Date().toISOString(),
+          status: 'active',
+          allowedClasses: [],
+          questionCount: primaryExam?.questions?.length || 10,
+          submissionCount: 0,
+          activeSessionCount: 0,
+          antiCheat: {
+            disallowPrevious: false,
+            shuffleQuestions: true,
+            shuffleOptions: true,
+            autoSubmitOnTimeout: true,
+            warnTabSwitch: true,
+            tabSwitchLimit: 3,
+          },
+        };
+        // Tự động đồng bộ lên Firestore ngầm để các thiết bị khác truy cập ngay
+        this.syncPublishedExamToFirestore(historyExam).catch(() => {});
+        return { success: true, exam: historyExam };
+      }
     }
 
     // 4. Gọi API backend nếu đang chạy server Node
     try {
-      return await this.request<{ success: boolean; exam: any }>(`/api/exam/detail/${encodeURIComponent(cleanCode)}`);
+      const res = await this.request<{ success: boolean; exam: any }>(`/api/exam/detail/${encodeURIComponent(cleanCode)}`);
+      if (res && res.success && res.exam) {
+        return res;
+      }
     } catch {
       // ignore
     }
@@ -1429,7 +1615,9 @@ export class OnlineExamService {
         err.message &&
         err.message !== 'SERVER_OFFLINE_OR_NON_JSON' &&
         !err.message.includes('Unexpected') &&
-        !err.message.includes('JSON')
+        !err.message.includes('JSON') &&
+        !err.message.includes('Mã đề không tồn tại') &&
+        !err.message.includes('không tồn tại')
       ) {
         throw err;
       }

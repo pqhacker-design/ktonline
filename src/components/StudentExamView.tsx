@@ -131,7 +131,7 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
 
   // Auto-check Exam Code metadata on typing or initial load
   useEffect(() => {
-    if (examCode.trim().length >= 4) {
+    if (examCode.trim().length >= 3) {
       checkExamCodeInfo(examCode.trim().toUpperCase());
     } else {
       setExamInfo(null);
