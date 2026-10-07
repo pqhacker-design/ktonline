@@ -868,12 +868,7 @@ export class OnlineExamService {
   private static async getStudentResultsFromFirestore(examCode: string = 'ALL'): Promise<StudentResultItem[]> {
     try {
       const colRef = collection(db, 'student_results');
-      let q = colRef as any;
-      if (examCode && examCode !== 'ALL') {
-        const codeUpper = examCode.trim().toUpperCase();
-        q = query(colRef, where('examCode', '==', codeUpper));
-      }
-      const snap = await getDocs(q);
+      const snap = await getDocs(colRef);
       const items: StudentResultItem[] = [];
       snap.forEach((d) => {
         const data = d.data() as StudentResultItem;
@@ -1236,12 +1231,25 @@ export class OnlineExamService {
       });
 
       merged.forEach((exam) => {
-        const codeKey = (exam.code || '').trim().toUpperCase();
-        const submissionSet = submissionIdMap.get(codeKey);
-        const count = submissionSet ? submissionSet.size : 0;
-        const apiItem = apiExams.find((ae: any) => (ae.code || '').trim().toUpperCase() === codeKey);
+        const allExamCodes = new Set<string>();
+        if (exam.code) allExamCodes.add(exam.code.trim().toUpperCase());
+        const oCode = (exam.examPackage?.metadata?.onlineExamCode || (exam as any).metadata?.onlineExamCode);
+        if (oCode) allExamCodes.add(String(oCode).trim().toUpperCase());
+        (exam.examPackage?.exams || []).forEach((sub: any) => {
+          if (sub.code) allExamCodes.add(String(sub.code).trim().toUpperCase());
+        });
+
+        const combinedSubmissionIds = new Set<string>();
+        allExamCodes.forEach((c) => {
+          const sSet = submissionIdMap.get(c);
+          if (sSet) {
+            sSet.forEach((id) => combinedSubmissionIds.add(id));
+          }
+        });
+
+        const apiItem = apiExams.find((ae: any) => ae.code && allExamCodes.has(ae.code.trim().toUpperCase()));
         const apiCount = apiItem?.submissionCount || 0;
-        exam.submissionCount = Math.max(exam.submissionCount || 0, count, apiCount);
+        exam.submissionCount = Math.max(exam.submissionCount || 0, combinedSubmissionIds.size, apiCount);
       });
     } catch (e) {
       console.warn('Lỗi cập nhật submissionCount trong listExams:', e);
@@ -1788,12 +1796,21 @@ export class OnlineExamService {
       }
 
       const sessions = this.getLocalSessions();
-      const session = sessions.find(
-        (s) =>
-          s.examCode.toUpperCase() === data.code.toUpperCase() &&
+      const session = sessions.find((s) => {
+        const isCode =
+          s.examCode.toUpperCase() === data.code.toUpperCase() ||
+          (exam?.code && s.examCode.toUpperCase() === exam.code.toUpperCase());
+        if (!isCode) return false;
+        if (data.studentId && s.studentId && s.studentId.trim().toUpperCase() === data.studentId.trim().toUpperCase()) {
+          return true;
+        }
+        const sClassNorm = normalizeClassName(s.studentClass);
+        const classMatches = !normClass || !sClassNorm || normClass === sClassNorm;
+        return (
           s.studentName.toLowerCase().trim() === data.studentName.toLowerCase().trim() &&
-          s.studentClass.toLowerCase().trim() === data.studentClass.toLowerCase().trim()
-      );
+          classMatches
+        );
+      });
 
       if (session) {
         if (session.status === 'submitted') {
@@ -2051,7 +2068,7 @@ export class OnlineExamService {
   ) {
     let submitRes: any = null;
 
-    // 1. Attempt API submission with quick 3.5s timeout
+    // 1. Attempt API submission with 6.5s timeout
     try {
       submitRes = await this.request<{
         success: boolean;
@@ -2071,9 +2088,21 @@ export class OnlineExamService {
           method: 'POST',
           body: JSON.stringify({ sessionId, answers, remainingSeconds }),
         },
-        3500
+        6500
       );
     } catch (err: any) {
+      // Background retry to ensure server has recorded submission
+      setTimeout(() => {
+        this.request(
+          '/api/exam/submit',
+          {
+            method: 'POST',
+            body: JSON.stringify({ sessionId, answers, remainingSeconds }),
+          },
+          10000
+        ).catch(() => {});
+      }, 300);
+
       // 2. Instant client-side fallback grading (Zero-network waterfall)
       const sessions = this.getLocalSessions();
       const idx = sessions.findIndex((s) => s.id === sessionId);
@@ -2401,27 +2430,64 @@ export class OnlineExamService {
 
     const firestoreResults = await this.getStudentResultsFromFirestore(codeUpper);
 
-    const userId = this.getActiveUserId();
-    const isAdmin = userId === 'admin' || userId === 'pqhacker@gamil.com';
+    const rawUserId = this.getActiveUserId();
+    const cleanUserId = (rawUserId || '').trim().toLowerCase();
+    const isAdmin =
+      cleanUserId === 'admin' ||
+      cleanUserId === 'pqhacker@gamil.com' ||
+      cleanUserId === 'pqhacker@gmail.com' ||
+      cleanUserId.includes('admin');
+
     const teacherExamsRes = await this.listExams();
     const examsList: any[] = Array.isArray(teacherExamsRes) ? teacherExamsRes : (teacherExamsRes?.exams || []);
-    const teacherCodes = new Set(examsList.map((e: any) => (e.code || '').toUpperCase()));
+    const teacherCodes = new Set<string>();
+    examsList.forEach((e: any) => {
+      if (e.code) teacherCodes.add(e.code.toUpperCase());
+      if (e.examPackage?.metadata?.onlineExamCode) {
+        teacherCodes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+      }
+      (e.examPackage?.exams || []).forEach((sub: any) => {
+        if (sub.code) teacherCodes.add(sub.code.toUpperCase());
+      });
+    });
 
+    // Helper to check if an exam code matches codeUpper (master or sub-codes)
+    const isCodeMatch = (itemCode: string) => {
+      if (!itemCode) return false;
+      if (codeUpper === 'ALL') return true;
+      if (itemCode === codeUpper) return true;
+      return examsList.some((e: any) => {
+        const codes = new Set<string>();
+        if (e.code) codes.add(e.code.toUpperCase());
+        if (e.examPackage?.metadata?.onlineExamCode) {
+          codes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+        }
+        (e.examPackage?.exams || []).forEach((sub: any) => {
+          if (sub.code) codes.add(sub.code.toUpperCase());
+        });
+        return codes.has(itemCode) && codes.has(codeUpper);
+      });
+    };
+
+    const apiResultIds = new Set(apiResults.map((r) => r.id));
     const map = new Map<string, StudentResultItem>();
+
     [...apiResults, ...firestoreResults, ...localResults].forEach((item) => {
       if (item && item.id) {
         const itemCode = (item.examCode || '').trim().toUpperCase();
-        if (codeUpper !== 'ALL' && itemCode !== codeUpper) {
+        if (!isCodeMatch(itemCode)) {
           return;
         }
 
+        const isFromApi = apiResultIds.has(item.id);
         const isAllowed =
+          isFromApi ||
           codeUpper !== 'ALL' ||
           isAdmin ||
           teacherCodes.size === 0 ||
           teacherCodes.has(itemCode) ||
-          item.teacherId === userId ||
-          item.createdBy === userId;
+          (item.teacherId && item.teacherId.toLowerCase() === cleanUserId) ||
+          (item.createdBy && item.createdBy.toLowerCase() === cleanUserId);
 
         if (isAllowed) {
           map.set(item.id, item);

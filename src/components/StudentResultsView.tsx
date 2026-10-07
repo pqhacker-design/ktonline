@@ -97,6 +97,8 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
   const [classFilter, setClassFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'submitted' | 'not_taken'>('ALL');
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   // Detail Modal State
   const [detailModalItem, setDetailModalItem] = useState<StudentResultItem | null>(null);
 
@@ -115,8 +117,9 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     setTimeout(() => setToast(null), 4000);
   };
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showLoadingSpinner: boolean = true) => {
+    if (showLoadingSpinner) setLoading(true);
+    else setIsRefreshing(true);
     try {
       const [resResults, resClasses, resStudents, resExams] = await Promise.all([
         OnlineExamService.getTeacherResults(examCodeFilter).catch(() => ({ success: false, results: [] })),
@@ -139,29 +142,43 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     } catch (err: any) {
       console.error('Lỗi lấy dữ liệu kết quả học sinh:', err);
     } finally {
-      setLoading(false);
+      if (showLoadingSpinner) setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
+  // Đồng bộ khi prop selectedExamCode thay đổi từ bên ngoài (e.g. click "Xem kết quả" từ Exam Card)
   useEffect(() => {
-    fetchData();
-  }, [examCodeFilter, user?.id, user?.username]);
+    if (selectedExamCode && selectedExamCode !== examCodeFilter) {
+      setExamCodeFilter(selectedExamCode);
+    }
+  }, [selectedExamCode]);
 
   useEffect(() => {
+    fetchData(true);
+  }, [examCodeFilter, user?.id, user?.username]);
+
+  // Live polling: Tự động cập nhật ngầm định kỳ 10 giây một lần khi giáo viên mở trang thống kê
+  useEffect(() => {
+    const pollInterval = setInterval(() => {
+      fetchData(false);
+    }, 10000);
+
     const unsubscribe = StorageEngine.subscribe(() => {
-      fetchData();
+      fetchData(false);
     });
     const handleSubmissionEvent = () => {
-      fetchData();
+      fetchData(false);
     };
     window.addEventListener('storage', handleSubmissionEvent);
     window.addEventListener('aitest_exam_submitted', handleSubmissionEvent);
     return () => {
+      clearInterval(pollInterval);
       unsubscribe();
       window.removeEventListener('storage', handleSubmissionEvent);
       window.removeEventListener('aitest_exam_submitted', handleSubmissionEvent);
     };
-  }, [examCodeFilter]);
+  }, [examCodeFilter, user?.id, user?.username]);
 
   const requestDeleteResult = (item: StudentResultItem) => {
     setConfirmModal({
@@ -231,29 +248,66 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     return Array.from(set).sort(naturalCompare);
   }, [classes, students, results]);
 
+  // Tập hợp tất cả các mã đề thi hợp lệ cho bộ lọc hiện tại (bao gồm mã gốc và các mã đề hoán vị con 101, 102...)
+  const targetExamCodes = useMemo(() => {
+    if (examCodeFilter === 'ALL') return null;
+    const set = new Set<string>();
+    const cleanFilter = examCodeFilter.trim().toUpperCase();
+    set.add(cleanFilter);
+
+    exams.forEach((e) => {
+      const allCodes = new Set<string>();
+      if (e.code) allCodes.add(e.code.trim().toUpperCase());
+      const oCode = (e.examPackage?.metadata?.onlineExamCode || (e as any).metadata?.onlineExamCode);
+      if (oCode) allCodes.add(String(oCode).trim().toUpperCase());
+      (e.examPackage?.exams || []).forEach((sub: any) => {
+        if (sub.code) allCodes.add(String(sub.code).trim().toUpperCase());
+      });
+
+      if (allCodes.has(cleanFilter)) {
+        allCodes.forEach((c) => set.add(c));
+      }
+    });
+
+    return set;
+  }, [examCodeFilter, exams]);
+
+  const isExamMatch = (rExamCode?: string) => {
+    if (!rExamCode) return false;
+    if (targetExamCodes === null) return true;
+    const norm = rExamCode.trim().toUpperCase();
+    return targetExamCodes.has(norm);
+  };
+
   // Ghép nối Danh sách học sinh theo lớp và Kết quả nộp bài
-  // Đảm bảo giữ đúng thứ tự đã nhập vào (orderIndex), và đánh dấu "Chưa làm" cho thí sinh chưa làm bài
+  // Đảm bảo giữ đúng thứ tự đã nhập vào (orderIndex), và đánh dấu chính xác thí sinh đã làm / chưa làm
   const unifiedResults = useMemo(() => {
     // 1. Xác định đề thi mục tiêu (nếu filter là cụ thể)
-    const targetExam = exams.find((e) => e.code.toUpperCase() === examCodeFilter.toUpperCase());
+    const targetExam = exams.find((e) => {
+      const cleanFilter = examCodeFilter.trim().toUpperCase();
+      if ((e.code || '').toUpperCase() === cleanFilter) return true;
+      const oCode = (e.examPackage?.metadata?.onlineExamCode || (e as any).metadata?.onlineExamCode);
+      if (oCode && String(oCode).toUpperCase() === cleanFilter) return true;
+      return (e.examPackage?.exams || []).some((sub: any) => (sub.code || '').toUpperCase() === cleanFilter);
+    });
 
     // 2. Xác định các lớp hợp lệ cho đề thi này (nếu có allowedClasses)
     let eligibleClassNames: Set<string> | null = null;
     if (targetExam && targetExam.allowedClasses && targetExam.allowedClasses.length > 0) {
-      eligibleClassNames = new Set(targetExam.allowedClasses.map((c) => c.trim().toLowerCase()));
+      eligibleClassNames = new Set(targetExam.allowedClasses.map((c) => normalizeClassName(c)));
     }
 
     // 3. Lọc danh sách học sinh theo lớp được chọn (classFilter) và theo đề thi
     let targetStudents = [...students];
 
     if (classFilter !== 'ALL') {
-      const normClass = classFilter.trim().toLowerCase();
+      const normClass = normalizeClassName(classFilter);
       targetStudents = targetStudents.filter(
-        (s) => s.className && s.className.trim().toLowerCase() === normClass
+        (s) => s.className && (normalizeClassName(s.className) === normClass || s.classId === classFilter)
       );
     } else if (eligibleClassNames && eligibleClassNames.size > 0) {
       targetStudents = targetStudents.filter(
-        (s) => s.className && eligibleClassNames.has(s.className.trim().toLowerCase())
+        (s) => s.className && eligibleClassNames.has(normalizeClassName(s.className))
       );
     }
 
@@ -282,46 +336,43 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
 
         let matchedRes: StudentResultItem | undefined;
 
-        // 1. Khớp ưu tiên: SBD chính xác hoặc SBD số (nếu cùng lớp)
+        // 1. Khớp ưu tiên: SBD chính xác
         if (stSbdNorm) {
           matchedRes = results.find((r) => {
-            if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
-              return false;
-            }
+            if (!isExamMatch(r.examCode)) return false;
             const rSbd = r.studentSbd || r.studentId || '';
             const rSbdNorm = normalizeSbd(rSbd);
-            const rClassNorm = normalizeClassName(r.studentClass);
-            const classMatches = !stClassNorm || !rClassNorm || stClassNorm === rClassNorm;
+            return rSbdNorm && rSbdNorm === stSbdNorm;
+          });
+        }
 
-            // Khớp chuỗi SBD chính xác
-            if (rSbdNorm && rSbdNorm === stSbdNorm) return true;
-
-            // Khớp SBD theo số nếu cùng lớp
-            if (stSbdNum !== null && classMatches) {
-              const rSbdNum = extractSbdNum(rSbd);
-              if (rSbdNum !== null && rSbdNum === stSbdNum) return true;
+        // 2. Khớp SBD theo số nếu cùng lớp hoặc nếu SBD khớp số duy nhất
+        if (!matchedRes && stSbdNum !== null) {
+          matchedRes = results.find((r) => {
+            if (!isExamMatch(r.examCode)) return false;
+            const rSbd = r.studentSbd || r.studentId || '';
+            const rSbdNum = extractSbdNum(rSbd);
+            if (rSbdNum !== null && rSbdNum === stSbdNum) {
+              const rClassNorm = normalizeClassName(r.studentClass);
+              const classMatches = !stClassNorm || !rClassNorm || stClassNorm === rClassNorm;
+              return classMatches;
             }
-
             return false;
           });
         }
 
-        // 2. Khớp theo ID học sinh trong hệ thống
+        // 3. Khớp theo ID học sinh trong hệ thống
         if (!matchedRes && st.id) {
           matchedRes = results.find((r) => {
-            if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
-              return false;
-            }
+            if (!isExamMatch(r.examCode)) return false;
             return r.studentId === st.id || r.studentSbd === st.id;
           });
         }
 
-        // 3. Khớp theo Họ và Tên chuẩn tiếng Việt (NFC) + Lớp
+        // 4. Khớp theo Họ và Tên chuẩn tiếng Việt (NFC) + Lớp
         if (!matchedRes && stNameNfc) {
           matchedRes = results.find((r) => {
-            if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
-              return false;
-            }
+            if (!isExamMatch(r.examCode)) return false;
             const rNameNfc = normalizeStr(r.studentName);
             const rClassNorm = normalizeClassName(r.studentClass);
             const classMatches = !stClassNorm || !rClassNorm || stClassNorm === rClassNorm;
@@ -329,17 +380,32 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
           });
         }
 
-        // 4. Khớp theo Họ và Tên không phân biệt dấu tiếng Việt (Accent-insensitive) + Lớp
+        // 5. Khớp theo Họ và Tên không phân biệt dấu tiếng Việt + Lớp
         if (!matchedRes && stNameAscii) {
           matchedRes = results.find((r) => {
-            if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
-              return false;
-            }
+            if (!isExamMatch(r.examCode)) return false;
             const rNameAscii = normalizeAscii(r.studentName);
             const rClassNorm = normalizeClassName(r.studentClass);
             const classMatches = !stClassNorm || !rClassNorm || stClassNorm === rClassNorm;
             return rNameAscii === stNameAscii && classMatches;
           });
+        }
+
+        // 6. Khớp dự phòng thông minh: Tên duy nhất trong danh sách lớp
+        // Kể cả khi học sinh lúc thi gõ tắt tên lớp hoặc bỏ dấu khác biệt
+        if (!matchedRes && stNameNfc) {
+          const sameNameCount = sortedStudentsInClass.filter(
+            (s) => normalizeStr(s.name) === stNameNfc
+          ).length;
+          if (sameNameCount === 1) {
+            matchedRes = results.find((r) => {
+              if (!isExamMatch(r.examCode)) return false;
+              if (matchedResultIds.has(r.id)) return false;
+              const rNameNfc = normalizeStr(r.studentName);
+              const rNameAscii = normalizeAscii(r.studentName);
+              return rNameNfc === stNameNfc || (stNameAscii && rNameAscii === stNameAscii);
+            });
+          }
         }
 
         if (matchedRes) {
@@ -396,7 +462,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     // 5. Thêm các bài nộp tự do / vãng lai (không nằm trong danh sách lớp đã tạo)
     results.forEach((r, idx) => {
       if (!matchedResultIds.has(r.id)) {
-        if (examCodeFilter !== 'ALL' && r.examCode.toUpperCase() !== examCodeFilter.toUpperCase()) {
+        if (!isExamMatch(r.examCode)) {
           return;
         }
         if (classFilter !== 'ALL' && normalizeClassName(r.studentClass) !== normalizeClassName(classFilter)) {
@@ -427,7 +493,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     });
 
     return unifiedList;
-  }, [results, classes, students, exams, examCodeFilter, classFilter, availableExams]);
+  }, [results, classes, students, exams, examCodeFilter, classFilter, availableExams, targetExamCodes]);
 
   // Lọc theo tìm kiếm và trạng thái (Tất cả / Đã làm / Chưa làm)
   const filteredUnifiedResults = useMemo(() => {
@@ -705,6 +771,15 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
               </option>
             ))}
           </select>
+
+          <button
+            onClick={() => fetchData(false)}
+            disabled={isRefreshing}
+            className="p-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-2xl border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer flex items-center justify-center shrink-0 disabled:opacity-50"
+            title="Làm mới kết quả tức thì"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-teal-600' : ''}`} />
+          </button>
         </div>
       </div>
 

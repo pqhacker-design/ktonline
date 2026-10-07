@@ -233,23 +233,44 @@ export class ExamRepository {
     studentId?: string
   ): StudentSession | undefined {
     const sessions = this.getSessions();
+    const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
     const normCode = examCode.trim().toUpperCase();
     const normName = studentName.trim().toLowerCase();
-    const normClass = studentClass.trim().toLowerCase();
+    const normClass = normalizeClassName(studentClass);
     const normId = (studentId || '').trim().toLowerCase();
 
+    // Collect all codes matching normCode (master code or sub-codes)
+    const linkedCodes = new Set<string>();
+    linkedCodes.add(normCode);
+    exams.forEach((e) => {
+      const allCodes = new Set<string>();
+      if (e.code) allCodes.add(e.code.toUpperCase());
+      if (e.examPackage?.metadata?.onlineExamCode) {
+        allCodes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+      }
+      (e.examPackage?.exams || []).forEach((sub: any) => {
+        if (sub.code) allCodes.add(sub.code.toUpperCase());
+      });
+      if (allCodes.has(normCode)) {
+        allCodes.forEach((c) => linkedCodes.add(c));
+      }
+    });
+
     return sessions.find((s) => {
-      if (s.examCode.toUpperCase() !== normCode) return false;
+      const sCode = (s.examCode || '').trim().toUpperCase();
+      if (!linkedCodes.has(sCode)) return false;
 
       // Match by studentId if provided
       if (normId && s.studentId && s.studentId.trim().toLowerCase() === normId) {
         return true;
       }
 
-      // Default match by studentName + studentClass
+      // Match by studentName + studentClass
+      const sClassNorm = normalizeClassName(s.studentClass);
+      const classMatches = !normClass || !sClassNorm || normClass === sClassNorm;
       return (
         s.studentName.trim().toLowerCase() === normName &&
-        s.studentClass.trim().toLowerCase() === normClass
+        classMatches
       );
     });
   }
@@ -281,16 +302,28 @@ export class ExamRepository {
     const sessions = this.getSessions();
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
     const users = readJsonFile<any[]>(USERS_FILE, []);
-    const userObj = users.find((u) => u.id === userId || u.username === userId || u.email === userId);
-    const isAdmin = !userId || userId === 'admin' || userId === 'pqhacker@gamil.com' || userObj?.role === 'admin';
+    const normUserId = (userId || '').trim().toLowerCase();
+    const userObj = users.find(
+      (u) =>
+        (u.id && u.id.toLowerCase() === normUserId) ||
+        (u.username && u.username.toLowerCase() === normUserId) ||
+        (u.email && u.email.toLowerCase() === normUserId)
+    );
+    const isAdmin =
+      !userId ||
+      normUserId === 'admin' ||
+      normUserId === 'pqhacker@gamil.com' ||
+      normUserId === 'pqhacker@gmail.com' ||
+      userObj?.role === 'admin';
 
     const userExamCodes = new Set<string>();
     exams.forEach((e) => {
+      const eCreator = (e.createdBy || '').trim().toLowerCase();
       const isOwner =
         isAdmin ||
         !e.createdBy ||
-        e.createdBy === userId ||
-        (userObj && (e.createdBy === userObj.id || e.createdBy === userObj.username));
+        eCreator === normUserId ||
+        (userObj && (eCreator === userObj.id?.toLowerCase() || eCreator === userObj.username?.toLowerCase() || eCreator === userObj.email?.toLowerCase()));
       if (isOwner) {
         if (e.code) userExamCodes.add(e.code.toUpperCase());
         if (e.examPackage?.metadata?.onlineExamCode) {
@@ -308,9 +341,24 @@ export class ExamRepository {
       if (s.status !== 'submitted') return false;
       const sExamCode = (s.examCode || '').trim().toUpperCase();
 
-      // If specific code requested, match code
-      if (normFilter && normFilter !== 'ALL' && sExamCode !== normFilter) {
-        return false;
+      // If specific code requested, match code directly or via exam package sub-codes
+      if (normFilter && normFilter !== 'ALL') {
+        let isCodeMatch = sExamCode === normFilter;
+        if (!isCodeMatch) {
+          const linkedExam = exams.find((e) => {
+            const codes = new Set<string>();
+            if (e.code) codes.add(e.code.toUpperCase());
+            if (e.examPackage?.metadata?.onlineExamCode) {
+              codes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+            }
+            (e.examPackage?.exams || []).forEach((sub: any) => {
+              if (sub.code) codes.add(sub.code.toUpperCase());
+            });
+            return codes.has(sExamCode) && codes.has(normFilter);
+          });
+          if (linkedExam) isCodeMatch = true;
+        }
+        if (!isCodeMatch) return false;
       }
 
       // Admin has full visibility
@@ -320,13 +368,13 @@ export class ExamRepository {
       if (userExamCodes.has(sExamCode)) return true;
       if (
         s.teacherId &&
-        (s.teacherId === userId ||
-          (userObj && (s.teacherId === userObj.id || s.teacherId === userObj.username)))
+        ((s.teacherId.toLowerCase() === normUserId) ||
+          (userObj && (s.teacherId.toLowerCase() === userObj.id?.toLowerCase() || s.teacherId.toLowerCase() === userObj.username?.toLowerCase())))
       ) {
         return true;
       }
 
-      // If specific code filter was explicitly given and matched sExamCode, keep it
+      // If specific code filter was explicitly given and matched sExamCode, allow it
       if (normFilter && normFilter !== 'ALL') {
         return true;
       }

@@ -1224,6 +1224,9 @@ export function registerExamRoutes(app: express.Express) {
       session.remainingSeconds = remainingSeconds ?? 0;
       session.submitTime = new Date().toISOString();
       session.status = 'submitted';
+      if (exam?.createdBy && !session.teacherId) {
+        session.teacherId = exam.createdBy;
+      }
 
       const result = evaluateStudentSessionResult(session, exam || ({} as any));
 
@@ -1309,6 +1312,8 @@ export function registerExamRoutes(app: express.Express) {
           totalQuestions: s.totalQuestions ?? 0,
           tabSwitches,
           activityLogs: s.activityLogs || [],
+          teacherId: s.teacherId || '',
+          createdBy: s.teacherId || '',
         };
       });
 
