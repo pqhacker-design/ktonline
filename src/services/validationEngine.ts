@@ -1,0 +1,241 @@
+import { ExamMetadata, MatrixRow, Question, SpecRow } from '../types';
+import { safeJsonParse } from './jsonRepair';
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  matrix: MatrixRow[];
+  specification: SpecRow[];
+  questions: Question[];
+}
+
+export function cleanQuestionText(text: string): string {
+  if (!text) return text;
+  let str = text;
+
+  // 1. Loại bỏ các nhãn mã mức độ thừa như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [NB],...
+  str = str.replace(/\s*\[(NB|TH|VD|VDC|REMEMBER|UNDERSTAND|APPLY|ADVANCED)(_(TL|TN|TF|SA))?\]\s*/gi, ' ');
+
+  // 2. Chuyển mã TeX accent / \text{} đặc biệt sang Unicode Tiếng Việt chuẩn
+  str = str.replace(/\\text\{\\dh\}/gi, 'đ');
+  str = str.replace(/\\text\{\\DH\}/gi, 'Đ');
+  str = str.replace(/\\text\{\\textquoteright\}/gi, "'");
+  str = str.replace(/\\text\{\\underline\{u\}\}/gi, 'ư');
+  str = str.replace(/\\text\{\\hat\{o\}\}/gi, 'ô');
+  str = str.replace(/\\text\{\\hat\{e\}\}/gi, 'ê');
+  str = str.replace(/\\text\{\\hat\{a\}\}/gi, 'â');
+  str = str.replace(/v\\grave\{?a\}?/gi, 'và');
+  str = str.replace(/c\\'o/gi, 'có');
+  str = str.replace(/c\\'a/gi, 'cá');
+  str = str.replace(/b\\`ang/gi, 'bằng');
+
+  // 3. Xử lý khoảng trắng quanh dấu phẩy phẩy biến số phẩy (A 'B' -> A'B', A ' -> A')
+  str = str.replace(/([A-Z])\s+'\s*([A-Z])/g, "$1'$2");
+  str = str.replace(/([A-Z])\s+'/g, "$1'");
+
+  // 4. Làm sạch \text{ cm} hoặc \text{cm} ở văn bản thường
+  str = str.replace(/(\d+)\s*\\text\{\s*cm\s*\}/g, '$1 cm');
+  str = str.replace(/\\text\{\s*cm\s*\}/g, 'cm');
+
+  // 5. Tách từ tiếng Việt dính vào biến số toán học (BiếtAB -> Biết AB, và8 -> và 8, cmvà -> cm và)
+  str = str.replace(/([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])([A-Z]{1,4}\b)/g, '$1 $2');
+  str = str.replace(/([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])(\d+)/g, '$1 $2');
+  str = str.replace(/(\d+)\s*cm([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])/g, '$1 cm $2');
+
+  // 6. Chuẩn hóa góc 60\circ, 50\circ -> 50^\circ
+  str = str.replace(/(\d+)\s*\\\^?\{?circ\}?/g, '$1^\\circ');
+
+  return str.trim();
+}
+
+export class ValidationEngine {
+  /**
+   * Phân tích và kiểm tra tính hợp lệ của JSON do AI trả về
+   */
+  static validateAndRepair(
+    rawText: string,
+    metadata: ExamMetadata
+  ): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    let parsed: any = null;
+
+    try {
+      parsed = safeJsonParse(rawText);
+    } catch (e: any) {
+      errors.push(e.message || 'Dữ liệu AI trả về không phải định dạng JSON hợp lệ.');
+      return {
+        isValid: false,
+        errors,
+        warnings,
+        matrix: [],
+        specification: [],
+        questions: [],
+      };
+    }
+
+    const rawMatrix = Array.isArray(parsed.matrix) ? parsed.matrix : [];
+    const rawSpec = Array.isArray(parsed.specification)
+      ? parsed.specification
+      : [];
+    const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+
+    // 1. Kiểm tra danh sách câu hỏi
+    const repairedQuestions: Question[] = [];
+    const { part1_MCQSingle, part2_MCQTrueFalse, part3_MCQShort, part4_Essay } =
+      metadata.questionCounts;
+
+    const part1Questions = rawQuestions.filter((q) => q.partType === 'PART1');
+    const part2Questions = rawQuestions.filter((q) => q.partType === 'PART2');
+    const part3Questions = rawQuestions.filter((q) => q.partType === 'PART3');
+    const part4Questions = rawQuestions.filter((q) => q.partType === 'PART4');
+
+    if (part1Questions.length !== part1_MCQSingle) {
+      warnings.push(
+        `Số câu Phần I khác yêu cầu (Cần: ${part1_MCQSingle}, Nhận được: ${part1Questions.length}).`
+      );
+    }
+    if (part2Questions.length !== part2_MCQTrueFalse) {
+      warnings.push(
+        `Số câu Phần II khác yêu cầu (Cần: ${part2_MCQTrueFalse}, Nhận được: ${part2Questions.length}).`
+      );
+    }
+    if (part3Questions.length !== part3_MCQShort) {
+      warnings.push(
+        `Số câu Phần III khác yêu cầu (Cần: ${part3_MCQShort}, Nhận được: ${part3Questions.length}).`
+      );
+    }
+    if (part4Questions.length !== part4_Essay) {
+      warnings.push(
+        `Số câu Phần IV khác yêu cầu (Cần: ${part4_Essay}, Nhận được: ${part4Questions.length}).`
+      );
+    }
+
+    // Đánh số lại câu hỏi theo từng phần
+    let p1Num = 1;
+    let p2Num = 1;
+    let p3Num = 1;
+    let p4Num = 1;
+
+    for (const q of rawQuestions) {
+      const partType = q.partType || 'PART1';
+      let num = p1Num++;
+      if (partType === 'PART2') num = p2Num++;
+      else if (partType === 'PART3') num = p3Num++;
+      else if (partType === 'PART4') num = p4Num++;
+
+      const validQuestion: Question = {
+        id: q.id || `gen-q-${Math.random().toString(36).substring(2, 9)}`,
+        partType: partType,
+        partTitle:
+          q.partTitle ||
+          (partType === 'PART1'
+            ? 'PHẦN I. Câu hỏi trắc nghiệm nhiều phương án lựa chọn'
+            : partType === 'PART2'
+            ? 'PHẦN II. Câu hỏi trắc nghiệm Đúng/Sai'
+            : partType === 'PART3'
+            ? 'PHẦN III. Câu hỏi trắc nghiệm trả lời ngắn'
+            : 'PHẦN IV. Tự luận'),
+        number: num,
+        content: cleanQuestionText(q.content || 'Nội dung câu hỏi chưa cập nhật.'),
+        cognitiveLevel: q.cognitiveLevel || 'REMEMBER',
+        points:
+          partType === 'PART1'
+            ? metadata.questionCounts.part1_PointsPerQuestion ?? (typeof q.points === 'number' ? q.points : 0.25)
+            : partType === 'PART2'
+            ? metadata.questionCounts.part2_PointsPerQuestion ?? (typeof q.points === 'number' ? q.points : 1.0)
+            : partType === 'PART3'
+            ? metadata.questionCounts.part3_PointsPerQuestion ?? (typeof q.points === 'number' ? q.points : 0.25)
+            : partType === 'PART4'
+            ? (q.cognitiveLevel === 'ADVANCED' || q.cognitiveLevel === 'VDC'
+                ? metadata.questionCounts.part4_AdvancedPoints ?? (typeof q.points === 'number' ? q.points : 1.0)
+                : (typeof q.points === 'number' && q.points > 0 ? q.points : 1.5))
+            : 0.25,
+        topic: q.topic || metadata.chapterTitle || 'Kiến thức chung',
+        explanation: cleanQuestionText(q.explanation || ''),
+      };
+
+      if (partType === 'PART1') {
+        validQuestion.options = Array.isArray(q.options) && q.options.length === 4
+          ? q.options.map((opt: any, index: number) => ({
+              key: opt.key || String.fromCharCode(65 + index),
+              content: cleanQuestionText(opt.content || ''),
+            }))
+          : [
+              { key: 'A', content: cleanQuestionText(q.options?.[0]?.content || 'Phương án A') },
+              { key: 'B', content: cleanQuestionText(q.options?.[1]?.content || 'Phương án B') },
+              { key: 'C', content: cleanQuestionText(q.options?.[2]?.content || 'Phương án C') },
+              { key: 'D', content: cleanQuestionText(q.options?.[3]?.content || 'Phương án D') },
+            ];
+        validQuestion.correctOption = q.correctOption || 'A';
+      } else if (partType === 'PART2') {
+        validQuestion.trueFalseStatements =
+          Array.isArray(q.trueFalseStatements) && q.trueFalseStatements.length >= 1
+            ? q.trueFalseStatements.map((tf: any, index: number) => ({
+                key: tf.key || String.fromCharCode(97 + index),
+                content: cleanQuestionText(tf.content || tf.text || ''),
+                isCorrect: typeof tf.isCorrect === 'boolean' ? tf.isCorrect : true,
+              }))
+            : [
+                { key: 'a', content: 'Mô tả ý a', isCorrect: true },
+                { key: 'b', content: 'Mô tả ý b', isCorrect: false },
+                { key: 'c', content: 'Mô tả ý c', isCorrect: true },
+                { key: 'd', content: 'Mô tả ý d', isCorrect: false },
+              ];
+      } else if (partType === 'PART3') {
+        validQuestion.shortAnswer = cleanQuestionText(q.shortAnswer || '1');
+      } else if (partType === 'PART4') {
+        validQuestion.essayAnswerGuide = cleanQuestionText(q.essayAnswerGuide || 'Hướng dẫn chấm...');
+        validQuestion.rubric = Array.isArray(q.rubric)
+          ? q.rubric.map((r: any) => ({
+              ...r,
+              criteria: cleanQuestionText(r.criteria || ''),
+              description: cleanQuestionText(r.description || ''),
+            }))
+          : [];
+      }
+
+      repairedQuestions.push(validQuestion);
+    }
+
+    // Repair Matrix if needed
+    const repairedMatrix: MatrixRow[] = rawMatrix.map((m: any, idx: number) => ({
+      stt: m.stt || idx + 1,
+      topic: m.topic || metadata.chapterTitle || 'Chủ đề chính',
+      subTopic: m.subTopic || 'Đơn vị kiến thức',
+      part1: m.part1 || { remember: 1, understand: 1, apply: 0, advanced: 0 },
+      part2: m.part2 || { remember: 0, understand: 1, apply: 0, advanced: 0 },
+      part3: m.part3 || { remember: 0, understand: 0, apply: 1, advanced: 0 },
+      part4: m.part4 || { remember: 0, understand: 0, apply: 0, advanced: 1 },
+      totalQuestions: typeof m.totalQuestions === 'number' ? m.totalQuestions : 3,
+      totalPoints: typeof m.totalPoints === 'number' ? m.totalPoints : 2.0,
+      percentage: typeof m.percentage === 'number' ? m.percentage : 20,
+    }));
+
+    // Repair Specification if needed
+    const repairedSpec: SpecRow[] = rawSpec.map((s: any, idx: number) => ({
+      stt: s.stt || idx + 1,
+      topic: s.topic || metadata.chapterTitle || 'Chủ đề chính',
+      subTopic: s.subTopic || 'Đơn vị kiến thức',
+      requirements:
+        s.requirements ||
+        'Nhận biết được kiến thức cơ bản, thông hiểu bản chất và vận dụng giải bài tập.',
+      part1: s.part1 || { remember: 1, understand: 1, apply: 0, advanced: 0 },
+      part2: s.part2 || { remember: 0, understand: 1, apply: 0, advanced: 0 },
+      part3: s.part3 || { remember: 0, understand: 0, apply: 1, advanced: 0 },
+      part4: s.part4 || { remember: 0, understand: 0, apply: 0, advanced: 1 },
+      totalPoints: typeof s.totalPoints === 'number' ? s.totalPoints : 2.0,
+    }));
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+      warnings,
+      matrix: repairedMatrix,
+      specification: repairedSpec,
+      questions: repairedQuestions,
+    };
+  }
+}
