@@ -15,6 +15,7 @@ import {
   LogOut,
   Play,
   RefreshCw,
+  RotateCcw,
   Send,
   ShieldAlert,
   Sparkles,
@@ -82,6 +83,8 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
   // Submission / Loading
   const [submitting, setSubmitting] = useState(false);
   const [showSubmitConfirmModal, setShowSubmitConfirmModal] = useState(false);
+  const [showRetakeModal, setShowRetakeModal] = useState(false);
+  const [isRetaking, setIsRetaking] = useState(false);
 
   // Result State
   const [examResult, setExamResult] = useState<any>(null);
@@ -534,6 +537,91 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Retake Confirmation & Execution Handler
+  const handleConfirmRetake = async () => {
+    setIsRetaking(true);
+    try {
+      const curExamCode = (examCode || examInfo?.code || session?.examCode || '').trim().toUpperCase();
+      const curStudentName = (studentName || session?.studentName || '').trim();
+      const curStudentClass = (studentClass || session?.studentClass || '').trim();
+      const curStudentId = (studentId || session?.studentId || '').trim();
+      const curStudentSchool = (studentSchool || session?.studentSchool || '').trim();
+
+      // Clear previous session remotely and locally
+      await OnlineExamService.resetStudentSession({
+        sessionId: session?.id,
+        examCode: curExamCode,
+        sbd: curStudentId,
+        studentName: curStudentName,
+        studentClass: curStudentClass,
+      });
+
+      // Start fresh attempt with forceRetake
+      const res = await OnlineExamService.startStudentExam({
+        code: curExamCode,
+        studentName: curStudentName,
+        studentClass: curStudentClass,
+        studentId: curStudentId,
+        studentSchool: curStudentSchool,
+        forceRetake: true,
+      });
+
+      setShowRetakeModal(false);
+      setSession(res.session);
+      setQuestions(res.questions || []);
+      setAnswers({});
+      setRemainingSeconds(res.session?.remainingSeconds || (res.examInfo?.duration || 45) * 60);
+      setExamInfo(res.examInfo);
+      setExamResult(null);
+      setStep('taking');
+    } catch (err: any) {
+      alert('Không thể bắt đầu làm lại bài thi: ' + (err.message || 'Lỗi kết nối'));
+    } finally {
+      setIsRetaking(false);
+    }
+  };
+
+  // Retake Confirmation Modal Component
+  const renderRetakeConfirmModal = () => {
+    if (!showRetakeModal) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
+        <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl">
+          <div className="w-12 h-12 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-2xl flex items-center justify-center mx-auto">
+            <RotateCcw className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-white">Xác Nhận Làm Lại Bài Thi</h3>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Bạn có chắc chắn muốn làm lại bài thi này? Lượt làm bài cũ sẽ được làm mới để bạn bắt đầu làm lại bài thi từ đầu với thời gian thi mới.
+          </p>
+          <div className="flex items-center space-x-3 pt-2">
+            <button
+              onClick={() => setShowRetakeModal(false)}
+              disabled={isRetaking}
+              className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={handleConfirmRetake}
+              disabled={isRetaking}
+              className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-extrabold transition-colors cursor-pointer shadow-md flex items-center justify-center space-x-1"
+            >
+              {isRetaking ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Đang tải...</span>
+                </>
+              ) : (
+                <span>Bắt Đầu Làm Lại</span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Exit Confirmation Modal Component
   const renderExitConfirmModal = () => {
     if (!showExitConfirmModal) return null;
@@ -637,7 +725,7 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
 
           {/* System Notification Banner (if any) */}
           {loginError && (
-            <div className="p-3.5 bg-rose-950/90 border-2 border-rose-600/80 text-rose-100 rounded-2xl text-xs space-y-1 shadow-xl animate-in fade-in slide-in-from-top-1">
+            <div className="p-3.5 bg-rose-950/90 border-2 border-rose-600/80 text-rose-100 rounded-2xl text-xs space-y-2 shadow-xl animate-in fade-in slide-in-from-top-1">
               <div className="flex items-center space-x-2 font-black text-rose-300 text-xs sm:text-sm">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
                 <span>THÔNG BÁO TỪ HỆ THỐNG</span>
@@ -645,6 +733,16 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
               <p className="text-rose-100 font-medium leading-relaxed text-[11px] sm:text-xs">
                 {loginError}
               </p>
+              <div className="pt-1 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowRetakeModal(true)}
+                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl font-black text-xs cursor-pointer shadow-md flex items-center gap-1.5 transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Mở khóa / Làm lại bài thi mới</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -998,6 +1096,7 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
             </div>
           </form>
         </div>
+        {renderRetakeConfirmModal()}
         {renderExitConfirmModal()}
       </div>
     );
@@ -1708,9 +1807,19 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
             </div>
           )}
 
-          {/* Exit Button */}
-          <div className="pt-1">
+          {/* Action Buttons: Làm Lại Bài Thi & Thoát Bài Thi */}
+          <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
             <button
+              type="button"
+              onClick={() => setShowRetakeModal(true)}
+              className="w-full sm:flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-lg flex items-center justify-center space-x-2"
+            >
+              <RotateCcw className="w-4 h-4 text-slate-950" />
+              <span>Làm Lại Bài Thi (Thi Mới)</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => {
                 if (onExit) {
                   onExit();
@@ -1721,13 +1830,14 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
                   setStep('closed');
                 }
               }}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-lg flex items-center justify-center space-x-2"
+              className="w-full sm:flex-1 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-2xl text-xs sm:text-sm transition-all cursor-pointer shadow-lg flex items-center justify-center space-x-2 border border-slate-600"
             >
-              <CheckCircle2 className="w-4 h-4 text-emerald-200" />
-              <span>Hoàn Thành & Thoát Bài Thi</span>
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Hoàn Thành & Thoát</span>
             </button>
           </div>
         </div>
+        {renderRetakeConfirmModal()}
         {renderExitConfirmModal()}
       </div>
     );

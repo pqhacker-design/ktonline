@@ -123,8 +123,8 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     try {
       const [resResults, resClasses, resStudents, resExams] = await Promise.all([
         OnlineExamService.getTeacherResults(examCodeFilter).catch(() => ({ success: false, results: [] })),
-        OnlineExamService.getClasses().catch(() => ({ success: false, classes: [] })),
-        OnlineExamService.getStudents().catch(() => ({ success: false, students: [] })),
+        OnlineExamService.getClasses(true).catch(() => ({ success: false, classes: [] })),
+        OnlineExamService.getStudents(undefined, true).catch(() => ({ success: false, students: [] })),
         OnlineExamService.listExams().catch(() => ({ success: false, exams: [] })),
       ]);
 
@@ -200,6 +200,31 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     });
   };
 
+  const requestAllowRetakeForUnsubmitted = (item: UnifiedResultItem) => {
+    setConfirmModal({
+      isOpen: true,
+      type: 'retake',
+      item: {
+        id: item.id,
+        examCode: item.examCode,
+        studentName: item.studentName,
+        studentClass: item.studentClass,
+        studentSbd: item.sbd,
+        studentId: item.sbd,
+        startTime: '',
+        durationMinutes: 0,
+        score: 0,
+        correctCount: 0,
+        incorrectCount: 0,
+        totalQuestions: 0,
+        tabSwitches: 0,
+        activityLogs: [],
+      },
+      title: 'Mở Khóa / Cho Phép Làm Lại Bài Thi',
+      message: `Mở khóa và cho phép học sinh "${item.studentName}" (Lớp ${item.studentClass}) làm lại bài thi mã [${item.examCode}]? Hệ thống sẽ làm mới phiên thi cũ để học sinh có thể đăng nhập làm lại bài thi ngay lập tức.`,
+    });
+  };
+
   const executeConfirmAction = async () => {
     if (!confirmModal) return;
     const { type, item } = confirmModal;
@@ -215,15 +240,18 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
       }
     } else if (type === 'retake') {
       try {
+        const isUnsub = item.id.startsWith('unsubmitted_');
         const res = await OnlineExamService.resetStudentSession({
-          sessionId: item.id,
+          sessionId: isUnsub ? undefined : item.id,
           examCode: item.examCode,
           sbd: item.studentSbd || item.studentId,
           studentName: item.studentName,
+          studentClass: item.studentClass,
         });
         if (res.success) {
           setResults((prev) => prev.filter((r) => r.id !== item.id));
-          showToast('success', res.message || `Đã cho phép học sinh ${item.studentName} làm lại bài thi.`);
+          await fetchData(false);
+          showToast('success', res.message || `Đã mở khóa cho học sinh ${item.studentName} làm lại bài thi.`);
         }
       } catch (err: any) {
         showToast('error', 'Không thể cấp phép làm lại: ' + err.message);
@@ -274,9 +302,21 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
 
   const isExamMatch = (rExamCode?: string) => {
     if (!rExamCode) return false;
-    if (targetExamCodes === null) return true;
+    if (examCodeFilter === 'ALL') return true;
+    const cleanFilter = examCodeFilter.trim().toUpperCase();
     const norm = rExamCode.trim().toUpperCase();
-    return targetExamCodes.has(norm);
+    if (norm === cleanFilter) return true;
+    if (targetExamCodes && targetExamCodes.has(norm)) return true;
+    return exams.some((e) => {
+      const allCodes = new Set<string>();
+      if (e.code) allCodes.add(e.code.toUpperCase());
+      const oCode = (e.examPackage?.metadata?.onlineExamCode || (e as any).metadata?.onlineExamCode);
+      if (oCode) allCodes.add(String(oCode).toUpperCase());
+      (e.examPackage?.exams || []).forEach((sub: any) => {
+        if (sub.code) allCodes.add(String(sub.code).toUpperCase());
+      });
+      return allCodes.has(norm) && (allCodes.has(cleanFilter) || (targetExamCodes && Array.from(targetExamCodes).some((tc: string) => allCodes.has(tc))));
+    });
   };
 
   // Ghép nối Danh sách học sinh theo lớp và Kết quả nộp bài
@@ -339,6 +379,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
         // 1. Khớp ưu tiên: SBD chính xác
         if (stSbdNorm) {
           matchedRes = results.find((r) => {
+            if (matchedResultIds.has(r.id)) return false;
             if (!isExamMatch(r.examCode)) return false;
             const rSbd = r.studentSbd || r.studentId || '';
             const rSbdNorm = normalizeSbd(rSbd);
@@ -349,6 +390,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
         // 2. Khớp SBD theo số nếu cùng lớp hoặc nếu SBD khớp số duy nhất
         if (!matchedRes && stSbdNum !== null) {
           matchedRes = results.find((r) => {
+            if (matchedResultIds.has(r.id)) return false;
             if (!isExamMatch(r.examCode)) return false;
             const rSbd = r.studentSbd || r.studentId || '';
             const rSbdNum = extractSbdNum(rSbd);
@@ -364,6 +406,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
         // 3. Khớp theo ID học sinh trong hệ thống
         if (!matchedRes && st.id) {
           matchedRes = results.find((r) => {
+            if (matchedResultIds.has(r.id)) return false;
             if (!isExamMatch(r.examCode)) return false;
             return r.studentId === st.id || r.studentSbd === st.id;
           });
@@ -372,6 +415,7 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
         // 4. Khớp theo Họ và Tên chuẩn tiếng Việt (NFC) + Lớp
         if (!matchedRes && stNameNfc) {
           matchedRes = results.find((r) => {
+            if (matchedResultIds.has(r.id)) return false;
             if (!isExamMatch(r.examCode)) return false;
             const rNameNfc = normalizeStr(r.studentName);
             const rClassNorm = normalizeClassName(r.studentClass);
@@ -380,9 +424,10 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
           });
         }
 
-        // 5. Khớp theo Họ và Tên không phân biệt dấu tiếng Việt + Lớp
+        // 5. Khớp theo Họ và Tên không phân biệt dấu tiếng Việt (ASCII) + Lớp
         if (!matchedRes && stNameAscii) {
           matchedRes = results.find((r) => {
+            if (matchedResultIds.has(r.id)) return false;
             if (!isExamMatch(r.examCode)) return false;
             const rNameAscii = normalizeAscii(r.studentName);
             const rClassNorm = normalizeClassName(r.studentClass);
@@ -391,16 +436,15 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
           });
         }
 
-        // 6. Khớp dự phòng thông minh: Tên duy nhất trong danh sách lớp
-        // Kể cả khi học sinh lúc thi gõ tắt tên lớp hoặc bỏ dấu khác biệt
+        // 6. Khớp dự phòng thông minh: Tên duy nhất trong lớp
         if (!matchedRes && stNameNfc) {
           const sameNameCount = sortedStudentsInClass.filter(
             (s) => normalizeStr(s.name) === stNameNfc
           ).length;
           if (sameNameCount === 1) {
             matchedRes = results.find((r) => {
-              if (!isExamMatch(r.examCode)) return false;
               if (matchedResultIds.has(r.id)) return false;
+              if (!isExamMatch(r.examCode)) return false;
               const rNameNfc = normalizeStr(r.studentName);
               const rNameAscii = normalizeAscii(r.studentName);
               return rNameNfc === stNameNfc || (stNameAscii && rNameAscii === stNameAscii);
@@ -408,8 +452,28 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
           }
         }
 
+        // 7. Khớp dự phòng toàn diện: Tên khớp duy nhất trong toàn bộ danh sách nộp bài
+        if (!matchedRes && stNameNfc) {
+          const uniqueResults = results.filter((r) => {
+            if (matchedResultIds.has(r.id)) return false;
+            if (!isExamMatch(r.examCode)) return false;
+            const rNameNfc = normalizeStr(r.studentName);
+            const rNameAscii = normalizeAscii(r.studentName);
+            return rNameNfc === stNameNfc || (stNameAscii && rNameAscii === stNameAscii);
+          });
+          if (uniqueResults.length === 1) {
+            matchedRes = uniqueResults[0];
+          }
+        }
+
         if (matchedRes) {
           matchedResultIds.add(matchedRes.id);
+          let finalScore = typeof matchedRes.score === 'number' && !isNaN(matchedRes.score) ? matchedRes.score : 0;
+          const totalQ = typeof matchedRes.totalQuestions === 'number' ? matchedRes.totalQuestions : 0;
+          const correctQ = typeof matchedRes.correctCount === 'number' ? matchedRes.correctCount : 0;
+          if (finalScore === 0 && correctQ > 0 && totalQ > 0) {
+            finalScore = Math.min(10.0, Math.round((correctQ / totalQ) * 10 * 100) / 100);
+          }
           unifiedList.push({
             id: matchedRes.id,
             sbd: st.sbd || matchedRes.studentSbd || matchedRes.studentId || '',
@@ -418,10 +482,10 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
             studentSchool: matchedRes.studentSchool || st.notes || '',
             examCode: matchedRes.examCode,
             status: 'submitted',
-            score: matchedRes.score,
-            correctCount: matchedRes.correctCount,
-            incorrectCount: matchedRes.incorrectCount,
-            totalQuestions: matchedRes.totalQuestions,
+            score: finalScore,
+            correctCount: correctQ,
+            incorrectCount: typeof matchedRes.incorrectCount === 'number' ? matchedRes.incorrectCount : 0,
+            totalQuestions: totalQ,
             startTime: matchedRes.startTime,
             submitTime: matchedRes.submitTime,
             durationMinutes: matchedRes.durationMinutes,
@@ -468,6 +532,12 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
         if (classFilter !== 'ALL' && normalizeClassName(r.studentClass) !== normalizeClassName(classFilter)) {
           return;
         }
+        let finalScore = typeof r.score === 'number' && !isNaN(r.score) ? r.score : 0;
+        const totalQ = typeof r.totalQuestions === 'number' ? r.totalQuestions : 0;
+        const correctQ = typeof r.correctCount === 'number' ? r.correctCount : 0;
+        if (finalScore === 0 && correctQ > 0 && totalQ > 0) {
+          finalScore = Math.min(10.0, Math.round((correctQ / totalQ) * 10 * 100) / 100);
+        }
         unifiedList.push({
           id: r.id,
           sbd: r.studentSbd || r.studentId || '',
@@ -476,10 +546,10 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
           studentSchool: r.studentSchool || '',
           examCode: r.examCode,
           status: 'submitted',
-          score: r.score,
-          correctCount: r.correctCount,
-          incorrectCount: r.incorrectCount,
-          totalQuestions: r.totalQuestions,
+          score: finalScore,
+          correctCount: correctQ,
+          incorrectCount: typeof r.incorrectCount === 'number' ? r.incorrectCount : 0,
+          totalQuestions: totalQ,
           startTime: r.startTime,
           submitTime: r.submitTime,
           durationMinutes: r.durationMinutes,
@@ -847,26 +917,26 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
                       {item.examCode}
                     </td>
                     <td className="p-4 text-center">
-                      {item.status === 'submitted' && typeof item.score === 'number' ? (
+                      {item.status === 'submitted' ? (
                         <span
                           className={`text-sm font-black px-2.5 py-1 rounded-xl ${
-                            item.score >= 8.0
+                            (item.score ?? 0) >= 8.0
                               ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300'
-                              : item.score >= 5.0
+                              : (item.score ?? 0) >= 5.0
                               ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300'
                               : 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300'
                           }`}
                         >
-                          {item.score.toFixed(2)}
+                          {(item.score ?? 0).toFixed(2)}
                         </span>
                       ) : (
                         <span className="text-slate-400 font-medium">---</span>
                       )}
                     </td>
                     <td className="p-4 text-center">
-                      {item.status === 'submitted' && typeof item.correctCount === 'number' ? (
+                      {item.status === 'submitted' ? (
                         <span className="font-bold text-slate-800 dark:text-slate-200">
-                          {item.correctCount}/{item.totalQuestions || 0}
+                          {item.correctCount ?? 0}/{item.totalQuestions || 0}
                         </span>
                       ) : (
                         <span className="text-slate-400 font-medium">---</span>
@@ -943,7 +1013,16 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
                           </button>
                         </div>
                       ) : (
-                        <span className="text-slate-400 text-[11px] italic">Chưa có bài nộp</span>
+                        <div className="flex items-center justify-center space-x-1">
+                          <button
+                            onClick={() => requestAllowRetakeForUnsubmitted(item)}
+                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-700 dark:bg-slate-800 dark:hover:bg-amber-950/50 dark:text-slate-300 dark:hover:text-amber-300 rounded-xl transition-colors font-bold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-700 hover:border-amber-300"
+                            title="Mở khóa/Cấp quyền làm lại nếu học sinh bị chặn phiên cũ"
+                          >
+                            <RotateCcw className="w-3 h-3 text-amber-500" />
+                            <span>Cấp quyền thi</span>
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

@@ -716,8 +716,16 @@ export function registerExamRoutes(app: express.Express) {
       const sessions = ExamRepository.getSessions();
 
       const result = exams.map((exam) => {
+        const subCodes = new Set<string>();
+        if (exam.code) subCodes.add(exam.code.toUpperCase());
+        const oCode = (exam.examPackage?.metadata?.onlineExamCode || (exam as any).metadata?.onlineExamCode);
+        if (oCode) subCodes.add(String(oCode).toUpperCase());
+        (exam.examPackage?.exams || []).forEach((sub: any) => {
+          if (sub.code) subCodes.add(String(sub.code).toUpperCase());
+        });
+
         const examSessions = sessions.filter(
-          (s) => s.examCode.toUpperCase() === exam.code.toUpperCase()
+          (s) => s.examCode && subCodes.has(s.examCode.toUpperCase())
         );
         const submittedCount = examSessions.filter((s) => s.status === 'submitted').length;
         return {
@@ -741,6 +749,7 @@ export function registerExamRoutes(app: express.Express) {
           activeSessionCount: examSessions.length - submittedCount,
           antiCheat: exam.antiCheat,
           createdBy: exam.createdBy,
+          examPackage: exam.examPackage,
         };
       });
 
@@ -1058,10 +1067,45 @@ export function registerExamRoutes(app: express.Express) {
       // Check for existing session (F5 / Re-entry / Submitted check)
       let session = ExamRepository.findStudentSession(code, studentName, studentClass, studentId);
 
+      // If user specifically requests a retake attempt, purge ALL matching previous sessions
+      if (req.body.forceRetake) {
+        const allSessions = ExamRepository.getSessions();
+        const normCode = code.trim().toUpperCase();
+        const normName = studentName.trim().toLowerCase();
+        const normClass = normalizeClassName(studentClass);
+        const normId = (studentId || '').trim().toLowerCase();
+
+        const linkedCodes = new Set<string>();
+        linkedCodes.add(normCode);
+        if (exam.code) linkedCodes.add(exam.code.toUpperCase());
+        (exam.examPackage?.exams || []).forEach((sub: any) => {
+          if (sub.code) linkedCodes.add(sub.code.toUpperCase());
+        });
+
+        allSessions.forEach((s) => {
+          const sCode = (s.examCode || '').trim().toUpperCase();
+          if (linkedCodes.has(sCode)) {
+            const matchId = normId && s.studentId && s.studentId.trim().toLowerCase() === normId;
+            const matchName = s.studentName.trim().toLowerCase() === normName && (!normClass || !normalizeClassName(s.studentClass) || normalizeClassName(s.studentClass) === normClass);
+            if (matchId || matchName || (session && s.id === session.id)) {
+              ExamRepository.deleteSession(s.id);
+            }
+          }
+        });
+        session = undefined;
+      }
+
       if (session) {
         // If already submitted -> return evaluated result for read-only review
         if (session.status === 'submitted') {
           const evaluatedResult = evaluateStudentSessionResult(session, exam);
+          if (typeof session.score !== 'number' || isNaN(session.score)) {
+            session.score = evaluatedResult.score;
+            session.correctCount = evaluatedResult.correctCount;
+            session.incorrectCount = evaluatedResult.incorrectCount;
+            session.totalQuestions = evaluatedResult.totalQuestions;
+            ExamRepository.saveSession(session);
+          }
           return res.json({
             success: true,
             isAlreadySubmitted: true,
@@ -1287,8 +1331,32 @@ export function registerExamRoutes(app: express.Express) {
       const results = ExamRepository.getResultsByExamCode(code, userId);
 
       const mapped = results.map((s) => {
+        let finalScore = s.score;
+        let finalCorrect = s.correctCount;
+        let finalIncorrect = s.incorrectCount;
+        let finalTotal = s.totalQuestions;
+
+        // Auto-heal missing score for submitted session
+        if (s.status === 'submitted' && (typeof finalScore !== 'number' || isNaN(finalScore))) {
+          const exam = ExamRepository.getExamByCode(s.examCode);
+          if (exam) {
+            const evaluated = evaluateStudentSessionResult(s, exam);
+            finalScore = evaluated.score;
+            finalCorrect = evaluated.correctCount;
+            finalIncorrect = evaluated.incorrectCount;
+            finalTotal = evaluated.totalQuestions;
+            s.score = finalScore;
+            s.correctCount = finalCorrect;
+            s.incorrectCount = finalIncorrect;
+            s.totalQuestions = finalTotal;
+            ExamRepository.saveSession(s);
+          } else {
+            finalScore = 0;
+          }
+        }
+
         const tabSwitches = (s.activityLogs || []).filter((l) =>
-          l.event.toLowerCase().includes('chuyển tab')
+          l.event && l.event.toLowerCase().includes('chuyển tab')
         ).length;
 
         const start = new Date(s.startTime).getTime();
@@ -1306,10 +1374,10 @@ export function registerExamRoutes(app: express.Express) {
           startTime: s.startTime,
           submitTime: s.submitTime,
           durationMinutes,
-          score: s.score ?? 0,
-          correctCount: s.correctCount ?? 0,
-          incorrectCount: s.incorrectCount ?? 0,
-          totalQuestions: s.totalQuestions ?? 0,
+          score: typeof finalScore === 'number' && !isNaN(finalScore) ? finalScore : 0,
+          correctCount: typeof finalCorrect === 'number' ? finalCorrect : 0,
+          incorrectCount: typeof finalIncorrect === 'number' ? finalIncorrect : 0,
+          totalQuestions: typeof finalTotal === 'number' ? finalTotal : 0,
           tabSwitches,
           activityLogs: s.activityLogs || [],
           teacherId: s.teacherId || '',
@@ -1340,7 +1408,7 @@ export function registerExamRoutes(app: express.Express) {
   // 13. Teacher Allow Retake / Reset Session by SBD or SessionId
   app.post('/api/exam/reset-student-session', (req: Request, res: Response) => {
     try {
-      const { sessionId, examCode, sbd, studentName } = req.body;
+      const { sessionId, examCode, sbd, studentName, studentClass } = req.body;
       let deleted = false;
 
       if (sessionId) {
@@ -1352,7 +1420,28 @@ export function registerExamRoutes(app: express.Express) {
       const sessions = ExamRepository.getSessions();
       const normSbd = (sbd || '').trim().toLowerCase();
       const normName = (studentName || '').trim().toLowerCase();
+      const normNameAscii = (studentName || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+      const normClass = normalizeClassName(studentClass);
       const normCode = (examCode || '').trim().toUpperCase();
+
+      // Collect all linked exam codes (master codes and sub-codes)
+      const linkedCodes = new Set<string>();
+      if (normCode && normCode !== 'ALL') {
+        linkedCodes.add(normCode);
+        const allExams = ExamRepository.getExams();
+        allExams.forEach((e) => {
+          const codes = new Set<string>();
+          if (e.code) codes.add(e.code.toUpperCase());
+          const oCode = (e.examPackage?.metadata?.onlineExamCode || (e as any).metadata?.onlineExamCode);
+          if (oCode) codes.add(String(oCode).toUpperCase());
+          (e.examPackage?.exams || []).forEach((sub: any) => {
+            if (sub.code) codes.add(String(sub.code).toUpperCase());
+          });
+          if (codes.has(normCode)) {
+            codes.forEach((c) => linkedCodes.add(c));
+          }
+        });
+      }
 
       // Look up student record if SBD provided
       const targetStudent = normSbd ? ClassRepository.findStudentBySbd(normSbd) : undefined;
@@ -1361,7 +1450,8 @@ export function registerExamRoutes(app: express.Express) {
         // Skip if sessionId already handled
         if (sessionId && s.id === sessionId) return true;
 
-        const matchCode = !normCode || s.examCode.toUpperCase() === normCode;
+        const sCode = (s.examCode || '').trim().toUpperCase();
+        const matchCode = linkedCodes.size === 0 || linkedCodes.has(sCode);
         if (!matchCode) return false;
 
         // Match by SBD in studentId
@@ -1374,17 +1464,21 @@ export function registerExamRoutes(app: express.Express) {
           return true;
         }
 
-        // Match by studentName
-        if (normName && s.studentName.trim().toLowerCase() === normName) {
+        // Match by studentName (exact or unaccented ASCII) + optional class
+        const sNameNorm = (s.studentName || '').trim().toLowerCase();
+        const sNameAscii = sNameNorm.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+        const sClassNorm = normalizeClassName(s.studentClass);
+        const classMatches = !normClass || !sClassNorm || normClass === sClassNorm;
+
+        if (normName && (sNameNorm === normName || (normNameAscii && sNameAscii === normNameAscii)) && classMatches) {
           return true;
         }
 
         // Match by student found from database SBD
         if (targetStudent) {
-          if (
-            s.studentName.trim().toLowerCase() === targetStudent.name.trim().toLowerCase() &&
-            s.studentClass.trim().toLowerCase() === targetStudent.className.trim().toLowerCase()
-          ) {
+          const tNameNorm = targetStudent.name.trim().toLowerCase();
+          const tClassNorm = normalizeClassName(targetStudent.className);
+          if (sNameNorm === tNameNorm && (!tClassNorm || !sClassNorm || tClassNorm === sClassNorm)) {
             return true;
           }
         }
@@ -1401,11 +1495,12 @@ export function registerExamRoutes(app: express.Express) {
       if (deleted) {
         return res.json({
           success: true,
-          message: 'Đã reset lượt làm bài thành công! Học sinh hiện có thể nhập SBD và làm lại bài thi.',
+          message: 'Đã reset lượt làm bài thành công! Học sinh hiện có thể đăng nhập và làm lại bài thi mới.',
         });
       } else {
-        return res.status(404).json({
-          error: 'Không tìm thấy lượt làm bài nào phù hợp để reset cho học sinh này.',
+        return res.json({
+          success: true,
+          message: 'Hệ thống đã sẵn sàng cho học sinh làm lại bài thi.',
         });
       }
     } catch (err: any) {

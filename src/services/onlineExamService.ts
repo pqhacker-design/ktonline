@@ -65,6 +65,32 @@ export class OnlineExamService {
     return StorageEngine.getCurrentUserId() || UserDataSync.getActiveUserId() || 'guest';
   }
 
+  public static isCurrentUserAdmin(): boolean {
+    const rawUserId = (this.getActiveUserId() || '').trim().toLowerCase();
+    if (
+      rawUserId === 'admin' ||
+      rawUserId === 'pqhacker@gamil.com' ||
+      rawUserId === 'pqhacker@gmail.com' ||
+      rawUserId.includes('admin')
+    ) {
+      return true;
+    }
+    try {
+      const cached = localStorage.getItem('aitest_session_user');
+      if (cached) {
+        const u = JSON.parse(cached);
+        if (
+          u.role === 'admin' ||
+          (u.username && (u.username.toLowerCase() === 'admin' || u.username.toLowerCase() === 'pqhacker@gamil.com' || u.username.toLowerCase() === 'pqhacker@gmail.com')) ||
+          (u.email && (u.email.toLowerCase() === 'pqhacker@gamil.com' || u.email.toLowerCase() === 'pqhacker@gmail.com'))
+        ) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  }
+
   private static getStorageKeys() {
     const userId = this.getActiveUserId();
     const cleanId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
@@ -1125,6 +1151,7 @@ export class OnlineExamService {
           const codeUpper = e.code.trim().toUpperCase();
           if (deletedCodes.has(codeUpper)) return;
           const isOwner =
+            isAdmin ||
             Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && e.createdBy === userId) ||
             (!e.createdBy && localKnownCodes.has(codeUpper));
 
@@ -1169,7 +1196,7 @@ export class OnlineExamService {
     }
 
     // 4. Hợp nhất tất cả các nguồn đề và khử trùng lặp theo Mã đề (giữ đề của user hiện tại hoặc toàn bộ nếu admin)
-    const isAdmin = userId === 'admin' || userId === 'pqhacker@gamil.com';
+    const isAdmin = this.isCurrentUserAdmin();
     const map = new Map<string, OnlineExamItem>();
     [...apiExams, ...firestoreExams, ...localItems, ...historyItems].forEach((item: any) => {
       if (item && item.code) {
@@ -1647,7 +1674,23 @@ export class OnlineExamService {
     studentClass: string;
     studentId?: string;
     studentSchool?: string;
+    forceRetake?: boolean;
   }) {
+    if (data.forceRetake) {
+      let sessions = this.getLocalSessions();
+      const codeUpper = (data.code || '').trim().toUpperCase();
+      const normName = data.studentName.trim().toLowerCase();
+      const sbdNorm = (data.studentId || '').trim().toUpperCase();
+      sessions = sessions.filter((s) => {
+        const sCode = (s.examCode || '').trim().toUpperCase();
+        const sName = (s.studentName || '').trim().toLowerCase();
+        const sId = (s.studentId || '').trim().toUpperCase();
+        const matchCode = !codeUpper || sCode === codeUpper;
+        const matchStudent = (sbdNorm && sId === sbdNorm) || sName === normName;
+        return !(matchCode && matchStudent);
+      });
+      this.saveLocalSessions(sessions);
+    }
     try {
       const res = await this.request<any>('/api/exam/start', {
         method: 'POST',
@@ -1812,7 +1855,7 @@ export class OnlineExamService {
         );
       });
 
-      if (session) {
+      if (session && !data.forceRetake) {
         if (session.status === 'submitted') {
           return {
             success: true,
@@ -2432,11 +2475,7 @@ export class OnlineExamService {
 
     const rawUserId = this.getActiveUserId();
     const cleanUserId = (rawUserId || '').trim().toLowerCase();
-    const isAdmin =
-      cleanUserId === 'admin' ||
-      cleanUserId === 'pqhacker@gamil.com' ||
-      cleanUserId === 'pqhacker@gmail.com' ||
-      cleanUserId.includes('admin');
+    const isAdmin = this.isCurrentUserAdmin();
 
     const teacherExamsRes = await this.listExams();
     const examsList: any[] = Array.isArray(teacherExamsRes) ? teacherExamsRes : (teacherExamsRes?.exams || []);
@@ -2475,11 +2514,11 @@ export class OnlineExamService {
     [...apiResults, ...firestoreResults, ...localResults].forEach((item) => {
       if (item && item.id) {
         const itemCode = (item.examCode || '').trim().toUpperCase();
-        if (!isCodeMatch(itemCode)) {
+        const isFromApi = apiResultIds.has(item.id);
+        if (!isFromApi && !isCodeMatch(itemCode)) {
           return;
         }
 
-        const isFromApi = apiResultIds.has(item.id);
         const isAllowed =
           isFromApi ||
           codeUpper !== 'ALL' ||
@@ -2490,7 +2529,19 @@ export class OnlineExamService {
           (item.createdBy && item.createdBy.toLowerCase() === cleanUserId);
 
         if (isAllowed) {
-          map.set(item.id, item);
+          let finalScore = typeof item.score === 'number' && !isNaN(item.score) ? item.score : 0;
+          const totalQ = typeof item.totalQuestions === 'number' ? item.totalQuestions : 0;
+          const correctQ = typeof item.correctCount === 'number' ? item.correctCount : 0;
+          if (finalScore === 0 && correctQ > 0 && totalQ > 0) {
+            finalScore = Math.min(10.0, Math.round((correctQ / totalQ) * 10 * 100) / 100);
+          }
+          map.set(item.id, {
+            ...item,
+            score: finalScore,
+            correctCount: correctQ,
+            incorrectCount: typeof item.incorrectCount === 'number' ? item.incorrectCount : 0,
+            totalQuestions: totalQ,
+          });
         }
       }
     });
@@ -2631,12 +2682,13 @@ export class OnlineExamService {
   // 13. Classes Management
   static async getClasses(ignoreUserIdFilter: boolean = false) {
     const userId = this.getActiveUserId();
+    const isAdmin = this.isCurrentUserAdmin();
     const localClasses = this.getLocalClasses();
 
     // Fetch API and Firestore in parallel
     const [apiResult, firestoreClasses] = await Promise.all([
       this.request<{ success: boolean; classes: any[] }>('/api/classes').catch(() => ({ success: false, classes: [] })),
-      this.getSystemClassesFromFirestore(ignoreUserIdFilter).catch(() => []),
+      this.getSystemClassesFromFirestore(ignoreUserIdFilter || isAdmin).catch(() => []),
     ]);
 
     const apiClasses = (apiResult && apiResult.success && Array.isArray(apiResult.classes)) ? apiResult.classes : [];
@@ -2644,7 +2696,7 @@ export class OnlineExamService {
     const map = new Map<string, any>();
     [...apiClasses, ...firestoreClasses, ...localClasses].forEach((cls) => {
       if (cls && cls.id) {
-        if (ignoreUserIdFilter || cls.createdBy === userId || (!cls.createdBy && userId === 'guest')) {
+        if (ignoreUserIdFilter || isAdmin || cls.createdBy === userId || (!cls.createdBy && userId === 'guest')) {
           map.set(cls.id, cls);
         }
       }
@@ -2829,12 +2881,13 @@ export class OnlineExamService {
   // 14. Students Management
   static async getStudents(classId?: string, ignoreUserIdFilter: boolean = false) {
     const userId = this.getActiveUserId();
+    const isAdmin = this.isCurrentUserAdmin();
     const localStudents = this.getLocalStudents();
 
     const queryStr = classId ? `?classId=${encodeURIComponent(classId)}` : '';
     const [apiResult, firestoreStudents] = await Promise.all([
       this.request<{ success: boolean; students: any[] }>(`/api/students${queryStr}`).catch(() => ({ success: false, students: [] })),
-      this.getSystemStudentsFromFirestore(ignoreUserIdFilter).catch(() => []),
+      this.getSystemStudentsFromFirestore(ignoreUserIdFilter || isAdmin).catch(() => []),
     ]);
 
     const apiStudents = (apiResult && apiResult.success && Array.isArray(apiResult.students)) ? apiResult.students : [];
@@ -2842,7 +2895,7 @@ export class OnlineExamService {
     const map = new Map<string, any>();
     [...apiStudents, ...firestoreStudents, ...localStudents].forEach((s) => {
       if (s && s.id) {
-        if (ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest')) {
+        if (ignoreUserIdFilter || isAdmin || s.createdBy === userId || (!s.createdBy && userId === 'guest')) {
           map.set(s.id, s);
         }
       }
@@ -3124,6 +3177,7 @@ export class OnlineExamService {
     examCode?: string;
     sbd?: string;
     studentName?: string;
+    studentClass?: string;
   }) {
     if (data.sessionId) {
       try {
@@ -3131,25 +3185,27 @@ export class OnlineExamService {
       } catch (e) {
         console.warn('Lỗi xóa student_results trên Firestore khi reset session:', e);
       }
-    } else if (data.examCode && data.sbd) {
+    } else if (data.examCode && (data.sbd || data.studentName)) {
       try {
         const codeUpper = data.examCode.trim().toUpperCase();
-        const sbdUpper = data.sbd.trim().toUpperCase();
+        const sbdUpper = (data.sbd || '').trim().toUpperCase();
+        const nameNorm = (data.studentName || '').trim().toLowerCase();
         const colRef = collection(db, 'student_results');
         const q = query(colRef, where('examCode', '==', codeUpper));
         const snap = await getDocs(q);
         snap.forEach(async (d) => {
           const res = d.data() as StudentResultItem;
-          if (
-            res &&
-            ((res.studentSbd && res.studentSbd.trim().toUpperCase() === sbdUpper) ||
-              (res.studentId && res.studentId.trim().toUpperCase() === sbdUpper))
-          ) {
-            await deleteDoc(d.ref);
+          if (res) {
+            const matchSbd = sbdUpper && ((res.studentSbd && res.studentSbd.trim().toUpperCase() === sbdUpper) ||
+              (res.studentId && res.studentId.trim().toUpperCase() === sbdUpper));
+            const matchName = nameNorm && res.studentName && res.studentName.trim().toLowerCase() === nameNorm;
+            if (matchSbd || matchName) {
+              await deleteDoc(d.ref);
+            }
           }
         });
       } catch (e) {
-        console.warn('Lỗi xóa student_results matching SBD trên Firestore:', e);
+        console.warn('Lỗi xóa student_results matching SBD/Name trên Firestore:', e);
       }
     }
 
@@ -3162,15 +3218,17 @@ export class OnlineExamService {
       let sessions = this.getLocalSessions();
       if (data.sessionId) {
         sessions = sessions.filter((s) => s.id !== data.sessionId);
-      } else if (data.examCode && data.sbd) {
-        sessions = sessions.filter(
-          (s) =>
-            !(
-              s.examCode.toUpperCase() === data.examCode?.toUpperCase() &&
-              s.studentId &&
-              s.studentId.trim().toUpperCase() === data.sbd?.trim().toUpperCase()
-            )
-        );
+      } else {
+        const sbdUpper = (data.sbd || '').trim().toUpperCase();
+        const nameNorm = (data.studentName || '').trim().toLowerCase();
+        const examUpper = (data.examCode || '').trim().toUpperCase();
+        sessions = sessions.filter((s) => {
+          const matchCode = !examUpper || (s.examCode || '').trim().toUpperCase() === examUpper;
+          if (!matchCode) return true;
+          const matchSbd = sbdUpper && (s.studentId || '').trim().toUpperCase() === sbdUpper;
+          const matchName = nameNorm && (s.studentName || '').trim().toLowerCase() === nameNorm;
+          return !(matchSbd || matchName);
+        });
       }
       this.saveLocalSessions(sessions);
       return { success: true, message: 'Đã xóa kết quả và cho phép học sinh làm lại bài thi.' };
