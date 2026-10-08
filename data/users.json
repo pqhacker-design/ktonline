@@ -1,0 +1,23 @@
+[
+  {
+    "id": "gv_nguvan",
+    "username": "gv_nguvan",
+    "email": "gv_nguvan@system.local",
+    "password": "123456",
+    "displayName": "Cô Nguyễn Thị Hương",
+    "role": "user",
+    "active": true,
+    "createdAt": "2026-10-06T04:03:28.205Z"
+  },
+  {
+    "id": "admin",
+    "username": "pqhacker@gamil.com",
+    "email": "pqhacker@gamil.com",
+    "password": "Hungdiemly300506",
+    "displayName": "Quản trị viên Hệ thống",
+    "role": "admin",
+    "active": true,
+    "createdAt": "2026-10-06T04:03:14.939Z",
+    "updatedAt": "2026-10-06T04:03:14.940Z"
+  }
+]
