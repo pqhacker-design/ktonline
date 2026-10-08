@@ -94,7 +94,7 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
   const [systemStudents, setSystemStudents] = useState<any[]>([]);
 
   useEffect(() => {
-    OnlineExamService.getClasses(true)
+    OnlineExamService.getClasses(false)
       .then((res) => {
         if (res.success && res.classes) {
           setSystemClasses(res.classes);
@@ -102,7 +102,7 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
       })
       .catch((err) => console.error('Lỗi khi tải danh sách lớp:', err));
 
-    OnlineExamService.getStudents(undefined, true)
+    OnlineExamService.getStudents(undefined, false)
       .then((res) => {
         if (res.success && res.students) {
           setSystemStudents(res.students);
@@ -326,35 +326,34 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
     const studentNormName = curName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
     const examGradeNum = examInfo?.grade ? extractGradeNumber(examInfo.grade) : null;
 
-    // 3. Client-side validation for System Classes
-    if (systemClasses.length > 0 || systemStudents.length > 0) {
-      const matchingClass = systemClasses.find((c) => normalizeClassName(c.name) === studentNormClass || c.id === curClass);
-      if (matchingClass && examGradeNum) {
-        const classGradeNum = extractGradeNumber(matchingClass.grade) || extractGradeNumber(matchingClass.name);
-        if (classGradeNum && classGradeNum !== examGradeNum) {
-          setLoginError(`Cảnh báo: Lớp "${curClass}" thuộc Khối ${classGradeNum}, không phù hợp với bài thi Khối ${examGradeNum} (${examInfo?.grade || ''})!`);
-          setCheckingCode(false);
-          return;
-        }
-      }
+    // 3. Client-side Grade Compatibility Check
+    const studentGradeNum = extractGradeNumber(curClass);
+    if (examGradeNum && studentGradeNum && examGradeNum !== studentGradeNum) {
+      setLoginError(`Cảnh báo: Lớp "${curClass}" thuộc Khối ${studentGradeNum}, không phù hợp với bài thi Khối ${examGradeNum} (${examInfo?.grade || ''})!`);
+      setCheckingCode(false);
+      return;
+    }
 
-      const isClassValid =
-        !!matchingClass ||
-        systemStudents.some((s) => normalizeClassName(s.className) === studentNormClass) ||
-        (examInfo?.allowedClasses && examInfo.allowedClasses.some((c: string) => normalizeClassName(c) === studentNormClass));
-
-      if (!isClassValid) {
-        setLoginError(`Cảnh báo: Lớp "${curClass}" không tồn tại trên hệ thống. Vui lòng kiểm tra lại thông tin Lớp!`);
+    // 4. Client-side Allowed Classes Check
+    if (examInfo?.allowedClasses && Array.isArray(examInfo.allowedClasses) && examInfo.allowedClasses.length > 0) {
+      const isAllowed = examInfo.allowedClasses.some(
+        (c: string) => normalizeClassName(c) === studentNormClass || c === curClass
+      );
+      if (!isAllowed) {
+        setLoginError(
+          `Cảnh báo: Lớp "${curClass}" không thuộc danh sách lớp được phân công làm đề thi này (${examInfo.allowedClasses.join(', ')}). Vui lòng kiểm tra lại!`
+        );
         setCheckingCode(false);
         return;
       }
     }
 
-    // 4. Client-side validation for System Students
+    // 5. Check if student name matches an existing student in a different class
     if (systemStudents.length > 0) {
       const matchingNameStudents = systemStudents.filter(
-        (s) => s.name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ') === studentNormName ||
-               s.name.trim().toLowerCase() === curName.trim().toLowerCase()
+        (s) =>
+          s.name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ') === studentNormName ||
+          s.name.trim().toLowerCase() === curName.trim().toLowerCase()
       );
 
       if (matchingNameStudents.length > 0) {
@@ -364,27 +363,6 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
         if (!exactMatch) {
           const actualClass = matchingNameStudents[0].className;
           setLoginError(`Cảnh báo: Học sinh "${curName}" được ghi nhận thuộc Lớp "${actualClass}", không phải Lớp "${curClass}". Vui lòng kiểm tra lại thông tin Lớp!`);
-          setCheckingCode(false);
-          return;
-        }
-        if (examGradeNum) {
-          const matchedGrade = extractGradeNumber(exactMatch.className);
-          if (matchedGrade && matchedGrade !== examGradeNum) {
-            setLoginError(`Cảnh báo: Học sinh "${exactMatch.name}" (Lớp ${exactMatch.className}) thuộc Khối ${matchedGrade}, không được phép tham gia bài thi Khối ${examGradeNum} (${examInfo?.grade || ''})!`);
-            setCheckingCode(false);
-            return;
-          }
-        }
-      } else {
-        const studentsInClass = systemStudents.filter(
-          (s) => normalizeClassName(s.className) === studentNormClass || s.classId === curClass
-        );
-        if (studentsInClass.length > 0) {
-          setLoginError(`Cảnh báo: Không tìm thấy học sinh "${curName}" trong danh sách Lớp "${curClass}" trên hệ thống. Vui lòng kiểm tra lại chính xác Họ và Tên!`);
-          setCheckingCode(false);
-          return;
-        } else {
-          setLoginError(`Cảnh báo: Học sinh "${curName}" (Lớp ${curClass}) không có trong danh sách học sinh của hệ thống. Vui lòng kiểm tra lại thông tin tên và lớp!`);
           setCheckingCode(false);
           return;
         }

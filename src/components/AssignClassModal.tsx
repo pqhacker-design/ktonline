@@ -35,7 +35,7 @@ export const AssignClassModal: React.FC<AssignClassModalProps> = ({
     setAllowAllClasses(allowed.length === 0);
 
     setLoading(true);
-    OnlineExamService.getClasses(true)
+    OnlineExamService.getClasses(false)
       .then((res) => {
         if (res.success && res.classes) {
           setClassList(res.classes);

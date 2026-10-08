@@ -65,29 +65,48 @@ export class OnlineExamService {
     return StorageEngine.getCurrentUserId() || UserDataSync.getActiveUserId() || 'guest';
   }
 
+  public static getSessionUser(): any | null {
+    try {
+      const cached = localStorage.getItem('vision_test_app_user_data') || localStorage.getItem('aitest_session_user');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return null;
+  }
+
+  public static isUserMatched(creatorIdOrUsername?: string): boolean {
+    if (!creatorIdOrUsername) return false;
+    const cleanTarget = creatorIdOrUsername.trim().toLowerCase();
+    const activeId = (this.getActiveUserId() || '').trim().toLowerCase();
+    if (activeId && activeId !== 'guest' && activeId === cleanTarget) return true;
+    const user = this.getSessionUser();
+    if (user) {
+      if (user.id && user.id.toLowerCase() === cleanTarget) return true;
+      if (user.username && user.username.toLowerCase() === cleanTarget) return true;
+      if (user.email && user.email.toLowerCase() === cleanTarget) return true;
+    }
+    return false;
+  }
+
   public static isCurrentUserAdmin(): boolean {
     const rawUserId = (this.getActiveUserId() || '').trim().toLowerCase();
     if (
       rawUserId === 'admin' ||
       rawUserId === 'pqhacker@gamil.com' ||
-      rawUserId === 'pqhacker@gmail.com' ||
-      rawUserId.includes('admin')
+      rawUserId === 'pqhacker@gmail.com'
     ) {
       return true;
     }
-    try {
-      const cached = localStorage.getItem('aitest_session_user');
-      if (cached) {
-        const u = JSON.parse(cached);
-        if (
-          u.role === 'admin' ||
-          (u.username && (u.username.toLowerCase() === 'admin' || u.username.toLowerCase() === 'pqhacker@gamil.com' || u.username.toLowerCase() === 'pqhacker@gmail.com')) ||
-          (u.email && (u.email.toLowerCase() === 'pqhacker@gamil.com' || u.email.toLowerCase() === 'pqhacker@gmail.com'))
-        ) {
-          return true;
-        }
+    const user = this.getSessionUser();
+    if (user) {
+      if (
+        user.role === 'admin' ||
+        (user.id && user.id.toLowerCase() === 'admin') ||
+        (user.username && (user.username.toLowerCase() === 'admin' || user.username.toLowerCase() === 'pqhacker@gamil.com' || user.username.toLowerCase() === 'pqhacker@gmail.com')) ||
+        (user.email && (user.email.toLowerCase() === 'pqhacker@gamil.com' || user.email.toLowerCase() === 'pqhacker@gmail.com'))
+      ) {
+        return true;
       }
-    } catch {}
+    }
     return false;
   }
 
@@ -414,7 +433,14 @@ export class OnlineExamService {
     try {
       const keys = this.getStorageKeys();
       const data = localStorage.getItem(keys.CLASSES);
-      return data ? JSON.parse(data) : [];
+      const list = data ? JSON.parse(data) : [];
+      if (!Array.isArray(list)) return [];
+      if (this.isCurrentUserAdmin()) return list;
+      const userId = this.getActiveUserId();
+      if (!userId || userId === 'guest') {
+        return list.filter((c) => c && (!c.createdBy || c.createdBy === 'guest'));
+      }
+      return list.filter((c) => c && (c.createdBy === userId || this.isUserMatched(c.createdBy)));
     } catch {
       return [];
     }
@@ -434,7 +460,14 @@ export class OnlineExamService {
     try {
       const keys = this.getStorageKeys();
       const data = localStorage.getItem(keys.STUDENTS);
-      return data ? JSON.parse(data) : [];
+      const list = data ? JSON.parse(data) : [];
+      if (!Array.isArray(list)) return [];
+      if (this.isCurrentUserAdmin()) return list;
+      const userId = this.getActiveUserId();
+      if (!userId || userId === 'guest') {
+        return list.filter((s) => s && (!s.createdBy || s.createdBy === 'guest'));
+      }
+      return list.filter((s) => s && (s.createdBy === userId || this.isUserMatched(s.createdBy)));
     } catch {
       return [];
     }
@@ -1054,7 +1087,7 @@ export class OnlineExamService {
 
     // 1. Lấy từ Local Storage của OnlineExamService (chỉ của user hiện tại và chưa bị xóa)
     const localExams = this.getLocalExams().filter(
-      (e) => (!e.createdBy || e.createdBy === userId) && (!e.code || !deletedCodes.has(e.code.trim().toUpperCase()))
+      (e) => (isAdmin || !e.createdBy || this.isUserMatched(e.createdBy) || e.createdBy === userId) && (!e.code || !deletedCodes.has(e.code.trim().toUpperCase()))
     );
     const localItems: OnlineExamItem[] = localExams.map((e) => {
       const pkg = e.examPackage || {};
@@ -1152,7 +1185,7 @@ export class OnlineExamService {
           if (deletedCodes.has(codeUpper)) return;
           const isOwner =
             isAdmin ||
-            Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && e.createdBy === userId) ||
+            Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && (this.isUserMatched(e.createdBy) || e.createdBy === userId)) ||
             (!e.createdBy && localKnownCodes.has(codeUpper));
 
           if (isOwner) {
@@ -1204,7 +1237,7 @@ export class OnlineExamService {
         if (deletedCodes.has(key)) return;
         const isOwner =
           isAdmin ||
-          Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && item.createdBy === userId) ||
+          Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && (this.isUserMatched(item.createdBy) || item.createdBy === userId)) ||
           (!item.createdBy && localKnownCodes.has(key));
 
         if (isOwner) {
@@ -1765,17 +1798,28 @@ export class OnlineExamService {
         }
       }
 
-      // Database validation against classes & students (Firestore, API, Local)
-      const classesRes = await this.getClasses(true);
-      const studentsRes = await this.getStudents(undefined, true);
-      const localClasses = classesRes.classes || [];
-      const localStudents = studentsRes.students || [];
+      // Database validation against classes & students scoped strictly to exam owner
+      const examOwner = exam.createdBy;
+      let ownerClasses: any[] = [];
+      let ownerStudents: any[] = [];
+      try {
+        const classesRes = await this.getClasses(true);
+        const studentsRes = await this.getStudents(undefined, true);
+        const allCls = classesRes.classes || [];
+        const allSts = studentsRes.students || [];
+        if (examOwner) {
+          ownerClasses = allCls.filter((c: any) => c.createdBy === examOwner);
+          ownerStudents = allSts.filter((s: any) => s.createdBy === examOwner);
+        }
+      } catch {
+        // ignore
+      }
 
       const normClass = normalizeClassName(data.studentClass);
       const normName = data.studentName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
 
-      if (localClasses.length > 0 || localStudents.length > 0) {
-        const matchingClass = localClasses.find((c) => normalizeClassName(c.name) === normClass || c.id === data.studentClass);
+      if (ownerClasses.length > 0) {
+        const matchingClass = ownerClasses.find((c) => normalizeClassName(c.name) === normClass || c.id === data.studentClass);
         if (matchingClass && examGradeNum) {
           const classGradeNum = extractGradeNumber(matchingClass.grade) || extractGradeNumber(matchingClass.name);
           if (classGradeNum && classGradeNum !== examGradeNum) {
@@ -1784,21 +1828,10 @@ export class OnlineExamService {
             );
           }
         }
-
-        const isClassValid =
-          !!matchingClass ||
-          localStudents.some((s) => normalizeClassName(s.className) === normClass) ||
-          (exam.allowedClasses && exam.allowedClasses.some((c) => normalizeClassName(c) === normClass));
-
-        if (!isClassValid) {
-          throw new Error(
-            `Cảnh báo: Lớp "${data.studentClass}" không tồn tại trên hệ thống. Vui lòng kiểm tra lại thông tin tên và lớp!`
-          );
-        }
       }
 
-      if (localStudents.length > 0) {
-        const matchingNameStudents = localStudents.filter(
+      if (ownerStudents.length > 0) {
+        const matchingNameStudents = ownerStudents.filter(
           (s) =>
             s.name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ') === normName ||
             s.name.trim().toLowerCase() === data.studentName.trim().toLowerCase()
@@ -1812,27 +1845,6 @@ export class OnlineExamService {
             const actualClass = matchingNameStudents[0].className;
             throw new Error(
               `Cảnh báo: Học sinh "${data.studentName}" trên hệ thống thuộc Lớp "${actualClass}", không phải Lớp "${data.studentClass}". Vui lòng kiểm tra lại thông tin lớp!`
-            );
-          }
-          if (examGradeNum) {
-            const matchedGrade = extractGradeNumber(exactMatch.className);
-            if (matchedGrade && matchedGrade !== examGradeNum) {
-              throw new Error(
-                `Cảnh báo: Học sinh "${exactMatch.name}" (Lớp ${exactMatch.className}) thuộc Khối ${matchedGrade}, không được phép tham gia bài thi Khối ${examGradeNum} (${exam.grade || ''})!`
-              );
-            }
-          }
-        } else {
-          const studentsInClass = localStudents.filter(
-            (s) => normalizeClassName(s.className) === normClass || s.classId === data.studentClass
-          );
-          if (studentsInClass.length > 0) {
-            throw new Error(
-              `Cảnh báo: Không tìm thấy học sinh "${data.studentName}" trong danh sách Lớp "${data.studentClass}" trên hệ thống. Vui lòng kiểm tra lại chính xác Họ và Tên!`
-            );
-          } else {
-            throw new Error(
-              `Cảnh báo: Học sinh "${data.studentName}" (Lớp ${data.studentClass}) không có trong danh sách học sinh của hệ thống. Vui lòng kiểm tra lại thông tin tên và lớp!`
             );
           }
         }
@@ -2016,12 +2028,15 @@ export class OnlineExamService {
         session: newSession,
         questions: sanitizedQuestions,
         examInfo: {
+          code: exam.code,
           title: exam.title,
           subject: exam.subject,
           grade: exam.grade,
           duration: exam.duration,
           totalPoints: exam.totalPoints,
           antiCheat: exam.antiCheat,
+          allowExplanations: exam.allowExplanations,
+          createdBy: exam.createdBy || '',
         },
       };
     }
@@ -2054,7 +2069,7 @@ export class OnlineExamService {
     examCode: string,
     teacherIdOverride?: string
   ): void {
-    setTimeout(async () => {
+    const doSync = async () => {
       try {
         let teacherId = teacherIdOverride || session?.teacherId || session?.examInfo?.createdBy || '';
         if (!teacherId && examCode) {
@@ -2062,12 +2077,19 @@ export class OnlineExamService {
           const found = localExams.find((e) => (e.code || '').toUpperCase() === examCode.toUpperCase());
           if (found?.createdBy) {
             teacherId = found.createdBy;
+          } else {
+            try {
+              const exRes = await this.getExamDetail(examCode);
+              if (exRes?.exam?.createdBy) {
+                teacherId = exRes.exam.createdBy;
+              }
+            } catch {}
           }
         }
 
-        const studentName = session?.studentName || '';
-        const studentClass = session?.studentClass || '';
-        const studentId = session?.studentId || '';
+        const studentName = session?.studentName || resResult?.studentName || '';
+        const studentClass = session?.studentClass || resResult?.studentClass || '';
+        const studentId = session?.studentId || resResult?.studentId || '';
         const startTime = session?.startTime || resResult?.startTime || new Date().toISOString();
         const submitTime = resResult?.submitTime || session?.submitTime || new Date().toISOString();
 
@@ -2097,9 +2119,10 @@ export class OnlineExamService {
           teacherId,
         });
       } catch (err) {
-        console.warn('Lỗi đồng bộ ngầm kết quả thi lên Firestore:', err);
+        console.warn('Lỗi đồng bộ kết quả thi lên Firestore:', err);
       }
-    }, 10);
+    };
+    doSync().catch(() => {});
   }
 
   // 9. Submit Student Exam (Optimized for instant feedback & zero blocking waterfall)
@@ -2110,6 +2133,31 @@ export class OnlineExamService {
     cachedContext?: { examInfo?: any; questions?: any[] }
   ) {
     let submitRes: any = null;
+
+    const localSess = this.getLocalSessions().find((s) => s.id === sessionId);
+    const examCode = (localSess?.examCode || cachedContext?.examInfo?.code || '').trim().toUpperCase();
+    const studentName = (localSess?.studentName || '').trim();
+    const studentClass = (localSess?.studentClass || '').trim();
+    const studentId = (localSess?.studentId || '').trim();
+    const studentSchool = (localSess?.studentSchool || '').trim();
+    const teacherId = localSess?.teacherId || cachedContext?.examInfo?.createdBy || '';
+    const startTime = localSess?.startTime || new Date().toISOString();
+    const submitTime = new Date().toISOString();
+
+    const submitPayload = {
+      sessionId,
+      answers,
+      remainingSeconds,
+      examCode,
+      studentName,
+      studentClass,
+      studentId,
+      studentSchool,
+      teacherId,
+      startTime,
+      submitTime,
+      activityLogs: localSess?.activityLogs || [],
+    };
 
     // 1. Attempt API submission with 6.5s timeout
     try {
@@ -2129,7 +2177,7 @@ export class OnlineExamService {
         '/api/exam/submit',
         {
           method: 'POST',
-          body: JSON.stringify({ sessionId, answers, remainingSeconds }),
+          body: JSON.stringify(submitPayload),
         },
         6500
       );
@@ -2140,7 +2188,7 @@ export class OnlineExamService {
           '/api/exam/submit',
           {
             method: 'POST',
-            body: JSON.stringify({ sessionId, answers, remainingSeconds }),
+            body: JSON.stringify(submitPayload),
           },
           10000
         ).catch(() => {});
@@ -2482,11 +2530,20 @@ export class OnlineExamService {
     const teacherCodes = new Set<string>();
     examsList.forEach((e: any) => {
       if (e.code) teacherCodes.add(e.code.toUpperCase());
-      if (e.examPackage?.metadata?.onlineExamCode) {
-        teacherCodes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
-      }
-      (e.examPackage?.exams || []).forEach((sub: any) => {
-        if (sub.code) teacherCodes.add(sub.code.toUpperCase());
+      const oCode = e.examPackage?.metadata?.onlineExamCode || (e as any).metadata?.onlineExamCode;
+      if (oCode) teacherCodes.add(String(oCode).toUpperCase());
+      (e.examPackage?.exams || e.exams || []).forEach((sub: any) => {
+        if (sub.code) teacherCodes.add(String(sub.code).toUpperCase());
+      });
+    });
+
+    const localExams = this.getLocalExams();
+    localExams.forEach((e: any) => {
+      if (e.code) teacherCodes.add(e.code.toUpperCase());
+      const oCode = e.examPackage?.metadata?.onlineExamCode || (e as any).metadata?.onlineExamCode;
+      if (oCode) teacherCodes.add(String(oCode).toUpperCase());
+      (e.examPackage?.exams || e.exams || []).forEach((sub: any) => {
+        if (sub.code) teacherCodes.add(String(sub.code).toUpperCase());
       });
     });
 
@@ -2495,38 +2552,38 @@ export class OnlineExamService {
       if (!itemCode) return false;
       if (codeUpper === 'ALL') return true;
       if (itemCode === codeUpper) return true;
-      return examsList.some((e: any) => {
+      const combinedExams = [...examsList, ...localExams];
+      return combinedExams.some((e: any) => {
         const codes = new Set<string>();
         if (e.code) codes.add(e.code.toUpperCase());
-        if (e.examPackage?.metadata?.onlineExamCode) {
-          codes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
-        }
-        (e.examPackage?.exams || []).forEach((sub: any) => {
-          if (sub.code) codes.add(sub.code.toUpperCase());
+        const oCode = e.examPackage?.metadata?.onlineExamCode || (e as any).metadata?.onlineExamCode;
+        if (oCode) codes.add(String(oCode).toUpperCase());
+        (e.examPackage?.exams || e.exams || []).forEach((sub: any) => {
+          if (sub.code) codes.add(String(sub.code).toUpperCase());
         });
         return codes.has(itemCode) && codes.has(codeUpper);
       });
     };
 
-    const apiResultIds = new Set(apiResults.map((r) => r.id));
     const map = new Map<string, StudentResultItem>();
+    const apiResultIds = new Set(apiResults.map((r) => r.id));
 
-    [...apiResults, ...firestoreResults, ...localResults].forEach((item) => {
+    // Local results first, then firestore, then apiResults (API results have highest authority)
+    [...localResults, ...firestoreResults, ...apiResults].forEach((item) => {
       if (item && item.id) {
         const itemCode = (item.examCode || '').trim().toUpperCase();
-        const isFromApi = apiResultIds.has(item.id);
-        if (!isFromApi && !isCodeMatch(itemCode)) {
+        if (!isCodeMatch(itemCode)) {
           return;
         }
 
+        const fromApi = apiResultIds.has(item.id);
         const isAllowed =
-          isFromApi ||
-          codeUpper !== 'ALL' ||
+          fromApi ||
           isAdmin ||
-          teacherCodes.size === 0 ||
           teacherCodes.has(itemCode) ||
-          (item.teacherId && item.teacherId.toLowerCase() === cleanUserId) ||
-          (item.createdBy && item.createdBy.toLowerCase() === cleanUserId);
+          (item.teacherId && this.isUserMatched(item.teacherId)) ||
+          (item.createdBy && this.isUserMatched(item.createdBy)) ||
+          (!rawUserId || rawUserId === 'guest');
 
         if (isAllowed) {
           let finalScore = typeof item.score === 'number' && !isNaN(item.score) ? item.score : 0;
@@ -2535,13 +2592,25 @@ export class OnlineExamService {
           if (finalScore === 0 && correctQ > 0 && totalQ > 0) {
             finalScore = Math.min(10.0, Math.round((correctQ / totalQ) * 10 * 100) / 100);
           }
-          map.set(item.id, {
-            ...item,
-            score: finalScore,
-            correctCount: correctQ,
-            incorrectCount: typeof item.incorrectCount === 'number' ? item.incorrectCount : 0,
-            totalQuestions: totalQ,
-          });
+          const existing = map.get(item.id);
+          if (existing) {
+            const preferNew = fromApi || (finalScore > 0 && existing.score === 0);
+            map.set(item.id, {
+              ...(preferNew ? existing : item),
+              ...(preferNew ? item : existing),
+              score: Math.max(finalScore, existing.score || 0),
+              correctCount: Math.max(correctQ, existing.correctCount || 0),
+              totalQuestions: Math.max(totalQ, existing.totalQuestions || 0),
+            });
+          } else {
+            map.set(item.id, {
+              ...item,
+              score: finalScore,
+              correctCount: correctQ,
+              incorrectCount: typeof item.incorrectCount === 'number' ? item.incorrectCount : 0,
+              totalQuestions: totalQ,
+            });
+          }
         }
       }
     });
@@ -2617,10 +2686,11 @@ export class OnlineExamService {
 
   private static async getSystemClassesFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[]> {
     const userId = this.getActiveUserId();
+    const isAdmin = this.isCurrentUserAdmin();
     try {
       const colRef = collection(db, 'system_classes');
       let snap;
-      if (userId && userId !== 'guest' && !ignoreUserIdFilter) {
+      if (userId && userId !== 'guest' && !ignoreUserIdFilter && !isAdmin) {
         try {
           const q = query(colRef, where('createdBy', '==', userId));
           snap = await getDocs(q);
@@ -2635,7 +2705,7 @@ export class OnlineExamService {
       snap.forEach((d) => {
         const data = d.data();
         if (data && data.id) {
-          if (ignoreUserIdFilter || data.createdBy === userId || (!data.createdBy && userId === 'guest')) {
+          if (ignoreUserIdFilter || isAdmin || this.isUserMatched(data.createdBy) || (userId && data.createdBy === userId) || (!data.createdBy && userId === 'guest')) {
             items.push(data);
           }
         }
@@ -2649,10 +2719,11 @@ export class OnlineExamService {
 
   private static async getSystemStudentsFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[]> {
     const userId = this.getActiveUserId();
+    const isAdmin = this.isCurrentUserAdmin();
     try {
       const colRef = collection(db, 'system_students');
       let snap;
-      if (userId && userId !== 'guest' && !ignoreUserIdFilter) {
+      if (userId && userId !== 'guest' && !ignoreUserIdFilter && !isAdmin) {
         try {
           const q = query(colRef, where('createdBy', '==', userId));
           snap = await getDocs(q);
@@ -2667,7 +2738,7 @@ export class OnlineExamService {
       snap.forEach((d) => {
         const data = d.data();
         if (data && data.id) {
-          if (ignoreUserIdFilter || data.createdBy === userId || (!data.createdBy && userId === 'guest')) {
+          if (ignoreUserIdFilter || isAdmin || this.isUserMatched(data.createdBy) || (userId && data.createdBy === userId) || (!data.createdBy && userId === 'guest')) {
             items.push(data);
           }
         }
@@ -2696,7 +2767,7 @@ export class OnlineExamService {
     const map = new Map<string, any>();
     [...apiClasses, ...firestoreClasses, ...localClasses].forEach((cls) => {
       if (cls && cls.id) {
-        if (ignoreUserIdFilter || isAdmin || cls.createdBy === userId || (!cls.createdBy && userId === 'guest')) {
+        if (ignoreUserIdFilter || isAdmin || this.isUserMatched(cls.createdBy) || (userId && cls.createdBy === userId) || (!cls.createdBy && userId === 'guest')) {
           map.set(cls.id, cls);
         }
       }
@@ -2712,8 +2783,8 @@ export class OnlineExamService {
       return naturalCompare(a.name || '', b.name || '');
     });
 
-    // Update local cache if merged has more info
-    if (merged.length > 0 && merged.length !== localClasses.length) {
+    // Update local cache if merged has more info (only when not ignoring user filter)
+    if (!ignoreUserIdFilter && merged.length > 0 && merged.length !== localClasses.length) {
       this.saveLocalClasses(merged);
     }
 
@@ -2895,7 +2966,7 @@ export class OnlineExamService {
     const map = new Map<string, any>();
     [...apiStudents, ...firestoreStudents, ...localStudents].forEach((s) => {
       if (s && s.id) {
-        if (ignoreUserIdFilter || isAdmin || s.createdBy === userId || (!s.createdBy && userId === 'guest')) {
+        if (ignoreUserIdFilter || isAdmin || this.isUserMatched(s.createdBy) || (userId && s.createdBy === userId) || (!s.createdBy && userId === 'guest')) {
           map.set(s.id, s);
         }
       }
@@ -2906,7 +2977,7 @@ export class OnlineExamService {
     // Sắp xếp danh sách học sinh ổn định (thứ tự nhập ban đầu / SBD / Tên tiếng Việt)
     allStudents = sortStudentsDefault(allStudents);
 
-    if (allStudents.length > 0 && allStudents.length !== localStudents.length && !classId) {
+    if (!ignoreUserIdFilter && allStudents.length > 0 && allStudents.length !== localStudents.length && !classId) {
       this.saveLocalStudents(allStudents);
     }
 
@@ -3124,7 +3195,7 @@ export class OnlineExamService {
           if (examGradeNum) {
             let studentGradeNum = extractGradeNumber(student.className);
             if (!studentGradeNum && student.classId) {
-              const localCls = (await this.getClasses(true)).classes?.find((c) => c.id === student.classId);
+              const localCls = (await this.getClasses(false)).classes?.find((c) => c.id === student.classId);
               if (localCls) studentGradeNum = extractGradeNumber(localCls.grade) || extractGradeNumber(localCls.name);
             }
             if (studentGradeNum && studentGradeNum !== examGradeNum) {

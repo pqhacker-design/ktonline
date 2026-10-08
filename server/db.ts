@@ -120,13 +120,57 @@ function writeJsonFile<T>(filePath: string, data: T): void {
 
 export const sampleInitialExams: ExamData[] = [];
 
+function isUserAdmin(userId?: string, userObj?: any): boolean {
+  if (!userId) return false;
+  const norm = userId.trim().toLowerCase();
+  return (
+    norm === 'admin' ||
+    norm === 'pqhacker@gamil.com' ||
+    norm === 'pqhacker@gmail.com' ||
+    userObj?.role === 'admin'
+  );
+}
+
+function matchesCreator(creator?: string, userId?: string, userObj?: any): boolean {
+  if (!creator || !userId) return false;
+  const c = creator.trim().toLowerCase();
+  const u = userId.trim().toLowerCase();
+  if (c === u) return true;
+  if (userObj) {
+    if (userObj.id && userObj.id.toLowerCase() === c) return true;
+    if (userObj.username && userObj.username.toLowerCase() === c) return true;
+    if (userObj.email && userObj.email.toLowerCase() === c) return true;
+  }
+  const users = readJsonFile<any[]>(USERS_FILE, []);
+  const creatorObj = users.find(
+    (usr) =>
+      (usr.id && usr.id.toLowerCase() === c) ||
+      (usr.username && usr.username.toLowerCase() === c) ||
+      (usr.email && usr.email.toLowerCase() === c)
+  );
+  if (creatorObj) {
+    if (creatorObj.id && creatorObj.id.toLowerCase() === u) return true;
+    if (creatorObj.username && creatorObj.username.toLowerCase() === u) return true;
+    if (creatorObj.email && creatorObj.email.toLowerCase() === u) return true;
+  }
+  return false;
+}
+
 export class ExamRepository {
   // --- EXAMS ---
   static getExams(userId?: string): ExamData[] {
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
     if (!userId || userId === 'guest' || userId === 'anonymous') return [];
-    if (userId === 'admin' || userId === 'pqhacker@gamil.com') return exams;
-    return exams.filter((e) => e.createdBy === userId);
+    const users = readJsonFile<any[]>(USERS_FILE, []);
+    const normUserId = userId.trim().toLowerCase();
+    const userObj = users.find(
+      (u) =>
+        (u.id && u.id.toLowerCase() === normUserId) ||
+        (u.username && u.username.toLowerCase() === normUserId) ||
+        (u.email && u.email.toLowerCase() === normUserId)
+    );
+    if (isUserAdmin(userId, userObj)) return exams;
+    return exams.filter((e) => matchesCreator(e.createdBy, userId, userObj));
   }
 
   static getExamByCode(code: string): ExamData | undefined {
@@ -309,21 +353,13 @@ export class ExamRepository {
         (u.username && u.username.toLowerCase() === normUserId) ||
         (u.email && u.email.toLowerCase() === normUserId)
     );
-    const isAdmin =
-      !userId ||
-      normUserId === 'admin' ||
-      normUserId === 'pqhacker@gamil.com' ||
-      normUserId === 'pqhacker@gmail.com' ||
-      userObj?.role === 'admin';
+    const admin = isUserAdmin(userId, userObj);
 
     const userExamCodes = new Set<string>();
     exams.forEach((e) => {
-      const eCreator = (e.createdBy || '').trim().toLowerCase();
       const isOwner =
-        isAdmin ||
-        !e.createdBy ||
-        eCreator === normUserId ||
-        (userObj && (eCreator === userObj.id?.toLowerCase() || eCreator === userObj.username?.toLowerCase() || eCreator === userObj.email?.toLowerCase()));
+        admin ||
+        (normUserId && matchesCreator(e.createdBy, userId, userObj));
       if (isOwner) {
         if (e.code) userExamCodes.add(e.code.toUpperCase());
         if (e.examPackage?.metadata?.onlineExamCode) {
@@ -362,29 +398,24 @@ export class ExamRepository {
       }
 
       // Admin has full visibility
-      if (isAdmin) return true;
+      if (admin) return true;
 
-      // Matching user exams
-      if (userExamCodes.has(sExamCode)) return true;
-      if (
-        s.teacherId &&
-        ((s.teacherId.toLowerCase() === normUserId) ||
-          (userObj && (s.teacherId.toLowerCase() === userObj.id?.toLowerCase() || s.teacherId.toLowerCase() === userObj.username?.toLowerCase())))
-      ) {
-        return true;
+      // Regular teachers must own the exam or have matching teacherId
+      const isMyExam = userExamCodes.has(sExamCode);
+      const isMyTeacherId = s.teacherId && matchesCreator(s.teacherId, userId, userObj);
+
+      if (!userId || userId === 'guest') {
+        const guestExam = exams.find((e) => {
+          const codes = new Set<string>();
+          if (e.code) codes.add(e.code.toUpperCase());
+          if (e.examPackage?.metadata?.onlineExamCode) codes.add(e.examPackage.metadata.onlineExamCode.toUpperCase());
+          (e.examPackage?.exams || []).forEach((sub: any) => { if (sub.code) codes.add(sub.code.toUpperCase()); });
+          return codes.has(sExamCode) && (!e.createdBy || e.createdBy === 'guest');
+        });
+        if (guestExam || !s.teacherId || s.teacherId === 'guest') return true;
       }
 
-      // If specific code filter was explicitly given and matched sExamCode, allow it
-      if (normFilter && normFilter !== 'ALL') {
-        return true;
-      }
-
-      // If user has no registered exams on server, don't drop sessions
-      if (userExamCodes.size === 0) {
-        return true;
-      }
-
-      return false;
+      return isMyExam || isMyTeacherId;
     });
   }
 }
@@ -438,8 +469,22 @@ export function normalizeClassName(str?: string | null): string {
 export class ClassRepository {
   static getClasses(userId?: string): ClassItem[] {
     let classes = readJsonFile<ClassItem[]>(CLASSES_FILE, []);
-    if (userId) {
-      classes = classes.filter((c) => c.createdBy === userId || (!c.createdBy && userId === 'guest'));
+    const users = readJsonFile<any[]>(USERS_FILE, []);
+    const normUserId = (userId || '').trim().toLowerCase();
+    const userObj = users.find(
+      (u) =>
+        (u.id && u.id.toLowerCase() === normUserId) ||
+        (u.username && u.username.toLowerCase() === normUserId) ||
+        (u.email && u.email.toLowerCase() === normUserId)
+    );
+    const admin = isUserAdmin(userId, userObj);
+
+    if (!admin) {
+      if (!userId || userId === 'guest') {
+        classes = classes.filter((c) => !c.createdBy || c.createdBy === 'guest');
+      } else {
+        classes = classes.filter((c) => matchesCreator(c.createdBy, userId, userObj));
+      }
     }
     const students = this.getStudents(undefined, userId);
     return classes.map((cls) => ({
@@ -475,10 +520,20 @@ export class ClassRepository {
 
   static deleteClass(id: string, userId?: string): boolean {
     let classes = readJsonFile<ClassItem[]>(CLASSES_FILE, []);
+    const users = readJsonFile<any[]>(USERS_FILE, []);
+    const normUserId = (userId || '').trim().toLowerCase();
+    const userObj = users.find(
+      (u) =>
+        (u.id && u.id.toLowerCase() === normUserId) ||
+        (u.username && u.username.toLowerCase() === normUserId) ||
+        (u.email && u.email.toLowerCase() === normUserId)
+    );
+    const admin = isUserAdmin(userId, userObj);
+
     const targetClass = classes.find(
       (c) =>
         (c.id === id || c.name.trim().toLowerCase() === id.trim().toLowerCase()) &&
-        (!userId || c.createdBy === userId || (!c.createdBy && userId === 'guest'))
+        (admin || !userId || matchesCreator(c.createdBy, userId, userObj) || (!c.createdBy && userId === 'guest'))
     );
     if (!targetClass) return false;
 
@@ -490,7 +545,7 @@ export class ClassRepository {
       const isMatchingClass =
         s.classId === targetClass.id ||
         (s.className || '').trim().toLowerCase() === targetClass.name.trim().toLowerCase();
-      const isMatchingUser = !userId || s.createdBy === userId || (!s.createdBy && userId === 'guest');
+      const isMatchingUser = admin || !userId || matchesCreator(s.createdBy, userId, userObj) || (!s.createdBy && userId === 'guest');
       return !(isMatchingClass && isMatchingUser);
     });
     writeJsonFile(STUDENTS_FILE, students);
@@ -500,8 +555,22 @@ export class ClassRepository {
 
   static getStudents(classIdOrName?: string, userId?: string): StudentItem[] {
     let students = readJsonFile<StudentItem[]>(STUDENTS_FILE, []);
-    if (userId) {
-      students = students.filter((s) => s.createdBy === userId || (!s.createdBy && userId === 'guest'));
+    const users = readJsonFile<any[]>(USERS_FILE, []);
+    const normUserId = (userId || '').trim().toLowerCase();
+    const userObj = users.find(
+      (u) =>
+        (u.id && u.id.toLowerCase() === normUserId) ||
+        (u.username && u.username.toLowerCase() === normUserId) ||
+        (u.email && u.email.toLowerCase() === normUserId)
+    );
+    const admin = isUserAdmin(userId, userObj);
+
+    if (!admin) {
+      if (!userId || userId === 'guest') {
+        students = students.filter((s) => !s.createdBy || s.createdBy === 'guest');
+      } else {
+        students = students.filter((s) => matchesCreator(s.createdBy, userId, userObj));
+      }
     }
     if (!classIdOrName || classIdOrName === 'ALL') return students;
     const norm = classIdOrName.trim().toLowerCase();

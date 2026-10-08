@@ -123,8 +123,8 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     try {
       const [resResults, resClasses, resStudents, resExams] = await Promise.all([
         OnlineExamService.getTeacherResults(examCodeFilter).catch(() => ({ success: false, results: [] })),
-        OnlineExamService.getClasses(true).catch(() => ({ success: false, classes: [] })),
-        OnlineExamService.getStudents(undefined, true).catch(() => ({ success: false, students: [] })),
+        OnlineExamService.getClasses(false).catch(() => ({ success: false, classes: [] })),
+        OnlineExamService.getStudents(undefined, false).catch(() => ({ success: false, students: [] })),
         OnlineExamService.listExams().catch(() => ({ success: false, exams: [] })),
       ]);
 
@@ -158,11 +158,11 @@ export const StudentResultsView: React.FC<StudentResultsViewProps> = ({
     fetchData(true);
   }, [examCodeFilter, user?.id, user?.username]);
 
-  // Live polling: Tự động cập nhật ngầm định kỳ 10 giây một lần khi giáo viên mở trang thống kê
+  // Live polling: Tự động cập nhật ngầm định kỳ 4 giây một lần khi giáo viên mở trang thống kê
   useEffect(() => {
     const pollInterval = setInterval(() => {
       fetchData(false);
-    }, 10000);
+    }, 4000);
 
     const unsubscribe = StorageEngine.subscribe(() => {
       fetchData(false);

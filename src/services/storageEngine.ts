@@ -59,12 +59,30 @@ export class StorageEngine {
   }
 
   static getCurrentUserId(): string | null {
-    return this.currentUserId;
+    if (this.currentUserId) return this.currentUserId;
+    try {
+      const saved = localStorage.getItem('vision_test_app_user_id');
+      if (saved) {
+        this.currentUserId = saved;
+        return saved;
+      }
+      const userData = localStorage.getItem('vision_test_app_user_data');
+      if (userData) {
+        const parsed = JSON.parse(userData);
+        const id = parsed.id || parsed.username || null;
+        if (id) {
+          this.currentUserId = id;
+          return id;
+        }
+      }
+    } catch {}
+    return null;
   }
 
   private static getKey(baseKey: string): string {
-    if (this.currentUserId) {
-      const cleanId = this.currentUserId.replace(/[^a-zA-Z0-9_]/g, '_');
+    const activeId = this.getCurrentUserId();
+    if (activeId) {
+      const cleanId = activeId.replace(/[^a-zA-Z0-9_]/g, '_');
       return `${baseKey}_${cleanId}`;
     }
     return baseKey;

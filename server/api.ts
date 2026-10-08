@@ -596,9 +596,9 @@ export function registerExamRoutes(app: express.Express) {
 
   app.post('/api/students', (req: Request, res: Response) => {
     try {
-      const userId = (req.headers['x-user-id'] as string) || req.body.userId;
       const body = req.body;
       const list: StudentItem[] = Array.isArray(body) ? body : [body];
+      const userId = (req.headers['x-user-id'] as string) || req.body.userId || (list.length > 0 ? list[0].createdBy : undefined);
       const prepared = list.map((st, idx) => ({
         id: st.id || 'std_' + Date.now() + '_' + idx + '_' + Math.random().toString(36).substring(2, 6),
         classId: st.classId || '',
@@ -608,8 +608,8 @@ export function registerExamRoutes(app: express.Express) {
         gender: st.gender,
         dob: st.dob,
         notes: st.notes,
-        createdBy: userId,
-        createdAt: new Date().toISOString(),
+        createdBy: st.createdBy || userId,
+        createdAt: st.createdAt || new Date().toISOString(),
       }));
       const saved = ClassRepository.saveStudents(prepared, userId);
       return res.json({ success: true, students: saved });
@@ -912,7 +912,12 @@ export function registerExamRoutes(app: express.Express) {
         return res.status(400).json({ error: 'Vui lòng điền đầy đủ Mã đề, Họ tên và Lớp.' });
       }
 
-      const exam = ExamRepository.getExamByCode(code);
+      let exam = ExamRepository.getExamByCode(code);
+      if (!exam && req.body.examData) {
+        try {
+          exam = ExamRepository.saveExam(req.body.examData, req.body.examData.createdBy);
+        } catch {}
+      }
       if (!exam) {
         return res.status(404).json({ error: 'Mã đề không tồn tại.' });
       }
@@ -956,16 +961,17 @@ export function registerExamRoutes(app: express.Express) {
         }
       }
 
-      // 3. Validate student Name and Class against system database (ClassRepository)
-      const allClasses = ClassRepository.getClasses();
-      const allStudents = ClassRepository.getStudents();
+      // 3. Validate student Name and Class against system database scoped strictly to this exam's teacher
+      const examOwner = exam.createdBy;
+      const allClasses = ClassRepository.getClasses(examOwner);
+      const allStudents = ClassRepository.getStudents(undefined, examOwner);
 
       const normClass = normalizeClassName(studentClass);
       const normName = studentName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
       const normSbd = studentId ? studentId.trim().toLowerCase() : '';
 
-      // Validate class existence if system has class or student database
-      if (allClasses.length > 0 || allStudents.length > 0) {
+      // Validate class grade compatibility if matching class exists in teacher's database
+      if (allClasses.length > 0) {
         const matchingClass = allClasses.find((c) => normalizeClassName(c.name) === normClass || c.id === studentClass);
         if (matchingClass && examGradeNum) {
           const classGradeNum = extractGradeNumber(matchingClass.grade) || extractGradeNumber(matchingClass.name);
@@ -975,20 +981,9 @@ export function registerExamRoutes(app: express.Express) {
             });
           }
         }
-
-        const isClassInSystem =
-          !!matchingClass ||
-          allStudents.some((s) => normalizeClassName(s.className) === normClass) ||
-          (exam.allowedClasses && exam.allowedClasses.some((c) => normalizeClassName(c) === normClass));
-
-        if (!isClassInSystem) {
-          return res.status(400).json({
-            error: `Cảnh báo: Lớp "${studentClass}" không tồn tại trên hệ thống. Vui lòng kiểm tra lại thông tin tên và lớp!`,
-          });
-        }
       }
 
-      // Validate student existence in student roster if system has registered students
+      // Validate student roster if teacher specifically uploaded a student list for this class
       if (allStudents.length > 0) {
         let matchedStudent = undefined;
 
@@ -1019,8 +1014,12 @@ export function registerExamRoutes(app: express.Express) {
           }
         }
 
-        // If not matched by SBD, search by Student Name in all students
-        if (!matchedStudent) {
+        const studentsInClass = allStudents.filter(
+          (s) => normalizeClassName(s.className) === normClass || s.classId === studentClass
+        );
+
+        // Only enforce strict roster check if this specific class has a registered roster
+        if (!matchedStudent && studentsInClass.length > 0) {
           const matchingNameStudents = allStudents.filter(
             (s) =>
               s.name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ') === normName ||
@@ -1028,7 +1027,6 @@ export function registerExamRoutes(app: express.Express) {
           );
 
           if (matchingNameStudents.length > 0) {
-            // Check if any match belongs to studentClass
             const exactClassMatch = matchingNameStudents.find(
               (s) => normalizeClassName(s.className) === normClass || s.classId === studentClass
             );
@@ -1047,19 +1045,9 @@ export function registerExamRoutes(app: express.Express) {
               }
             }
           } else {
-            // Name not found anywhere in allStudents. Check if there are registered students in that class
-            const studentsInClass = allStudents.filter(
-              (s) => normalizeClassName(s.className) === normClass || s.classId === studentClass
-            );
-            if (studentsInClass.length > 0) {
-              return res.status(400).json({
-                error: `Cảnh báo: Không tìm thấy học sinh "${studentName}" trong danh sách Lớp "${studentClass}" trên hệ thống. Vui lòng kiểm tra lại chính xác Họ và Tên!`,
-              });
-            } else {
-              return res.status(400).json({
-                error: `Cảnh báo: Học sinh "${studentName}" (Lớp ${studentClass}) không có trong danh sách học sinh của hệ thống. Vui lòng kiểm tra lại thông tin tên và lớp!`,
-              });
-            }
+            return res.status(400).json({
+              error: `Cảnh báo: Không tìm thấy học sinh "${studentName}" trong danh sách Lớp "${studentClass}" trên hệ thống. Vui lòng kiểm tra lại chính xác Họ và Tên!`,
+            });
           }
         }
       }
@@ -1110,7 +1098,10 @@ export function registerExamRoutes(app: express.Express) {
             success: true,
             isAlreadySubmitted: true,
             result: evaluatedResult,
-            session,
+            session: {
+              ...session,
+              teacherId: session.teacherId || exam.createdBy || '',
+            },
             examInfo: {
               code: exam.code,
               title: exam.title,
@@ -1119,6 +1110,7 @@ export function registerExamRoutes(app: express.Express) {
               duration: exam.duration,
               totalPoints: exam.totalPoints,
               allowExplanations: exam.allowExplanations,
+              createdBy: exam.createdBy || session.teacherId || '',
             },
           });
         }
@@ -1144,6 +1136,7 @@ export function registerExamRoutes(app: express.Express) {
             answers: session.answers || {},
             activityLogs: session.activityLogs || [],
             status: session.status,
+            teacherId: session.teacherId || exam.createdBy || '',
           },
           questions: cleanQuestions,
           examInfo: {
@@ -1155,6 +1148,7 @@ export function registerExamRoutes(app: express.Express) {
             totalPoints: exam.totalPoints,
             antiCheat: exam.antiCheat,
             allowExplanations: exam.allowExplanations,
+            createdBy: exam.createdBy || session.teacherId || '',
           },
         });
       }
@@ -1210,6 +1204,7 @@ export function registerExamRoutes(app: express.Express) {
           answers: {},
           activityLogs: newSession.activityLogs,
           status: newSession.status,
+          teacherId: newSession.teacherId || exam.createdBy || '',
         },
         questions: cleanQuestions,
         examInfo: {
@@ -1221,6 +1216,7 @@ export function registerExamRoutes(app: express.Express) {
           totalPoints: exam.totalPoints,
           antiCheat: exam.antiCheat,
           allowExplanations: exam.allowExplanations,
+          createdBy: exam.createdBy || '',
         },
       });
     } catch (err: any) {
@@ -1255,41 +1251,113 @@ export function registerExamRoutes(app: express.Express) {
   // 9. Submit Exam
   app.post('/api/exam/submit', (req: Request, res: Response) => {
     try {
-      const { sessionId, answers, remainingSeconds } = req.body;
+      const {
+        sessionId,
+        answers,
+        remainingSeconds,
+        examCode,
+        studentName,
+        studentClass,
+        studentId,
+        studentSchool,
+        score,
+        correctCount,
+        incorrectCount,
+        totalQuestions,
+        startTime,
+        submitTime,
+        activityLogs,
+        teacherId,
+        detailedGrading,
+      } = req.body;
       if (!sessionId) return res.status(400).json({ error: 'Thiếu sessionId.' });
 
-      const session = ExamRepository.getSessionById(sessionId);
-      if (!session) return res.status(404).json({ error: 'Phiên làm bài không tồn tại.' });
+      let session = ExamRepository.getSessionById(sessionId);
+      const targetExamCode = (session?.examCode || examCode || '').trim().toUpperCase();
+      const exam = targetExamCode ? ExamRepository.getExamByCode(targetExamCode) : undefined;
+      const resolvedTeacherId = teacherId || exam?.createdBy || session?.teacherId || '';
 
-      const exam = ExamRepository.getExamByCode(session.examCode);
-      const finalAnswers = answers || session.answers || {};
-
-      session.answers = finalAnswers;
-      session.remainingSeconds = remainingSeconds ?? 0;
-      session.submitTime = new Date().toISOString();
-      session.status = 'submitted';
-      if (exam?.createdBy && !session.teacherId) {
-        session.teacherId = exam.createdBy;
+      if (!session) {
+        // Self-heal & recover: If session was not previously recorded on server
+        // (e.g. client started offline/fallback or server restarted), CREATE IT directly!
+        session = {
+          id: sessionId,
+          examCode: targetExamCode,
+          studentName: (studentName || '').trim(),
+          studentClass: (studentClass || '').trim(),
+          studentId: (studentId || '').trim() || undefined,
+          studentSchool: (studentSchool || '').trim(),
+          seed: String(Date.now()),
+          startTime: startTime || new Date().toISOString(),
+          submitTime: submitTime || new Date().toISOString(),
+          remainingSeconds: remainingSeconds ?? 0,
+          answers: answers || {},
+          shuffledQuestions: [],
+          activityLogs: Array.isArray(activityLogs) ? activityLogs : [],
+          status: 'submitted',
+          teacherId: resolvedTeacherId,
+          score: typeof score === 'number' ? score : 0,
+          correctCount: typeof correctCount === 'number' ? correctCount : 0,
+          incorrectCount: typeof incorrectCount === 'number' ? incorrectCount : 0,
+          totalQuestions: typeof totalQuestions === 'number' ? totalQuestions : 0,
+        };
       }
 
-      const result = evaluateStudentSessionResult(session, exam || ({} as any));
+      const finalAnswers = answers || session.answers || {};
+      session.answers = finalAnswers;
+      session.remainingSeconds = remainingSeconds ?? 0;
+      session.submitTime = submitTime || session.submitTime || new Date().toISOString();
+      session.status = 'submitted';
+      if (resolvedTeacherId && !session.teacherId) {
+        session.teacherId = resolvedTeacherId;
+      }
 
-      session.score = result.score;
-      session.correctCount = result.correctCount;
-      session.incorrectCount = result.incorrectCount;
-      session.totalQuestions = result.totalQuestions;
+      let result: any;
+      if (exam) {
+        result = evaluateStudentSessionResult(session, exam);
+        session.score = result.score;
+        session.correctCount = result.correctCount;
+        session.incorrectCount = result.incorrectCount;
+        session.totalQuestions = result.totalQuestions;
+      } else {
+        result = {
+          score: typeof score === 'number' ? score : (session.score ?? 0),
+          correctCount: typeof correctCount === 'number' ? correctCount : (session.correctCount ?? 0),
+          incorrectCount: typeof incorrectCount === 'number' ? incorrectCount : (session.incorrectCount ?? 0),
+          totalQuestions: typeof totalQuestions === 'number' ? totalQuestions : (session.totalQuestions ?? 0),
+          startTime: session.startTime,
+          submitTime: session.submitTime,
+          allowExplanations: true,
+          detailedGrading: detailedGrading || [],
+        };
+        session.score = result.score;
+        session.correctCount = result.correctCount;
+        session.incorrectCount = result.incorrectCount;
+        session.totalQuestions = result.totalQuestions;
+      }
 
+      if (!Array.isArray(session.activityLogs)) {
+        session.activityLogs = [];
+      }
       session.activityLogs.push({
         timestamp: new Date().toISOString(),
         event: 'Nộp bài',
-        details: `Điểm số: ${result.score}/10 - Đúng: ${result.correctCount}/${result.totalQuestions}`,
+        details: `Điểm số: ${session.score}/10 - Đúng: ${session.correctCount}/${session.totalQuestions}`,
       });
 
       ExamRepository.saveSession(session);
 
       return res.json({
         success: true,
-        result,
+        result: {
+          ...result,
+          sessionId: session.id,
+          examCode: session.examCode,
+          studentName: session.studentName,
+          studentClass: session.studentClass,
+          studentId: session.studentId,
+          teacherId: session.teacherId || resolvedTeacherId,
+        },
       });
     } catch (err: any) {
       console.error('Lỗi khi nộp bài:', err);

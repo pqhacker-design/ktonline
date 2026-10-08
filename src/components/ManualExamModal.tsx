@@ -77,7 +77,7 @@ export const ManualExamModal: React.FC<ManualExamModalProps> = ({
 
   React.useEffect(() => {
     if (!isOpen) return;
-    OnlineExamService.getClasses(true)
+    OnlineExamService.getClasses(false)
       .then((res) => {
         if (res.success && res.classes) {
           setClassList(res.classes);
