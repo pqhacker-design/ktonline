@@ -218,15 +218,15 @@ export function registerExamRoutes(app: express.Express) {
   app.post('/api/gemini/generate', async (req: Request, res: Response) => {
     try {
       const { prompt, systemInstruction, responseMimeType, responseSchema, customApiKey, model, images } = req.body;
-      const apiKey = (customApiKey || '').trim() || process.env.GEMINI_API_KEY;
+      const apiKey = (customApiKey || '').trim() || ((req.headers['x-custom-api-key'] as string) || '').trim() || process.env.GEMINI_API_KEY;
 
       if (!apiKey) {
         return res.status(400).json({ error: '[NO_API_KEY] Chưa cấu hình Gemini API Key. Vui lòng nhập API Key để tiếp tục.' });
       }
 
-      const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-3.6-flash';
+      const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-2.5-flash';
       const candidateModels = Array.from(
-        new Set([selectedModel, 'gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'])
+        new Set([selectedModel, 'gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'])
       );
 
       let lastError: any = null;
@@ -358,9 +358,9 @@ export function registerExamRoutes(app: express.Express) {
       let code = (inputCode || '').trim().toUpperCase();
       if (code) {
         const existingExam = ExamRepository.getExamByCode(code);
-        if (existingExam && existingExam.createdBy !== userId && existingExam.id !== req.body.id) {
+        if (existingExam && req.body.id && existingExam.id !== req.body.id) {
           return res.status(400).json({
-            error: `Mã đề thi '${code}' đã tồn tại trên hệ thống. Mã đề thi của các tài khoản phải là duy nhất, tuyệt đối không trùng lặp! Vui lòng chọn mã đề khác.`
+            error: `Mã đề thi '${code}' đã tồn tại trên hệ thống. Vui lòng chọn mã đề khác.`
           });
         }
       } else {

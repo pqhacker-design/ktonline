@@ -35,32 +35,32 @@ interface SettingsViewProps {
 
 const GEMINI_MODELS = [
   {
-    id: 'gemini-3.6-flash',
-    name: 'Gemini 3.6 Flash',
-    badge: 'Mặc định - Khuyên dùng',
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    badge: 'Mặc định - Chuẩn xác & Ổn định nhất',
     badgeClass: 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800',
-    description: 'Tốc độ sinh nhanh, chính xác cao, bám sát chuẩn ma trận CV 7991/BGDĐT. Phù hợp nhất cho mọi đề thi.',
+    description: 'Tốc độ sinh nhanh (4-6s), không timeout trên Vercel, bám sát chuẩn ma trận CV 7991/BGDĐT, hạn mức Quota cao.',
   },
   {
-    id: 'gemini-3.1-pro-preview',
-    name: 'Gemini 3.1 Pro',
-    badge: 'Nâng cao - Suy luận sâu',
-    badgeClass: 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800',
-    description: 'Mô hình Pro với khả năng suy luận logic nâng cao cho câu hỏi phân hóa, tự luận VDC và thi học sinh giỏi.',
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
+    badge: 'Thế hệ 3.x - Thông minh vượt trội',
+    badgeClass: 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800',
+    description: 'Mô hình thế hệ 3 mới nhất của Google, suy luận sâu, bám sát cấu trúc đề và biểu thức LaTeX xuất sắc.',
   },
   {
     id: 'gemini-3.1-flash-lite',
-    name: 'Gemini 3.1 Flash Lite',
-    badge: 'Siêu tốc độ',
-    badgeClass: 'bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800',
-    description: 'Phản hồi siêu tốc, giảm tối đa thời gian chờ đợi. Phù hợp cho kiểm tra thử nghiệm hoặc tạo đề ngắn.',
+    name: 'Gemini 3.1 Flash Lite (3.1 Lite)',
+    badge: 'Siêu tốc độ - Tiết kiệm Quota',
+    badgeClass: 'bg-cyan-100 dark:bg-cyan-950 text-cyan-800 dark:text-cyan-300 border border-cyan-300 dark:border-cyan-800',
+    description: 'Phản hồi cực nhanh, lượng token tiêu thụ siêu nhẹ. Rất thích hợp khi API Key miễn phí bị giới hạn lượt gọi.',
   },
   {
-    id: 'gemini-flash-latest',
-    name: 'Gemini Flash Latest',
-    badge: 'Phiên bản mới nhất',
-    badgeClass: 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800',
-    description: 'Tự động liên kết tới bản nâng cấp Flash mới nhất từ Google DeepMind.',
+    id: 'gemini-3.1-pro-preview',
+    name: 'Gemini 3.1 Pro Preview (3.1 Pro)',
+    badge: 'Chuyên sâu - Suy luận cao',
+    badgeClass: 'bg-purple-100 dark:bg-purple-950 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-800',
+    description: 'Mô hình Pro suy luận logic đa bước mạnh mẽ cho câu hỏi phân hóa Vận dụng cao (VDC) và bồi dưỡng học sinh giỏi.',
   },
 ];
 
@@ -92,7 +92,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [departmentName, setDepartmentName] = useState(settings.defaultDepartmentName || 'Sở Giáo dục và Đào tạo');
   const [teacherName, setTeacherName] = useState(settings.defaultTeacherName || 'Giáo viên THCS / THPT');
   const [customApiKey, setCustomApiKey] = useState(settings.customApiKey || '');
-  const [selectedModel, setSelectedModel] = useState(settings.selectedModel || 'gemini-3.6-flash');
+  const [selectedModel, setSelectedModel] = useState(settings.selectedModel || 'gemini-2.5-flash');
   const [showApiKey, setShowApiKey] = useState(false);
 
   const [savedSuccess, setSavedSuccess] = useState(false);

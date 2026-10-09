@@ -11,7 +11,7 @@ export const defaultSettings: AppSettings = {
   defaultSchoolName: 'Trường THCS Bình San',
   defaultDepartmentName: 'Sở Giáo dục và Đào tạo',
   defaultTeacherName: 'Giáo viên',
-  selectedModel: 'gemini-3.6-flash',
+  selectedModel: 'gemini-2.5-flash',
   theme: 'light',
   saveExamHistory: true,
   autoSaveToBank: true,
@@ -52,12 +52,81 @@ export class StorageEngine {
     return this.currentUserId;
   }
 
-  private static getKey(baseKey: string): string {
-    if (this.currentUserId) {
-      const cleanId = this.currentUserId.replace(/[^a-zA-Z0-9_]/g, '_');
-      return `${baseKey}_${cleanId}`;
+  private static migrated = false;
+  private static ensureMigration(): void {
+    if (this.migrated) return;
+    this.migrated = true;
+    try {
+      // 1. Migrate exam history from user-scoped keys into shared key
+      const sharedHistoryRaw = localStorage.getItem(STORAGE_KEYS.EXAM_HISTORY);
+      let sharedHistory: ExamPackage[] = [];
+      if (sharedHistoryRaw) {
+        try { sharedHistory = JSON.parse(sharedHistoryRaw) || []; } catch {}
+      }
+      const historyMap = new Map<string, ExamPackage>();
+      sharedHistory.forEach((p) => p && p.id && historyMap.set(p.id, p));
+
+      // Scan all localStorage keys for other user history
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('aitest_exam_history_v1_') && k !== STORAGE_KEYS.EXAM_HISTORY) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list: ExamPackage[] = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((p) => {
+                  if (p && p.id && !p.id.includes('sample') && !historyMap.has(p.id)) {
+                    historyMap.set(p.id, p);
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+      if (historyMap.size > sharedHistory.length) {
+        localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(Array.from(historyMap.values())));
+      }
+
+      // 2. Migrate question bank
+      const sharedBankRaw = localStorage.getItem(STORAGE_KEYS.QUESTION_BANK);
+      let sharedBank: QuestionBankItem[] = [];
+      if (sharedBankRaw) {
+        try { sharedBank = JSON.parse(sharedBankRaw) || []; } catch {}
+      }
+      const bankMap = new Map<string, QuestionBankItem>();
+      sharedBank.forEach((q) => q && q.id && bankMap.set(q.id, q));
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('aitest_question_bank_v1_') && k !== STORAGE_KEYS.QUESTION_BANK) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list: QuestionBankItem[] = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((q) => {
+                  if (q && q.id && !q.id.includes('sample') && !bankMap.has(q.id)) {
+                    bankMap.set(q.id, q);
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+      if (bankMap.size > sharedBank.length) {
+        localStorage.setItem(STORAGE_KEYS.QUESTION_BANK, JSON.stringify(Array.from(bankMap.values())));
+      }
+    } catch (err) {
+      console.warn('Lỗi di chuyển dữ liệu shared workspace:', err);
     }
-    return baseKey;
+  }
+
+  private static getKey(baseKey: string): string {
+    this.ensureMigration();
+    return baseKey; // Dùng chung hệ thống cho tất cả tài khoản
   }
 
   // Settings
@@ -70,7 +139,12 @@ export class StorageEngine {
       if (parsed.defaultSchoolName === 'Trường THPT Nguyễn Trãi' || parsed.defaultSchoolName === 'THPT Nguyễn Trãi') {
         parsed.defaultSchoolName = 'Trường THCS Bình San';
       }
-      return { ...defaultSettings, ...parsed };
+      const result = { ...defaultSettings, ...parsed };
+      const validModels = ['gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'];
+      if (!result.selectedModel || !validModels.includes(result.selectedModel)) {
+        result.selectedModel = 'gemini-2.5-flash';
+      }
+      return result;
     } catch (e) {
       console.error('Lỗi đọc settings:', e);
       return defaultSettings;
@@ -82,6 +156,7 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.SETTINGS);
       localStorage.setItem(key, JSON.stringify(settings));
 
+      UserDataSync.saveUserData('shared_workspace', { settings });
       if (this.currentUserId) {
         UserDataSync.saveUserData(this.currentUserId, { settings });
       }
@@ -123,6 +198,7 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
 
+      UserDataSync.saveUserData('shared_workspace', { examHistory: updated });
       if (this.currentUserId) {
         UserDataSync.saveUserData(this.currentUserId, { examHistory: updated });
       }
@@ -139,6 +215,7 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
 
+      UserDataSync.saveUserData('shared_workspace', { examHistory: updated });
       if (this.currentUserId) {
         UserDataSync.saveUserData(this.currentUserId, { examHistory: updated });
       }
@@ -170,6 +247,7 @@ export class StorageEngine {
       if (changed) {
         const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
         localStorage.setItem(key, JSON.stringify(updated));
+        UserDataSync.saveUserData('shared_workspace', { examHistory: updated });
         if (this.currentUserId) {
           UserDataSync.saveUserData(this.currentUserId, { examHistory: updated });
         }
@@ -213,6 +291,7 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.QUESTION_BANK);
       localStorage.setItem(key, JSON.stringify(clean));
 
+      UserDataSync.saveUserData('shared_workspace', { questionBank: clean });
       if (this.currentUserId) {
         UserDataSync.saveUserData(this.currentUserId, { questionBank: clean });
       }

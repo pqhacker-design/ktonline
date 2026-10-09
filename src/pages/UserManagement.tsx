@@ -27,7 +27,11 @@ import {
   RefreshCw,
   HardDrive,
   AlertOctagon,
-  Check
+  Check,
+  Copy,
+  Sparkles,
+  KeyRound,
+  Share2
 } from 'lucide-react';
 
 export const UserManagement: React.FC = () => {
@@ -43,6 +47,15 @@ export const UserManagement: React.FC = () => {
   // Add / Edit Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+
+  // Quick Reset Password Modal State
+  const [quickResetUser, setQuickResetUser] = useState<AppUser | null>(null);
+  const [quickResetPassword, setQuickResetPassword] = useState('123456');
+  const [quickResetSaving, setQuickResetSaving] = useState(false);
+
+  // Copy credentials feedback
+  const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -111,12 +124,69 @@ export const UserManagement: React.FC = () => {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
+  // Copy credentials to send to user/teacher
+  const handleCopyCredentials = (targetUser: AppUser) => {
+    const pass = targetUser.password || (targetUser.username === 'admin' ? 'Hungdiemly300506' : '123456');
+    const appUrl = window.location.origin;
+    const text = `🏫 THÔNG TIN ĐĂNG NHẬP HỆ THỐNG VISION TEST AI\n` +
+      `👤 Họ và tên: ${targetUser.displayName || targetUser.username}\n` +
+      `🔑 Tên đăng nhập: ${targetUser.username}\n` +
+      `🔒 Mật khẩu: ${pass}\n` +
+      `🌐 Link đăng nhập: ${appUrl}\n` +
+      `📌 Ghi chú: Dữ liệu đề thi, lớp học, học sinh được đồng bộ dùng chung toàn trường.`;
+    navigator.clipboard.writeText(text);
+    setCopiedUserId(targetUser.id || targetUser.username);
+    setToastMessage(`Đã sao chép thông tin tài khoản ${targetUser.username} để gửi qua Zalo!`);
+    setTimeout(() => {
+      setCopiedUserId(null);
+      setToastMessage(null);
+    }, 3000);
+  };
+
+  // Generate a friendly memorable password for new users
+  const handleGenerateRandomPassword = () => {
+    const samplePass = ['123456', 'gv2026', 'thayhung123', 'ktonline88', 'thcs2026'];
+    const chosen = samplePass[Math.floor(Math.random() * samplePass.length)];
+    setFormData((prev) => ({ ...prev, password: chosen }));
+  };
+
+  // Open Quick Reset Password Modal
+  const handleOpenQuickReset = (targetUser: AppUser) => {
+    setQuickResetUser(targetUser);
+    setQuickResetPassword('123456');
+  };
+
+  // Save Quick Reset Password
+  const handleSaveQuickReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickResetUser) return;
+    const cleanPass = quickResetPassword.trim();
+    if (!cleanPass || cleanPass.length < 4) {
+      alert('Mật khẩu phải có ít nhất 4 ký tự.');
+      return;
+    }
+    setQuickResetSaving(true);
+    try {
+      const targetId = quickResetUser.id || quickResetUser.username || 'admin';
+      await userService.updateUser(targetId, {
+        password: cleanPass,
+      });
+      setToastMessage(`Đã đặt lại mật khẩu cho "${quickResetUser.username}" thành "${cleanPass}"!`);
+      setTimeout(() => setToastMessage(null), 3500);
+      setQuickResetUser(null);
+    } catch (err: any) {
+      alert('Không thể đặt lại mật khẩu: ' + err.message);
+    } finally {
+      setQuickResetSaving(false);
+    }
+  };
+
   // Open Add Modal
   const handleOpenAdd = () => {
     setEditingUser(null);
     setFormData({
       username: '',
-      password: '',
+      password: '123456',
       displayName: '',
       role: 'user',
       active: true,
@@ -304,6 +374,30 @@ export const UserManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-[999] px-4 py-3 bg-emerald-950 border border-emerald-500/80 text-emerald-200 text-xs font-bold rounded-2xl shadow-2xl flex items-center space-x-2 animate-in fade-in slide-in-from-top-4">
+          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Shared Workspace Information Banner */}
+      <div className="p-4 rounded-3xl bg-gradient-to-r from-emerald-500/10 via-cyan-500/10 to-indigo-500/10 border border-emerald-500/30 flex items-start gap-3.5 shadow-sm">
+        <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-2xl shrink-0">
+          <Sparkles className="w-5 h-5" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+            <span>Không Gian Dữ Liệu Dùng Chung Toàn Trường (Shared School Workspace)</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">DÙNG CHUNG 100%</span>
+          </h3>
+          <p className="text-xs text-slate-300 leading-relaxed">
+            Admin chỉ cần tạo tài khoản (Tên đăng nhập & Mật khẩu) cho giáo viên. Khi đăng nhập vào, <strong>toàn bộ giáo viên và admin đều dùng chung kho đề thi, ngân hàng câu hỏi, danh sách lớp học và học sinh</strong> mà không phân biệt tài khoản.
+          </p>
+        </div>
+      </div>
+
       {/* Filters & Search */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {/* Search */}
@@ -473,14 +567,39 @@ export const UserManagement: React.FC = () => {
 
                       {/* Actions */}
                       <td className="px-5 py-4 text-right">
-                        <div className="flex items-center justify-end space-x-1">
+                        <div className="flex items-center justify-end space-x-1.5">
+                          <button
+                            onClick={() => handleCopyCredentials(u)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                              copiedUserId === (u.id || u.username)
+                                ? 'bg-emerald-500/20 text-emerald-400'
+                                : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800'
+                            }`}
+                            title="Sao chép thông tin tài khoản để gửi Zalo cho giáo viên"
+                          >
+                            {copiedUserId === (u.id || u.username) ? (
+                              <Check className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              <Share2 className="w-4 h-4" />
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => handleOpenQuickReset(u)}
+                            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            title="Đặt lại mật khẩu nhanh"
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+
                           <button
                             onClick={() => handleOpenEdit(u)}
                             className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                            title="Sửa thông tin / Đổi mật khẩu"
+                            title="Sửa thông tin / Đổi vai trò"
                           >
                             <Edit3 className="w-4 h-4" />
                           </button>
+
                           <button
                             onClick={() => setDeletingUser(u)}
                             disabled={isSelf}
@@ -843,9 +962,21 @@ export const UserManagement: React.FC = () => {
 
               {/* Password Input */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-slate-300">
-                  {editingUser ? 'Mật khẩu mới (Để trống nếu không đổi)' : 'Mật khẩu (*)'}
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300">
+                    {editingUser ? 'Mật khẩu mới (Để trống nếu không đổi)' : 'Mật khẩu (*)'}
+                  </label>
+                  {!editingUser && (
+                    <button
+                      type="button"
+                      onClick={handleGenerateRandomPassword}
+                      className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold bg-indigo-950/60 px-2 py-0.5 rounded-lg border border-indigo-800/80 cursor-pointer flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3 text-indigo-400" />
+                      <span>Gợi ý mật khẩu</span>
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <input
                     type={showFormPassword ? 'text' : 'password'}
@@ -853,7 +984,7 @@ export const UserManagement: React.FC = () => {
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     placeholder={editingUser ? 'Nhập mật khẩu mới nếu muốn đổi' : 'Tối thiểu 4 ký tự'}
-                    className="w-full pl-3.5 pr-10 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-hidden focus:border-indigo-500"
+                    className="w-full pl-3.5 pr-10 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-hidden focus:border-indigo-500 font-mono"
                   />
                   <button
                     type="button"
@@ -953,6 +1084,76 @@ export const UserManagement: React.FC = () => {
                 {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Xóa Ngay</span>}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Reset Password Modal */}
+      {quickResetUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center space-x-2">
+                <div className="p-2 bg-amber-950 text-amber-400 border border-amber-800 rounded-xl">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-white text-base">Đặt Lại Mật Khẩu Nhanh</h3>
+                  <p className="text-[11px] text-slate-400 font-mono">{quickResetUser.username}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setQuickResetUser(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickReset} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-300">Mật khẩu mới</label>
+                <input
+                  type="text"
+                  required
+                  value={quickResetPassword}
+                  onChange={(e) => setQuickResetPassword(e.target.value)}
+                  placeholder="Nhập mật khẩu mới"
+                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white focus:outline-hidden focus:border-indigo-500 font-mono font-bold"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  <span className="text-[10px] text-slate-500 self-center">Chọn nhanh:</span>
+                  {['123456', 'gv2026', 'thayhung123', 'ktonline88'].map((sample) => (
+                    <button
+                      key={sample}
+                      type="button"
+                      onClick={() => setQuickResetPassword(sample)}
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded-lg border border-slate-700 cursor-pointer font-mono"
+                    >
+                      {sample}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickResetUser(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickResetSaving}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl shadow-lg cursor-pointer flex items-center space-x-1.5"
+                >
+                  {quickResetSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Lưu Mật Khẩu</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

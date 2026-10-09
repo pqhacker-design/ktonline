@@ -119,11 +119,10 @@ function writeJsonFile<T>(filePath: string, data: T): void {
 export const sampleInitialExams: ExamData[] = [];
 
 export class ExamRepository {
-  // --- EXAMS ---
+  // --- EXAMS (Dùng chung toàn trường cho tất cả tài khoản) ---
   static getExams(userId?: string): ExamData[] {
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
-    if (!userId || userId === 'guest' || userId === 'anonymous') return [];
-    return exams.filter((e) => e.createdBy === userId);
+    return exams;
   }
 
   static getExamByCode(code: string): ExamData | undefined {
@@ -132,13 +131,13 @@ export class ExamRepository {
   }
 
   static saveExam(exam: ExamData, userId?: string): ExamData {
-    if (userId) {
+    if (userId && !exam.createdBy) {
       exam.createdBy = userId;
     }
     const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
     const index = exams.findIndex((e) => e.code.toUpperCase() === exam.code.toUpperCase());
     if (index >= 0) {
-      exams[index] = { ...exams[index], ...exam, createdBy: exam.createdBy || exams[index].createdBy || userId };
+      exams[index] = { ...exams[index], ...exam };
     } else {
       exams.unshift(exam);
     }
@@ -159,11 +158,7 @@ export class ExamRepository {
   static deleteExam(code: string, userId?: string): boolean {
     let exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
     const initialLen = exams.length;
-    exams = exams.filter((e) => {
-      if (e.code.toUpperCase() !== code.toUpperCase()) return true;
-      if (userId && e.createdBy && e.createdBy !== userId && userId !== 'admin') return true;
-      return false;
-    });
+    exams = exams.filter((e) => e.code.toUpperCase() !== code.toUpperCase());
     if (exams.length !== initialLen) {
       writeJsonFile(EXAMS_FILE, exams);
       return true;
@@ -234,16 +229,8 @@ export class ExamRepository {
 
   static getResultsByExamCode(examCode?: string, userId?: string): StudentSession[] {
     const sessions = this.getSessions();
-    const exams = readJsonFile<ExamData[]>(EXAMS_FILE, []);
-    let filteredExams = exams;
-    if (userId) {
-      filteredExams = exams.filter((e) => e.createdBy === userId || !e.createdBy);
-    }
-    const userExamCodes = new Set(filteredExams.map((e) => e.code.toUpperCase()));
-
     return sessions.filter((s) => {
       if (s.status !== 'submitted') return false;
-      if (userId && !userExamCodes.has(s.examCode.toUpperCase())) return false;
       if (!examCode || examCode === 'ALL') return true;
       return s.examCode.toUpperCase() === examCode.toUpperCase();
     });
@@ -298,11 +285,8 @@ export function normalizeClassName(str?: string | null): string {
 
 export class ClassRepository {
   static getClasses(userId?: string): ClassItem[] {
-    let classes = readJsonFile<ClassItem[]>(CLASSES_FILE, []);
-    if (userId) {
-      classes = classes.filter((c) => c.createdBy === userId || (!c.createdBy && userId === 'guest'));
-    }
-    const students = this.getStudents(undefined, userId);
+    const classes = readJsonFile<ClassItem[]>(CLASSES_FILE, []);
+    const students = this.getStudents();
     return classes.map((cls) => ({
       ...cls,
       studentCount: students.filter(
@@ -315,15 +299,13 @@ export class ClassRepository {
     if (userId && !classItem.createdBy) {
       classItem.createdBy = userId;
     }
-    const targetUserId = classItem.createdBy || userId;
     const classes = readJsonFile<ClassItem[]>(CLASSES_FILE, []);
     const idx = classes.findIndex(
       (c) =>
         c.id === classItem.id ||
         (c.name &&
           classItem.name &&
-          c.name.trim().toLowerCase() === classItem.name.trim().toLowerCase() &&
-          (c.createdBy === targetUserId || (!c.createdBy && (!targetUserId || targetUserId === 'guest'))))
+          c.name.trim().toLowerCase() === classItem.name.trim().toLowerCase())
     );
     if (idx >= 0) {
       classes[idx] = { ...classes[idx], ...classItem };
@@ -337,9 +319,7 @@ export class ClassRepository {
   static deleteClass(id: string, userId?: string): boolean {
     let classes = readJsonFile<ClassItem[]>(CLASSES_FILE, []);
     const targetClass = classes.find(
-      (c) =>
-        (c.id === id || c.name.trim().toLowerCase() === id.trim().toLowerCase()) &&
-        (!userId || c.createdBy === userId || (!c.createdBy && userId === 'guest'))
+      (c) => c.id === id || c.name.trim().toLowerCase() === id.trim().toLowerCase()
     );
     if (!targetClass) return false;
 
@@ -351,8 +331,7 @@ export class ClassRepository {
       const isMatchingClass =
         s.classId === targetClass.id ||
         (s.className || '').trim().toLowerCase() === targetClass.name.trim().toLowerCase();
-      const isMatchingUser = !userId || s.createdBy === userId || (!s.createdBy && userId === 'guest');
-      return !(isMatchingClass && isMatchingUser);
+      return !isMatchingClass;
     });
     writeJsonFile(STUDENTS_FILE, students);
 
@@ -360,10 +339,7 @@ export class ClassRepository {
   }
 
   static getStudents(classIdOrName?: string, userId?: string): StudentItem[] {
-    let students = readJsonFile<StudentItem[]>(STUDENTS_FILE, []);
-    if (userId) {
-      students = students.filter((s) => s.createdBy === userId || (!s.createdBy && userId === 'guest'));
-    }
+    const students = readJsonFile<StudentItem[]>(STUDENTS_FILE, []);
     if (!classIdOrName || classIdOrName === 'ALL') return students;
     const norm = classIdOrName.trim().toLowerCase();
     return students.filter(
@@ -386,24 +362,20 @@ export class ClassRepository {
       }
     });
 
-    // 2. Validate against existing students belonging ONLY to the same user
+    // 2. Validate against existing students
     newStudents.forEach((st) => {
       if (userId && !st.createdBy) {
         st.createdBy = userId;
       }
-      const stUser = st.createdBy || userId;
       const normStSbd = st.sbd ? st.sbd.trim().toUpperCase() : '';
 
       if (normStSbd) {
-        const userStudents = students.filter(
-          (s) => (stUser ? s.createdBy === stUser || (!s.createdBy && stUser === 'guest') : true)
-        );
-        const conflicting = userStudents.find(
+        const conflicting = students.find(
           (s) => s.id !== st.id && s.sbd && s.sbd.trim().toUpperCase() === normStSbd
         );
         if (conflicting) {
           throw new Error(
-            `Số báo danh (SBD) '${st.sbd}' đã tồn tại trong danh sách của bạn (thuộc học sinh '${conflicting.name}' - Lớp ${conflicting.className}). Vui lòng chọn SBD khác!`
+            `Số báo danh (SBD) '${st.sbd}' đã tồn tại trong hệ thống (thuộc học sinh '${conflicting.name}' - Lớp ${conflicting.className}). Vui lòng chọn SBD khác!`
           );
         }
       }
@@ -423,11 +395,7 @@ export class ClassRepository {
   static deleteStudent(id: string, userId?: string): boolean {
     let students = readJsonFile<StudentItem[]>(STUDENTS_FILE, []);
     const initialLen = students.length;
-    students = students.filter((s) => {
-      if (s.id !== id) return true;
-      if (userId && s.createdBy && s.createdBy !== userId) return true;
-      return false;
-    });
+    students = students.filter((s) => s.id !== id);
     if (students.length !== initialLen) {
       writeJsonFile(STUDENTS_FILE, students);
       return true;
@@ -464,16 +432,6 @@ export class ClassRepository {
       return false;
     };
 
-    // 1. If targetUserId is provided, try finding student belonging to that creator
-    if (targetUserId) {
-      const userStudents = students.filter(
-        (s) => s.createdBy === targetUserId || (!s.createdBy && targetUserId === 'guest')
-      );
-      const userFound = userStudents.find(matchStudent);
-      if (userFound) return userFound;
-    }
-
-    // 2. Fall back to finding matching student across all students
     return students.find(matchStudent);
   }
 }

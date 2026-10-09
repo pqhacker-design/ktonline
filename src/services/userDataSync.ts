@@ -197,9 +197,7 @@ export class UserDataSync {
 
         const rawOnlineExams = Array.isArray(remoteData.onlineExams) && remoteData.onlineExams.length > 0 ? remoteData.onlineExams : local.onlineExams || [];
         const onlineExams = rawOnlineExams
-          .filter((oe: any) => oe && (!oe.createdBy || oe.createdBy === userId))
-          .filter((oe: any) => !oe.code || !deletedSet.has(oe.code.trim().toUpperCase()))
-          .map((oe: any) => ({ ...oe, createdBy: oe.createdBy || userId }));
+          .filter((oe: any) => oe && (!oe.code || !deletedSet.has(oe.code.trim().toUpperCase())));
 
         // Recover any exam packages from onlineExams into examHistory if missing and not deleted
         onlineExams.forEach((oe: any) => {

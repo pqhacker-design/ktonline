@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Download, FileCode, Menu, Sparkles, UserCheck, FileText, CheckCircle2, Share2, LogOut, Shield, KeyRound, AlertTriangle, Loader2, Check } from 'lucide-react';
+import { ChevronDown, Download, FileCode, Menu, Sparkles, UserCheck, FileText, CheckCircle2, Share2, LogOut, Shield, KeyRound, AlertTriangle, Loader2, Check, Users } from 'lucide-react';
 import { AppSettings, ExamPackage } from '../types';
 import { useAuth } from '../auth/useAuth';
 
@@ -14,6 +14,7 @@ interface HeaderProps {
   onExportWord?: (mode?: 'full' | 'exams' | 'answers') => void;
   onExportPdf?: () => void;
   onExportExcel?: () => void;
+  onNavigateTab?: (tab: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -26,6 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   onExportWord,
   onExportPdf,
   onExportExcel,
+  onNavigateTab,
 }) => {
   const { user, role, isAdmin, logout, changePassword } = useAuth();
   const [isWordDropdownOpen, setIsWordDropdownOpen] = useState(false);
@@ -119,7 +121,6 @@ export const Header: React.FC<HeaderProps> = ({
           <h2 className="text-base md:text-lg font-black text-slate-900 dark:text-white tracking-tight">
             {title}
           </h2>
-          
         </div>
       </div>
 
@@ -236,11 +237,11 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <div className="text-right hidden md:block">
               <p className="text-xs font-black text-slate-800 dark:text-slate-100 leading-tight">
-                {user?.displayName || user?.username || 'Quản trị viên'}
+                {user?.displayName || user?.username || (isAdmin ? 'Quản trị viên' : 'Giáo viên')}
               </p>
               <div className="flex items-center justify-end space-x-1 mt-0.5">
-                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700">
-                  Quản Trị Viên
+                <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${isAdmin ? 'bg-indigo-950 text-indigo-300 border border-indigo-700' : 'bg-emerald-950 text-emerald-300 border border-emerald-700'}`}>
+                  {isAdmin ? 'Quản Trị Viên' : 'Giáo Viên'}
                 </span>
                 <span className="text-[10px] text-slate-500 truncate max-w-[120px] font-mono">{user?.username}</span>
               </div>
@@ -269,20 +270,33 @@ export const Header: React.FC<HeaderProps> = ({
                   Tên ĐN: {user?.username}
                 </div>
                 <div className="pt-1 flex items-center space-x-1">
-                  <span className="text-[10px] bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 font-black px-2 py-0.5 rounded-md flex items-center space-x-1">
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md flex items-center space-x-1 ${isAdmin ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'}`}>
                     <Shield className="w-3 h-3" />
-                    <span>Quản Trị Viên Hệ Thống</span>
+                    <span>{isAdmin ? 'Quản Trị Viên Hệ Thống' : 'Tài Khoản Giáo Viên'}</span>
                   </span>
                 </div>
               </div>
 
               <div className="border-t border-slate-200/60 dark:border-slate-800/80 pt-2 space-y-1">
+                {isAdmin && onNavigateTab && (
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onNavigateTab('user_management');
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center space-x-2 transition-colors cursor-pointer"
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Quản Lý Người Dùng</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => {
                     setIsUserMenuOpen(false);
                     setShowChangePasswordModal(true);
                   }}
-                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center space-x-2 transition-colors cursor-pointer"
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center space-x-2 transition-colors cursor-pointer"
                 >
                   <KeyRound className="w-4 h-4" />
                   <span>Đổi Mật Khẩu</span>

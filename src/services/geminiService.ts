@@ -18,14 +18,8 @@ export class GeminiService {
     const systemInstruction = PromptEngine.getSystemInstruction();
     const prompt = PromptEngine.buildGenerationPrompt(metadata);
     const settings = StorageEngine.getSettings();
-    const customApiKey = settings.customApiKey;
-    const selectedModel = settings.selectedModel || 'gemini-3.6-flash';
-
-    if (!customApiKey || customApiKey.trim().length === 0) {
-      throw new Error(
-        '[NO_API_KEY] Bắt buộc người dùng phải nhập Gemini API Key cá nhân! Vui lòng nhập API Key để bắt đầu sinh đề thi.'
-      );
-    }
+    const customApiKey = settings.customApiKey?.trim() || '';
+    const selectedModel = settings.selectedModel || 'gemini-2.5-flash';
 
     if (onProgress) onProgress(`Đang gửi yêu cầu tới Gemini AI (${selectedModel})...`);
 

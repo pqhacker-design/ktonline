@@ -68,42 +68,38 @@ export default function App() {
 
   // Synchronize user data upon account change / login
   useEffect(() => {
-    if (currentUserId) {
-      StorageEngine.setCurrentUserId(currentUserId);
+    StorageEngine.setCurrentUserId(currentUserId);
 
-      // 1. Instantly load local user cache
-      const localSettings = StorageEngine.getSettings();
-      setSettings(localSettings);
-      const localHist = StorageEngine.getExamHistory();
-      setExamHistory(localHist);
-      const localBank = StorageEngine.getQuestionBank();
-      setQuestionBank(localBank);
-      setCurrentExamPackage(localHist[0] || null);
+    // 1. Instantly load local shared cache
+    const localSettings = StorageEngine.getSettings();
+    setSettings(localSettings);
+    const localHist = StorageEngine.getExamHistory();
+    setExamHistory(localHist);
+    const localBank = StorageEngine.getQuestionBank();
+    setQuestionBank(localBank);
+    setCurrentExamPackage(localHist[0] || null);
 
-      // 2. Fetch remote user data from Firestore for cross-device sync
-      UserDataSync.loadUserData(currentUserId).then((data) => {
-        setSettings(data.settings);
-        setExamHistory(data.examHistory);
-        setQuestionBank(data.questionBank);
-        const pkg = (data.examHistory && data.examHistory.length > 0)
-          ? data.examHistory[0]
-          : null;
-        setCurrentExamPackage(pkg);
-      });
+    // 2. Fetch remote shared data from Firestore (shared_workspace) for cross-device sync
+    UserDataSync.loadUserData('shared_workspace').then((data) => {
+      setSettings(data.settings);
+      setExamHistory(data.examHistory);
+      setQuestionBank(data.questionBank);
+      const pkg = (data.examHistory && data.examHistory.length > 0)
+        ? data.examHistory[0]
+        : null;
+      setCurrentExamPackage(pkg);
+    });
 
-      // 3. Listen to real-time updates from Firestore for this user
-      const unsubscribe = UserDataSync.subscribeUserData(currentUserId, (data) => {
-        setSettings(data.settings);
-        setExamHistory(data.examHistory);
-        setQuestionBank(data.questionBank);
-      });
+    // 3. Listen to real-time updates from Firestore for shared workspace
+    const unsubscribe = UserDataSync.subscribeUserData('shared_workspace', (data) => {
+      setSettings(data.settings);
+      setExamHistory(data.examHistory);
+      setQuestionBank(data.questionBank);
+    });
 
-      return () => {
-        unsubscribe();
-      };
-    } else {
-      StorageEngine.setCurrentUserId(null);
-    }
+    return () => {
+      unsubscribe();
+    };
   }, [currentUserId]);
 
   // Online Exam System States
@@ -715,6 +711,7 @@ export default function App() {
               onExportWord={(mode) => handleExportWord(mode)}
               onExportPdf={() => handleExportPdf()}
               onExportExcel={() => handleExportExcel()}
+              onNavigateTab={(tab) => setActiveTab(tab as TabType)}
             />
 
             <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">

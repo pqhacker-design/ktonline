@@ -64,33 +64,130 @@ export class OnlineExamService {
     return StorageEngine.getCurrentUserId() || UserDataSync.getActiveUserId() || 'guest';
   }
 
+  private static migrated = false;
+  private static ensureMigration(): void {
+    if (this.migrated) return;
+    this.migrated = true;
+    try {
+      const targetExamsKey = `aitest_online_exams_store_shared`;
+      const targetClassesKey = `aitest_online_classes_store_shared`;
+      const targetStudentsKey = `aitest_online_students_store_shared`;
+      const targetSessionsKey = `aitest_online_sessions_store_shared`;
+
+      // Merge exams from any existing keys
+      const examsMap = new Map<string, any>();
+      const existingSharedExams = localStorage.getItem(targetExamsKey);
+      if (existingSharedExams) {
+        try { JSON.parse(existingSharedExams).forEach((e: any) => e && e.code && examsMap.set(e.code.toUpperCase(), e)); } catch {}
+      }
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('aitest_online_exams_store_') && k !== targetExamsKey) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((e) => {
+                  if (e && e.code && !examsMap.has(e.code.toUpperCase())) {
+                    examsMap.set(e.code.toUpperCase(), e);
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+      if (examsMap.size > 0) {
+        localStorage.setItem(targetExamsKey, JSON.stringify(Array.from(examsMap.values())));
+      }
+
+      // Merge classes
+      const classesMap = new Map<string, any>();
+      const existingSharedClasses = localStorage.getItem(targetClassesKey);
+      if (existingSharedClasses) {
+        try { JSON.parse(existingSharedClasses).forEach((c: any) => c && c.id && classesMap.set(c.id, c)); } catch {}
+      }
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('aitest_online_classes_store_') && k !== targetClassesKey) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((c) => {
+                  if (c && c.id && !classesMap.has(c.id)) {
+                    classesMap.set(c.id, c);
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+      if (classesMap.size > 0) {
+        localStorage.setItem(targetClassesKey, JSON.stringify(Array.from(classesMap.values())));
+      }
+
+      // Merge students
+      const studentsMap = new Map<string, any>();
+      const existingSharedStudents = localStorage.getItem(targetStudentsKey);
+      if (existingSharedStudents) {
+        try { JSON.parse(existingSharedStudents).forEach((s: any) => s && s.id && studentsMap.set(s.id, s)); } catch {}
+      }
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('aitest_online_students_store_') && k !== targetStudentsKey) {
+          try {
+            const raw = localStorage.getItem(k);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((s) => {
+                  if (s && s.id && !studentsMap.has(s.id)) {
+                    studentsMap.set(s.id, s);
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+      if (studentsMap.size > 0) {
+        localStorage.setItem(targetStudentsKey, JSON.stringify(Array.from(studentsMap.values())));
+      }
+    } catch (err) {
+      console.warn('Lỗi di chuyển online exams / classes:', err);
+    }
+  }
+
   private static getStorageKeys() {
-    const userId = this.getActiveUserId();
-    const cleanId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
+    this.ensureMigration();
     return {
-      EXAMS: `aitest_online_exams_store_${cleanId}`,
-      SESSIONS: `aitest_online_sessions_store_${cleanId}`,
-      CLASSES: `aitest_online_classes_store_${cleanId}`,
-      STUDENTS: `aitest_online_students_store_${cleanId}`,
+      EXAMS: `aitest_online_exams_store_shared`,
+      SESSIONS: `aitest_online_sessions_store_shared`,
+      CLASSES: `aitest_online_classes_store_shared`,
+      STUDENTS: `aitest_online_students_store_shared`,
     };
   }
 
   private static syncToFirestore(): void {
+    const payload = {
+      classes: this.getLocalClasses(),
+      students: this.getLocalStudents(),
+      onlineExams: this.getLocalExams(),
+    };
+    UserDataSync.saveUserData('shared_workspace', payload);
     const userId = this.getActiveUserId();
-    if (userId && userId !== 'guest') {
-      UserDataSync.saveUserData(userId, {
-        classes: this.getLocalClasses(),
-        students: this.getLocalStudents(),
-        onlineExams: this.getLocalExams(),
-      });
+    if (userId && userId !== 'guest' && userId !== 'shared_workspace') {
+      UserDataSync.saveUserData(userId, payload);
     }
   }
 
   public static getDeletedExamCodes(): Set<string> {
     try {
-      const userId = this.getActiveUserId();
-      const cleanId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
-      const raw = localStorage.getItem(`aitest_deleted_exam_codes_${cleanId}`);
+      const raw = localStorage.getItem(`aitest_deleted_exam_codes_shared`);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
@@ -109,13 +206,16 @@ export class OnlineExamService {
       if (!cleanCode) return;
       const set = this.getDeletedExamCodes();
       set.add(cleanCode);
-      const userId = this.getActiveUserId();
-      const cleanId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
-      localStorage.setItem(`aitest_deleted_exam_codes_${cleanId}`, JSON.stringify(Array.from(set)));
+      const arr = Array.from(set);
+      localStorage.setItem(`aitest_deleted_exam_codes_shared`, JSON.stringify(arr));
 
-      if (userId && userId !== 'guest') {
+      UserDataSync.saveUserData('shared_workspace', {
+        deletedExamCodes: arr,
+      });
+      const userId = this.getActiveUserId();
+      if (userId && userId !== 'guest' && userId !== 'shared_workspace') {
         UserDataSync.saveUserData(userId, {
-          deletedExamCodes: Array.from(set),
+          deletedExamCodes: arr,
         });
       }
     } catch {
@@ -130,12 +230,15 @@ export class OnlineExamService {
       const set = this.getDeletedExamCodes();
       if (set.has(cleanCode)) {
         set.delete(cleanCode);
+        const arr = Array.from(set);
+        localStorage.setItem(`aitest_deleted_exam_codes_shared`, JSON.stringify(arr));
+        UserDataSync.saveUserData('shared_workspace', {
+          deletedExamCodes: arr,
+        });
         const userId = this.getActiveUserId();
-        const cleanId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
-        localStorage.setItem(`aitest_deleted_exam_codes_${cleanId}`, JSON.stringify(Array.from(set)));
-        if (userId && userId !== 'guest') {
+        if (userId && userId !== 'guest' && userId !== 'shared_workspace') {
           UserDataSync.saveUserData(userId, {
-            deletedExamCodes: Array.from(set),
+            deletedExamCodes: arr,
           });
         }
       }

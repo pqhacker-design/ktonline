@@ -17,22 +17,21 @@ export async function callGeminiApi({
   responseMimeType,
   responseSchema,
   customApiKey,
-  model = 'gemini-3.6-flash',
+  model = 'gemini-2.5-flash',
   images = [],
   onStatusUpdate,
 }: GeminiApiOptions): Promise<string> {
-  const apiKey = customApiKey?.trim();
-  if (!apiKey) {
-    throw new Error('[NO_API_KEY] Chưa cấu hình Gemini API Key cá nhân. Vui lòng nhập API Key để tiếp tục.');
-  }
-
-  const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-3.6-flash';
+  const apiKey = customApiKey?.trim() || '';
+  const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-2.5-flash';
 
   // 1. Thử gọi qua Backend Server / Serverless Endpoint (/api/gemini/generate)
   try {
     const response = await fetch('/api/gemini/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(apiKey ? { 'x-custom-api-key': apiKey } : {}),
+      },
       body: JSON.stringify({
         prompt,
         systemInstruction,
@@ -70,16 +69,29 @@ export async function callGeminiApi({
   } catch (err: any) {
     if (
       err.message &&
-      (err.message.includes('Máy chủ AI') || err.message.includes('API Key') || err.message.includes('quá tải'))
+      (err.message.includes('Máy chủ AI') ||
+        err.message.includes('API Key') ||
+        err.message.includes('NO_API_KEY') ||
+        err.message.includes('INVALID_API_KEY') ||
+        err.message.includes('QUOTA_EXHAUSTED') ||
+        err.message.includes('quá tải'))
     ) {
       throw err;
     }
-    // Nếu không, tự động fallback sang gọi trực tiếp từ client SDK
+    // Nếu không có API Key riêng mà backend gặp lỗi kết nối
+    if (!apiKey) {
+      throw new Error(err.message || 'Không thể kết nối tới máy chủ tạo đề thi AI.');
+    }
+    // Nếu có customApiKey, tự động fallback sang gọi trực tiếp từ client SDK
+  }
+
+  if (!apiKey) {
+    throw new Error('[NO_API_KEY] Chưa cấu hình Gemini API Key. Vui lòng nhập API Key để tiếp tục.');
   }
 
   // 2. Client-side fallback: Gọi trực tiếp GoogleGenAI SDK với cơ chế Tự động Thử lại (Retry) & Chuyển đổi Model dự phòng khi gặp 503 / High Demand
   const candidateModels = Array.from(
-    new Set([selectedModel, 'gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'])
+    new Set([selectedModel, 'gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'])
   );
 
   let lastError: any = null;
