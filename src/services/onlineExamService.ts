@@ -592,6 +592,12 @@ export class OnlineExamService {
       console.log(`[OnlineExamService] Bỏ qua đồng bộ mã đề ${codeUpper} vì đã bị xóa.`);
       return;
     }
+
+    if (UserDataSync.getIsQuotaExceeded()) {
+      console.warn(`[OnlineExamService] Bỏ qua ghi Firestore cho mã đề ${codeUpper} vì hệ thống đang tạm dừng do vượt hạn ngạch Firestore miễn phí trong ngày.`);
+      return;
+    }
+
     try {
       const docRef = doc(db, 'published_exams', codeUpper);
       const userId = this.getActiveUserId();
@@ -604,6 +610,10 @@ export class OnlineExamService {
       await setDoc(docRef, cleanData, { merge: true });
       console.log(`[OnlineExamService] Đã đồng bộ mã đề ${codeUpper} lên Firestore thành công.`);
     } catch (e: any) {
+      if (UserDataSync.checkAndMarkQuotaError(e)) {
+        console.warn(`[OnlineExamService] Đạt giới hạn ghi miễn phí Firestore (Quota limit exceeded). Đề thi ${codeUpper} vẫn được lưu an toàn trên máy của bạn.`);
+        return;
+      }
       console.error(`[OnlineExamService] Lỗi đồng bộ mã đề ${codeUpper} tới Firestore:`, e);
       throw new Error(`Không thể đồng bộ mã đề ${codeUpper} lên Cloud: ${e.message || 'Lỗi mạng hoặc quyền truy cập'}`);
     }
@@ -695,6 +705,10 @@ export class OnlineExamService {
   }
 
   public static async syncAllLocalExamsToFirestore(): Promise<{ success: boolean; totalSynced: number; codes: string[] }> {
+    if (UserDataSync.getIsQuotaExceeded()) {
+      return { success: false, totalSynced: 0, codes: [] };
+    }
+
     try {
       const localExams = this.getLocalExams();
       const history = StorageEngine.getExamHistory();
@@ -752,13 +766,19 @@ export class OnlineExamService {
         codes: Array.from(syncedCodes),
       };
     } catch (err: any) {
-      console.warn('Lỗi đồng bộ tất cả đề thi tới Firestore:', err);
+      if (UserDataSync.checkAndMarkQuotaError(err)) {
+        console.warn('Đạt giới hạn quota Firestore khi đồng bộ danh sách đề thi.');
+      } else {
+        console.warn('Lỗi đồng bộ tất cả đề thi tới Firestore:', err);
+      }
       return { success: false, totalSynced: 0, codes: [] };
     }
   }
 
   private static async syncStudentResultToFirestore(resultItem: StudentResultItem): Promise<void> {
     if (!resultItem || !resultItem.id) return;
+    if (UserDataSync.getIsQuotaExceeded()) return;
+
     try {
       const docRef = doc(db, 'student_results', resultItem.id);
       const cleanData = this.sanitizeForFirestore({
@@ -767,8 +787,12 @@ export class OnlineExamService {
         updatedAt: new Date().toISOString(),
       });
       await setDoc(docRef, cleanData, { merge: true });
-    } catch (e) {
-      console.warn('Lỗi lưu student_results tới Firestore:', e);
+    } catch (e: any) {
+      if (UserDataSync.checkAndMarkQuotaError(e)) {
+        console.warn('Lỗi lưu student_results tới Firestore do quota: Dữ liệu đã lưu trên trình duyệt.');
+      } else {
+        console.warn('Lỗi lưu student_results tới Firestore:', e);
+      }
     }
   }
 
@@ -1146,10 +1170,9 @@ export class OnlineExamService {
       console.warn('Lỗi cập nhật submissionCount trong listExams:', e);
     }
 
-    // Tự động sao lưu đồng bộ vào localExams và Firestore
+    // Tự động sao lưu đồng bộ vào localExams
     try {
       this.saveLocalExams(merged);
-      this.syncAllLocalExamsToFirestore().catch(() => {});
     } catch {
       // ignore
     }
@@ -1330,34 +1353,48 @@ export class OnlineExamService {
       console.warn('Lỗi dọn dẹp sessions cục bộ:', e);
     }
 
-    // 5. Xóa trực tiếp document 'published_exams/{cleanCode}' trên Firestore
-    try {
-      const docRef = doc(db, 'published_exams', cleanCode);
-      await deleteDoc(docRef);
-    } catch (e) {
-      console.warn('Lỗi xóa published_exams từ Firestore:', e);
-    }
-
-    // Quét thêm bất kỳ document nào trong published_exams có code trùng khớp
-    try {
-      const q = query(collection(db, 'published_exams'), where('code', '==', cleanCode));
-      const snap = await getDocs(q);
-      for (const docSnap of snap.docs) {
-        await deleteDoc(docSnap.ref);
+    // 5. Xóa trực tiếp document 'published_exams/{cleanCode}' trên Firestore (nếu quota cho phép)
+    if (!UserDataSync.getIsQuotaExceeded()) {
+      try {
+        const docRef = doc(db, 'published_exams', cleanCode);
+        await deleteDoc(docRef);
+      } catch (e: any) {
+        if (UserDataSync.checkAndMarkQuotaError(e)) {
+          console.warn('Lỗi quota khi xóa published_exams từ Firestore');
+        } else {
+          console.warn('Lỗi xóa published_exams từ Firestore:', e);
+        }
       }
-    } catch (e) {
-      console.warn('Lỗi quét xóa published_exams theo query:', e);
-    }
 
-    // 6. Dọn dẹp kết quả học sinh nộp cho đề này trong Firestore collection 'student_results'
-    try {
-      const qRes = query(collection(db, 'student_results'), where('examCode', '==', cleanCode));
-      const snapRes = await getDocs(qRes);
-      for (const docSnap of snapRes.docs) {
-        await deleteDoc(docSnap.ref);
+      // Quét thêm bất kỳ document nào trong published_exams có code trùng khớp
+      try {
+        const q = query(collection(db, 'published_exams'), where('code', '==', cleanCode));
+        const snap = await getDocs(q);
+        for (const docSnap of snap.docs) {
+          await deleteDoc(docSnap.ref).catch((err) => UserDataSync.checkAndMarkQuotaError(err));
+        }
+      } catch (e: any) {
+        if (UserDataSync.checkAndMarkQuotaError(e)) {
+          console.warn('Lỗi quota khi quét xóa published_exams');
+        } else {
+          console.warn('Lỗi quét xóa published_exams theo query:', e);
+        }
       }
-    } catch (e) {
-      console.warn('Lỗi dọn dẹp student_results trên Firestore:', e);
+
+      // 6. Dọn dẹp kết quả học sinh nộp cho đề này trong Firestore collection 'student_results'
+      try {
+        const qRes = query(collection(db, 'student_results'), where('examCode', '==', cleanCode));
+        const snapRes = await getDocs(qRes);
+        for (const docSnap of snapRes.docs) {
+          await deleteDoc(docSnap.ref).catch((err) => UserDataSync.checkAndMarkQuotaError(err));
+        }
+      } catch (e: any) {
+        if (UserDataSync.checkAndMarkQuotaError(e)) {
+          console.warn('Lỗi quota khi dọn dẹp student_results');
+        } else {
+          console.warn('Lỗi dọn dẹp student_results trên Firestore:', e);
+        }
+      }
     }
 
     // 7. Đồng bộ cập nhật lên Firestore 'user_data' (cập nhật examHistory và onlineExams không còn đề này)
@@ -1639,34 +1676,68 @@ export class OnlineExamService {
 
       if (session) {
         if (session.status === 'submitted') {
+          // Verify with Firestore whether this submission is still recorded on server.
+          // If teacher clicked "Làm lại" (reset / retake), the result was deleted on Firestore!
+          let isStillSubmittedOnServer = true;
+          try {
+            const qResult = query(
+              collection(db, 'student_results'),
+              where('examCode', '==', data.code.trim().toUpperCase())
+            );
+            const snap = await getDocs(qResult);
+            const normName = data.studentName.toLowerCase().trim();
+            const normClass = data.studentClass.toLowerCase().trim();
+            const exists = snap.docs.some((d) => {
+              const r = d.data();
+              return (
+                d.id === session.id ||
+                (r &&
+                  r.studentName &&
+                  r.studentName.toLowerCase().trim() === normName &&
+                  r.studentClass &&
+                  r.studentClass.toLowerCase().trim() === normClass)
+              );
+            });
+            isStillSubmittedOnServer = exists;
+          } catch {
+            // If network check fails, fallback to existing local status
+          }
+
+          if (isStillSubmittedOnServer) {
+            return {
+              success: true,
+              isAlreadySubmitted: true,
+              result: {
+                score: session.score || 0,
+                correctCount: session.correctCount || 0,
+                incorrectCount: session.incorrectCount || 0,
+                totalQuestions: session.totalQuestions || 0,
+                startTime: session.startTime,
+                submitTime: session.submitTime,
+                allowExplanations: exam.allowExplanations,
+              },
+            };
+          } else {
+            // Teacher clicked retake / deleted result on server: clear stale local submitted session!
+            const remaining = sessions.filter((s) => s.id !== session.id);
+            this.saveLocalSessions(remaining);
+          }
+        } else {
           return {
             success: true,
-            isAlreadySubmitted: true,
-            result: {
-              score: session.score || 0,
-              correctCount: session.correctCount || 0,
-              incorrectCount: session.incorrectCount || 0,
-              totalQuestions: session.totalQuestions || 0,
-              startTime: session.startTime,
-              submitTime: session.submitTime,
-              allowExplanations: exam.allowExplanations,
+            isResume: true,
+            session,
+            questions: session.shuffledQuestions,
+            examInfo: {
+              title: exam.title,
+              subject: exam.subject,
+              grade: exam.grade,
+              duration: exam.duration,
+              totalPoints: exam.totalPoints,
+              antiCheat: exam.antiCheat,
             },
           };
         }
-        return {
-          success: true,
-          isResume: true,
-          session,
-          questions: session.shuffledQuestions,
-          examInfo: {
-            title: exam.title,
-            subject: exam.subject,
-            grade: exam.grade,
-            duration: exam.duration,
-            totalPoints: exam.totalPoints,
-            antiCheat: exam.antiCheat,
-          },
-        };
       }
 
       let questions = exam.questions || exam.examPackage?.exams?.[0]?.questions || [];
@@ -2101,10 +2172,16 @@ export class OnlineExamService {
 
   // 12. Delete Student Result
   static async deleteResult(sessionId: string) {
-    try {
-      await deleteDoc(doc(db, 'student_results', sessionId));
-    } catch (e) {
-      console.warn('Lỗi xóa student_results trên Firestore:', e);
+    if (!UserDataSync.getIsQuotaExceeded()) {
+      try {
+        await deleteDoc(doc(db, 'student_results', sessionId));
+      } catch (e: any) {
+        if (UserDataSync.checkAndMarkQuotaError(e)) {
+          console.warn('Lỗi quota khi xóa student_results trên Firestore');
+        } else {
+          console.warn('Lỗi xóa student_results trên Firestore:', e);
+        }
+      }
     }
     try {
       return await this.request<{ success: boolean; message: string }>(
@@ -2122,6 +2199,7 @@ export class OnlineExamService {
 
   private static async syncClassToFirestore(cls: any): Promise<void> {
     if (!cls || !cls.id) return;
+    if (UserDataSync.getIsQuotaExceeded()) return;
     try {
       const docRef = doc(db, 'system_classes', cls.id);
       const userId = cls.createdBy || this.getActiveUserId();
@@ -2134,13 +2212,18 @@ export class OnlineExamService {
         },
         { merge: true }
       );
-    } catch (e) {
-      console.warn('Lỗi đồng bộ class tới Firestore:', e);
+    } catch (e: any) {
+      if (UserDataSync.checkAndMarkQuotaError(e)) {
+        console.warn('Lỗi đồng bộ class tới Firestore do hạn ngạch quota.');
+      } else {
+        console.warn('Lỗi đồng bộ class tới Firestore:', e);
+      }
     }
   }
 
   private static async syncStudentToFirestore(student: any): Promise<void> {
     if (!student || !student.id) return;
+    if (UserDataSync.getIsQuotaExceeded()) return;
     try {
       const docRef = doc(db, 'system_students', student.id);
       const cleanSbd = student.sbd ? student.sbd.trim().toUpperCase() : '';
@@ -2156,12 +2239,16 @@ export class OnlineExamService {
         },
         { merge: true }
       );
-    } catch (e) {
-      console.warn('Lỗi đồng bộ student tới Firestore:', e);
+    } catch (e: any) {
+      if (UserDataSync.checkAndMarkQuotaError(e)) {
+        console.warn('Lỗi đồng bộ student tới Firestore do hạn ngạch quota.');
+      } else {
+        console.warn('Lỗi đồng bộ student tới Firestore:', e);
+      }
     }
   }
 
-  private static async getSystemClassesFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[]> {
+  private static async getSystemClassesFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[] | null> {
     const userId = this.getActiveUserId();
     try {
       const colRef = collection(db, 'system_classes');
@@ -2189,11 +2276,11 @@ export class OnlineExamService {
       return items;
     } catch (e) {
       console.warn('Lỗi đọc system_classes từ Firestore:', e);
-      return [];
+      return null;
     }
   }
 
-  private static async getSystemStudentsFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[]> {
+  private static async getSystemStudentsFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[] | null> {
     const userId = this.getActiveUserId();
     try {
       const colRef = collection(db, 'system_students');
@@ -2221,7 +2308,7 @@ export class OnlineExamService {
       return items;
     } catch (e) {
       console.warn('Lỗi đọc system_students từ Firestore:', e);
-      return [];
+      return null;
     }
   }
 
@@ -2231,23 +2318,42 @@ export class OnlineExamService {
     const localClasses = this.getLocalClasses();
 
     // Fetch API and Firestore in parallel
-    const [apiResult, firestoreClasses] = await Promise.all([
-      this.request<{ success: boolean; classes: any[] }>('/api/classes').catch(() => ({ success: false, classes: [] })),
-      this.getSystemClassesFromFirestore(ignoreUserIdFilter).catch(() => []),
-    ]);
+    let fetchedFromRemote = false;
+    let remoteClasses: any[] = [];
 
-    const apiClasses = (apiResult && apiResult.success && Array.isArray(apiResult.classes)) ? apiResult.classes : [];
+    try {
+      const [apiResult, firestoreClasses] = await Promise.all([
+        this.request<{ success: boolean; classes: any[] }>('/api/classes').catch(() => null),
+        this.getSystemClassesFromFirestore(ignoreUserIdFilter).catch(() => null),
+      ]);
 
-    const map = new Map<string, any>();
-    [...apiClasses, ...firestoreClasses, ...localClasses].forEach((cls) => {
-      if (cls && cls.id) {
-        if (ignoreUserIdFilter || cls.createdBy === userId || (!cls.createdBy && userId === 'guest')) {
-          map.set(cls.id, cls);
-        }
+      if (firestoreClasses !== null) {
+        fetchedFromRemote = true;
+        remoteClasses = firestoreClasses;
+      } else if (apiResult && apiResult.success && Array.isArray(apiResult.classes)) {
+        fetchedFromRemote = true;
+        remoteClasses = apiResult.classes;
       }
-    });
+    } catch {
+      // ignore
+    }
 
-    const merged = Array.from(map.values());
+    let merged: any[] = [];
+    if (fetchedFromRemote) {
+      // Remote Firestore/API is single source of truth!
+      merged = remoteClasses.filter((cls) => {
+        if (!cls || !cls.id) return false;
+        return ignoreUserIdFilter || cls.createdBy === userId || (!cls.createdBy && userId === 'guest');
+      });
+      // Save authoritative list to local cache (wipes out deleted classes from local cache)
+      this.saveLocalClasses(merged);
+    } else {
+      // Fallback offline cache only
+      merged = localClasses.filter((cls) => {
+        if (!cls || !cls.id) return false;
+        return ignoreUserIdFilter || cls.createdBy === userId || (!cls.createdBy && userId === 'guest');
+      });
+    }
 
     // Sắp xếp danh sách lớp ổn định theo Khối và Tên lớp (10A1, 10A2, 10B1... 11A1...)
     merged.sort((a, b) => {
@@ -2256,21 +2362,6 @@ export class OnlineExamService {
       if (gradeA !== gradeB && gradeA > 0 && gradeB > 0) return gradeA - gradeB;
       return naturalCompare(a.name || '', b.name || '');
     });
-
-    // Update local cache if merged has more info
-    if (merged.length > 0 && merged.length !== localClasses.length) {
-      this.saveLocalClasses(merged);
-    }
-
-    if (localClasses.length > 0 || apiClasses.length > 0) {
-      const firestoreIds = new Set(firestoreClasses.map((c) => c.id));
-      const unSynced = [...apiClasses, ...localClasses].filter((c) => c && c.id && !firestoreIds.has(c.id));
-      if (unSynced.length > 0) {
-        unSynced.forEach((cls) => {
-          this.syncClassToFirestore(cls).catch(() => {});
-        });
-      }
-    }
 
     return { success: true, classes: merged };
   }
@@ -2429,40 +2520,47 @@ export class OnlineExamService {
     const localStudents = this.getLocalStudents();
 
     const queryStr = classId ? `?classId=${encodeURIComponent(classId)}` : '';
-    const [apiResult, firestoreStudents] = await Promise.all([
-      this.request<{ success: boolean; students: any[] }>(`/api/students${queryStr}`).catch(() => ({ success: false, students: [] })),
-      this.getSystemStudentsFromFirestore(ignoreUserIdFilter).catch(() => []),
-    ]);
+    let fetchedFromRemote = false;
+    let remoteStudents: any[] = [];
 
-    const apiStudents = (apiResult && apiResult.success && Array.isArray(apiResult.students)) ? apiResult.students : [];
+    try {
+      const [apiResult, firestoreStudents] = await Promise.all([
+        this.request<{ success: boolean; students: any[] }>(`/api/students${queryStr}`).catch(() => null),
+        this.getSystemStudentsFromFirestore(ignoreUserIdFilter).catch(() => null),
+      ]);
 
-    const map = new Map<string, any>();
-    [...apiStudents, ...firestoreStudents, ...localStudents].forEach((s) => {
-      if (s && s.id) {
-        if (ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest')) {
-          map.set(s.id, s);
-        }
+      if (firestoreStudents !== null) {
+        fetchedFromRemote = true;
+        remoteStudents = firestoreStudents;
+      } else if (apiResult && apiResult.success && Array.isArray(apiResult.students)) {
+        fetchedFromRemote = true;
+        remoteStudents = apiResult.students;
       }
-    });
+    } catch {
+      // ignore
+    }
 
-    let allStudents = Array.from(map.values());
+    let allStudents: any[] = [];
+    if (fetchedFromRemote) {
+      // Remote Firestore/API is single source of truth!
+      allStudents = remoteStudents.filter((s) => {
+        if (!s || !s.id) return false;
+        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest');
+      });
+      if (!classId) {
+        // Save authoritative list to local cache (wipes out deleted students from local cache)
+        this.saveLocalStudents(allStudents);
+      }
+    } else {
+      // Fallback offline cache only
+      allStudents = localStudents.filter((s) => {
+        if (!s || !s.id) return false;
+        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest');
+      });
+    }
 
     // Sắp xếp danh sách học sinh ổn định (thứ tự nhập ban đầu / SBD / Tên tiếng Việt)
     allStudents = sortStudentsDefault(allStudents);
-
-    if (allStudents.length > 0 && allStudents.length !== localStudents.length && !classId) {
-      this.saveLocalStudents(allStudents);
-    }
-
-    if (localStudents.length > 0 || apiStudents.length > 0) {
-      const firestoreIds = new Set(firestoreStudents.map((s) => s.id));
-      const unSynced = [...apiStudents, ...localStudents].filter((s) => s && s.id && !firestoreIds.has(s.id));
-      if (unSynced.length > 0) {
-        unSynced.forEach((st) => {
-          this.syncStudentToFirestore(st).catch(() => {});
-        });
-      }
-    }
 
     if (classId) {
       allStudents = allStudents.filter((s) => s.classId === classId || s.className === classId);
@@ -2578,12 +2676,19 @@ export class OnlineExamService {
     }
 
     // 3. Remote delete in parallel
-    Promise.allSettled([
+    const deleteRemoteTasks: Promise<any>[] = [
       this.request<{ success: boolean }>(`/api/students/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }).catch(() => {}),
-      deleteDoc(doc(db, 'system_students', id)).catch(() => {}),
-    ]).catch(() => {});
+    ];
+    if (!UserDataSync.getIsQuotaExceeded()) {
+      deleteRemoteTasks.push(
+        deleteDoc(doc(db, 'system_students', id)).catch((e) => {
+          UserDataSync.checkAndMarkQuotaError(e);
+        })
+      );
+    }
+    Promise.allSettled(deleteRemoteTasks).catch(() => {});
 
     return { success: true };
   }
@@ -2723,30 +2828,42 @@ export class OnlineExamService {
     studentName?: string;
   }) {
     if (data.sessionId) {
-      try {
-        await deleteDoc(doc(db, 'student_results', data.sessionId));
-      } catch (e) {
-        console.warn('Lỗi xóa student_results trên Firestore khi reset session:', e);
+      if (!UserDataSync.getIsQuotaExceeded()) {
+        try {
+          await deleteDoc(doc(db, 'student_results', data.sessionId));
+        } catch (e: any) {
+          if (UserDataSync.checkAndMarkQuotaError(e)) {
+            console.warn('Lỗi quota khi xóa student_results trên Firestore');
+          } else {
+            console.warn('Lỗi xóa student_results trên Firestore khi reset session:', e);
+          }
+        }
       }
     } else if (data.examCode && data.sbd) {
-      try {
-        const codeUpper = data.examCode.trim().toUpperCase();
-        const sbdUpper = data.sbd.trim().toUpperCase();
-        const colRef = collection(db, 'student_results');
-        const q = query(colRef, where('examCode', '==', codeUpper));
-        const snap = await getDocs(q);
-        snap.forEach(async (d) => {
-          const res = d.data() as StudentResultItem;
-          if (
-            res &&
-            ((res.studentSbd && res.studentSbd.trim().toUpperCase() === sbdUpper) ||
-              (res.studentId && res.studentId.trim().toUpperCase() === sbdUpper))
-          ) {
-            await deleteDoc(d.ref);
+      if (!UserDataSync.getIsQuotaExceeded()) {
+        try {
+          const codeUpper = data.examCode.trim().toUpperCase();
+          const sbdUpper = data.sbd.trim().toUpperCase();
+          const colRef = collection(db, 'student_results');
+          const q = query(colRef, where('examCode', '==', codeUpper));
+          const snap = await getDocs(q);
+          for (const d of snap.docs) {
+            const res = d.data() as StudentResultItem;
+            if (
+              res &&
+              ((res.studentSbd && res.studentSbd.trim().toUpperCase() === sbdUpper) ||
+                (res.studentId && res.studentId.trim().toUpperCase() === sbdUpper))
+            ) {
+              await deleteDoc(d.ref).catch((e) => UserDataSync.checkAndMarkQuotaError(e));
+            }
           }
-        });
-      } catch (e) {
-        console.warn('Lỗi xóa student_results matching SBD trên Firestore:', e);
+        } catch (e: any) {
+          if (UserDataSync.checkAndMarkQuotaError(e)) {
+            console.warn('Lỗi quota khi xóa student_results matching SBD trên Firestore');
+          } else {
+            console.warn('Lỗi xóa student_results matching SBD trên Firestore:', e);
+          }
+        }
       }
     }
 

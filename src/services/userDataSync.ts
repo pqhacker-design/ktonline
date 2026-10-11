@@ -266,20 +266,90 @@ export class UserDataSync {
       updatedAt: new Date().toISOString(),
     };
 
-    // Save initial document to Firestore
-    try {
-      const cleanInitial = sanitizeForFirestore(initialPayload);
-      await setDoc(docRef, cleanInitial, { merge: true });
+    // Save initial document to Firestore if quota is available
+    if (!this.getIsQuotaExceeded()) {
+      try {
+        const cleanInitial = sanitizeForFirestore(initialPayload);
+        await setDoc(docRef, cleanInitial, { merge: true });
+        this.saveLocalUserData(userId, initialPayload);
+      } catch (err: any) {
+        if (this.checkAndMarkQuotaError(err)) {
+          console.warn(`[UserDataSync] Firestore Quota exceeded khi khởi tạo document. Chuyển sang lưu trữ cục bộ.`);
+        } else {
+          console.warn(`Lỗi khởi tạo document Firestore cho ${userId}:`, err);
+        }
+      }
+    } else {
       this.saveLocalUserData(userId, initialPayload);
-    } catch (err) {
-      console.warn(`Lỗi khởi tạo document Firestore cho ${userId}:`, err);
     }
 
     return initialPayload;
   }
 
+  private static isQuotaExceeded = false;
+  private static lastQuotaErrorLogged = 0;
+  private static saveTimers = new Map<string, any>();
+  private static pendingUpdates = new Map<string, Partial<UserDataPayload>>();
+
+  public static getIsQuotaExceeded(): boolean {
+    if (this.isQuotaExceeded) return true;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = localStorage.getItem('firestore_quota_exceeded_timestamp');
+        if (raw) {
+          const ts = Number(raw);
+          // Gói miễn phí Spark được đặt lại vào nửa đêm (khoảng 6-24h). Tạm dừng ghi để tránh lỗi liên tục.
+          if (Date.now() - ts < 6 * 60 * 60 * 1000) {
+            this.isQuotaExceeded = true;
+            return true;
+          } else {
+            localStorage.removeItem('firestore_quota_exceeded_timestamp');
+          }
+        }
+      }
+    } catch {}
+    return this.isQuotaExceeded;
+  }
+
+  public static setIsQuotaExceeded(val: boolean): void {
+    this.isQuotaExceeded = val;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        if (val) {
+          localStorage.setItem('firestore_quota_exceeded_timestamp', Date.now().toString());
+        } else {
+          localStorage.removeItem('firestore_quota_exceeded_timestamp');
+        }
+      }
+    } catch {}
+    if (val && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+    }
+  }
+
+  public static clearQuotaExceeded(): void {
+    this.setIsQuotaExceeded(false);
+  }
+
+  public static checkAndMarkQuotaError(err: any): boolean {
+    if (!err) return false;
+    const msg = String(err?.message || '');
+    const code = String(err?.code || '');
+    const isQuota =
+      code === 'resource-exhausted' ||
+      msg.includes('Quota limit exceeded') ||
+      msg.includes('resource-exhausted') ||
+      msg.includes('Free daily write units') ||
+      msg.includes('Free daily read units');
+
+    if (isQuota) {
+      this.setIsQuotaExceeded(true);
+    }
+    return isQuota;
+  }
+
   /**
-   * Save user data payload to Firestore and LocalStorage
+   * Save user data payload to Firestore (debounced) and LocalStorage (immediate)
    */
   static async saveUserData(userId: string, updates: Partial<UserDataPayload>): Promise<void> {
     if (!userId) return;
@@ -300,8 +370,46 @@ export class UserDataSync {
     // 1. Update Local Storage cache immediately
     this.saveLocalUserData(userId, sanitizedUpdates);
 
-    // 2. Prepare Firestore payload (strip heavy nested structures from onlineExams to prevent 1MB Firestore limit)
-    const firestorePayload: any = { ...sanitizedUpdates, updatedAt: new Date().toISOString() };
+    // If quota was already exceeded, avoid spamming Firestore with failing writes
+    if (this.getIsQuotaExceeded()) {
+      const now = Date.now();
+      // Only log once every 5 minutes to avoid console flood
+      if (now - this.lastQuotaErrorLogged > 300000) {
+        this.lastQuotaErrorLogged = now;
+        console.warn(`[UserDataSync] Firestore đang trong trạng thái Quota limit exceeded. Dữ liệu tiếp tục được lưu cục bộ (LocalStorage).`);
+      }
+      return;
+    }
+
+    // 2. Debounce Firestore writes to prevent rapid consumption of daily write quota
+    const existing = this.pendingUpdates.get(userId) || {};
+    this.pendingUpdates.set(userId, { ...existing, ...sanitizedUpdates });
+
+    if (this.saveTimers.has(userId)) {
+      clearTimeout(this.saveTimers.get(userId));
+    }
+
+    this.saveTimers.set(
+      userId,
+      setTimeout(async () => {
+        this.saveTimers.delete(userId);
+        const updatesToFlush = this.pendingUpdates.get(userId);
+        this.pendingUpdates.delete(userId);
+        if (!updatesToFlush) return;
+
+        await this.flushUserDataToFirestore(userId, updatesToFlush);
+      }, 1000)
+    );
+  }
+
+  /**
+   * Internal worker to write payload to Firestore doc
+   */
+  private static async flushUserDataToFirestore(userId: string, updates: Partial<UserDataPayload>): Promise<void> {
+    if (this.getIsQuotaExceeded()) {
+      return;
+    }
+    const firestorePayload: any = { ...updates, updatedAt: new Date().toISOString() };
     if (Array.isArray(firestorePayload.onlineExams)) {
       firestorePayload.onlineExams = firestorePayload.onlineExams.map((oe: any) => {
         const item: any = {
@@ -332,30 +440,19 @@ export class UserDataSync {
       });
     }
 
-    // 3. Sync to Firestore with strict undefined stripping
     try {
       const docRef = doc(db, USER_DATA_COLLECTION, userId);
       const cleanPayload = sanitizeForFirestore(firestorePayload);
       await setDoc(docRef, cleanPayload, { merge: true });
-
-      // Đồng bộ trực tiếp từng mã đề vào collection published_exams để học sinh tìm thấy ngay lập tức
-      if (Array.isArray(sanitizedUpdates.onlineExams)) {
-        for (const oe of sanitizedUpdates.onlineExams) {
-          if (oe && oe.code) {
-            const codeUpper = oe.code.trim().toUpperCase();
-            const examDocRef = doc(db, 'published_exams', codeUpper);
-            const cleanExam = sanitizeForFirestore({
-              ...oe,
-              code: codeUpper,
-              createdBy: oe.createdBy || userId,
-              updatedAt: new Date().toISOString(),
-            });
-            setDoc(examDocRef, cleanExam, { merge: true }).catch(() => {});
-          }
-        }
+    } catch (err: any) {
+      if (this.checkAndMarkQuotaError(err)) {
+        this.lastQuotaErrorLogged = Date.now();
+        console.warn(
+          `[UserDataSync] Firestore Quota limit exceeded cho dự án. Chuyển sang chế độ lưu trữ cục bộ LocalStorage.`
+        );
+      } else {
+        console.error(`Lỗi đồng bộ Firestore user_data cho ${userId}:`, err);
       }
-    } catch (err) {
-      console.error(`Lỗi đồng bộ Firestore user_data cho ${userId}:`, err);
     }
   }
 

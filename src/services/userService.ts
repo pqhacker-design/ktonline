@@ -11,6 +11,7 @@ import {
   onSnapshot 
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
+import { UserDataSync } from './userDataSync';
 
 export interface AppUser {
   id?: string;
@@ -26,7 +27,7 @@ export interface AppUser {
 
 const USERS_COLLECTION = 'users';
 
-const fetchWithTimeout = <T>(promise: Promise<T>, ms = 1500): Promise<T | null> => {
+const fetchWithTimeout = <T>(promise: Promise<T>, ms = 8000): Promise<T | null> => {
   return Promise.race([
     promise,
     new Promise<T | null>((resolve) => setTimeout(() => resolve(null), ms))
@@ -52,7 +53,7 @@ export const userService = {
     const adminDocRef = doc(db, USERS_COLLECTION, 'admin');
     
     try {
-      const adminSnap = await fetchWithTimeout(getDoc(adminDocRef), 1500);
+      const adminSnap = await fetchWithTimeout(getDoc(adminDocRef), 8000);
 
       if (adminSnap && adminSnap.exists()) {
         const data = adminSnap.data() as AppUser;
@@ -70,8 +71,10 @@ export const userService = {
         if (data.role !== 'admin') updatedFields.role = 'admin';
         if (data.active !== true) updatedFields.active = true;
 
-        if (Object.keys(updatedFields).length > 0) {
-          setDoc(adminDocRef, updatedFields, { merge: true }).catch(() => {});
+        if (Object.keys(updatedFields).length > 0 && !UserDataSync.getIsQuotaExceeded()) {
+          setDoc(adminDocRef, updatedFields, { merge: true }).catch((e) => {
+            UserDataSync.checkAndMarkQuotaError(e);
+          });
         }
 
         return {
@@ -82,11 +85,13 @@ export const userService = {
           email: updatedFields.email || data.email || 'pqhacker@gamil.com',
           password: updatedFields.password || data.password || 'Hungdiemly300506',
         };
-      } else {
-        setDoc(adminDocRef, defaultAdmin, { merge: true }).catch(() => {});
+      } else if (!UserDataSync.getIsQuotaExceeded()) {
+        setDoc(adminDocRef, defaultAdmin, { merge: true }).catch((e) => {
+          UserDataSync.checkAndMarkQuotaError(e);
+        });
       }
-    } catch (err) {
-      // Silent catch
+    } catch (err: any) {
+      UserDataSync.checkAndMarkQuotaError(err);
     }
 
     return defaultAdmin;
@@ -126,42 +131,60 @@ export const userService = {
       return defaultAdmin;
     }
 
-    // 1. Check doc ID directly (e.g. 'admin' or formatted doc ID)
-    const formattedId = cleanUsername.replace(/[^a-zA-Z0-9]/g, '_');
-    const userDocRef = doc(db, USERS_COLLECTION, formattedId);
     let matchedUser: AppUser | null = null;
     let matchedId = '';
+    let networkTimeoutOccurred = false;
 
-    try {
-      const userDocSnap = await fetchWithTimeout(getDoc(userDocRef), 1500);
-      if (userDocSnap && userDocSnap.exists()) {
-        matchedUser = userDocSnap.data() as AppUser;
-        matchedId = userDocSnap.id;
+    // 1. Check doc ID directly (try formatted ID first, then cleanUsername directly)
+    const formattedId = cleanUsername.replace(/[^a-zA-Z0-9]/g, '_');
+    const docIdsToTry = [formattedId];
+    if (cleanUsername !== formattedId) {
+      docIdsToTry.push(cleanUsername);
+    }
+
+    for (const dId of docIdsToTry) {
+      try {
+        const userDocRef = doc(db, USERS_COLLECTION, dId);
+        const userDocSnap = await fetchWithTimeout(getDoc(userDocRef), 8000);
+        if (userDocSnap === null) {
+          networkTimeoutOccurred = true;
+        } else if (userDocSnap.exists()) {
+          matchedUser = userDocSnap.data() as AppUser;
+          matchedId = userDocSnap.id;
+          networkTimeoutOccurred = false;
+          break;
+        }
+      } catch (e) {
+        console.warn('Lỗi đọc userDoc:', e);
       }
-    } catch (e) {
-      // Silent catch
     }
 
     if (!matchedUser) {
       // 2. Query by username or email field
       try {
         const qUsername = query(collection(db, USERS_COLLECTION), where('username', '==', cleanUsername));
-        const qSnapUsername = await fetchWithTimeout(getDocs(qUsername), 1500);
+        const qSnapUsername = await fetchWithTimeout(getDocs(qUsername), 8000);
 
-        if (qSnapUsername && !qSnapUsername.empty) {
+        if (qSnapUsername === null) {
+          networkTimeoutOccurred = true;
+        } else if (!qSnapUsername.empty) {
           matchedUser = qSnapUsername.docs[0].data() as AppUser;
           matchedId = qSnapUsername.docs[0].id;
+          networkTimeoutOccurred = false;
         } else {
           const qEmail = query(collection(db, USERS_COLLECTION), where('email', '==', cleanUsername));
-          const qSnapEmail = await fetchWithTimeout(getDocs(qEmail), 1500);
+          const qSnapEmail = await fetchWithTimeout(getDocs(qEmail), 8000);
 
-          if (qSnapEmail && !qSnapEmail.empty) {
+          if (qSnapEmail === null) {
+            networkTimeoutOccurred = true;
+          } else if (!qSnapEmail.empty) {
             matchedUser = qSnapEmail.docs[0].data() as AppUser;
             matchedId = qSnapEmail.docs[0].id;
+            networkTimeoutOccurred = false;
           }
         }
       } catch (e) {
-        // Silent catch
+        console.warn('Lỗi query users:', e);
       }
     }
 
@@ -178,12 +201,16 @@ export const userService = {
           createdAt: new Date().toISOString()
         };
         matchedId = 'admin';
+        networkTimeoutOccurred = false;
       } else if (!matchedUser.password) {
         matchedUser.password = 'Hungdiemly300506';
       }
     }
 
     if (!matchedUser) {
+      if (networkTimeoutOccurred) {
+        throw new Error('Kết nối tới máy chủ quá hạn (timeout). Vui lòng kiểm tra đường truyền mạng và thử đăng nhập lại.');
+      }
       throw new Error('Tên đăng nhập hoặc mật khẩu không chính xác.');
     }
 
@@ -223,16 +250,23 @@ export const userService = {
     }
 
     try {
-      const userDocRef = doc(db, USERS_COLLECTION, docId);
-      const snap = await fetchWithTimeout(getDoc(userDocRef), 1500);
-      if (snap && snap.exists()) {
-        const data = snap.data() as AppUser;
-        return {
-          ...data,
-          id: snap.id,
-          username: data.username || data.email || snap.id,
-          email: data.email || data.username || snap.id,
-        };
+      const cleanId = docId.trim();
+      const formattedId = cleanId.replace(/[^a-zA-Z0-9]/g, '_');
+      const docIdsToTry = [cleanId];
+      if (formattedId !== cleanId) docIdsToTry.push(formattedId);
+
+      for (const dId of docIdsToTry) {
+        const userDocRef = doc(db, USERS_COLLECTION, dId);
+        const snap = await fetchWithTimeout(getDoc(userDocRef), 8000);
+        if (snap && snap.exists()) {
+          const data = snap.data() as AppUser;
+          return {
+            ...data,
+            id: snap.id,
+            username: data.username || data.email || snap.id,
+            email: data.email || data.username || snap.id,
+          };
+        }
       }
     } catch (err) {
       // Silent catch
@@ -321,13 +355,18 @@ export const userService = {
     }
 
     const docId = cleanUsername.replace(/[^a-zA-Z0-9]/g, '_');
-
-    // Query if already exists
     const userDocRef = doc(db, USERS_COLLECTION, docId);
-    const existingSnap = await getDoc(userDocRef);
 
-    if (existingSnap.exists()) {
-      throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
+    // Fast check if already exists with timeout protection
+    try {
+      const existingSnap = await fetchWithTimeout(getDoc(userDocRef), 4000);
+      if (existingSnap && existingSnap.exists()) {
+        throw new Error(`Tên đăng nhập "${cleanUsername}" đã tồn tại trong hệ thống!`);
+      }
+    } catch (checkErr: any) {
+      if (checkErr.message && checkErr.message.includes('đã tồn tại')) {
+        throw checkErr;
+      }
     }
 
     const appUserData: AppUser = {
@@ -340,7 +379,19 @@ export const userService = {
       createdAt: new Date().toISOString(),
     };
 
-    await setDoc(userDocRef, appUserData);
+    // Dispatch write to Firestore without hanging forever if network ACK is slow
+    try {
+      const savePromise = setDoc(userDocRef, appUserData);
+      await Promise.race([
+        savePromise,
+        new Promise((resolve) => setTimeout(resolve, 3000))
+      ]);
+    } catch (saveErr: any) {
+      if (UserDataSync.checkAndMarkQuotaError(saveErr)) {
+        throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn (Resource-exhausted Quota limit exceeded). Vui lòng thử lại vào ngày mai hoặc nâng cấp hạn ngạch Firebase.');
+      }
+      throw saveErr;
+    }
   },
 
   /**
@@ -375,7 +426,14 @@ export const userService = {
       payload.password = updates.password.trim();
     }
 
-    await setDoc(userDocRef, payload, { merge: true });
+    try {
+      await setDoc(userDocRef, payload, { merge: true });
+    } catch (err: any) {
+      if (UserDataSync.checkAndMarkQuotaError(err)) {
+        throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn (Resource-exhausted Quota limit exceeded). Vui lòng thử lại vào ngày mai.');
+      }
+      throw err;
+    }
   },
 
   /**
@@ -448,8 +506,18 @@ export const userService = {
    * Admin deletes a user account
    */
   async deleteUser(docId: string): Promise<void> {
-    const userDocRef = doc(db, USERS_COLLECTION, docId);
-    await deleteDoc(userDocRef);
+    if (UserDataSync.getIsQuotaExceeded()) {
+      throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn. Vui lòng thử lại vào ngày mai.');
+    }
+    try {
+      const userDocRef = doc(db, USERS_COLLECTION, docId);
+      await deleteDoc(userDocRef);
+    } catch (err: any) {
+      if (UserDataSync.checkAndMarkQuotaError(err)) {
+        throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn. Vui lòng thử lại vào ngày mai.');
+      }
+      throw err;
+    }
   },
 
   /**

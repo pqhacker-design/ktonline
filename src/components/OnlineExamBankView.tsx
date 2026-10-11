@@ -93,8 +93,6 @@ export const OnlineExamBankView: React.FC<OnlineExamBankViewProps> = ({
       const res = await OnlineExamService.listExams();
       if (res.success) {
         setExams(res.exams || []);
-        // Đồng bộ toàn bộ đề lên Firestore để học sinh trên mọi thiết bị truy cập ngay
-        OnlineExamService.syncAllLocalExamsToFirestore().catch(() => {});
       }
     } catch (err: any) {
       console.error('Lỗi lấy danh sách kho đề:', err);

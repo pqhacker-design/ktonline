@@ -115,10 +115,8 @@ export default function App() {
     title: '',
   });
 
-  // URL Query Param Check on Mount (e.g., ?exam=A7X92Q or ?code=A7X92Q) & Auto-Sync
+  // URL Query Param Check on Mount (e.g., ?exam=A7X92Q or ?code=A7X92Q)
   useEffect(() => {
-    // Tự động đồng bộ các đề online lên Firestore khi khởi động
-    OnlineExamService.syncAllLocalExamsToFirestore().catch(() => {});
 
     const parseExamCodeFromUrl = () => {
       // 1. Search searchParams
@@ -163,6 +161,17 @@ export default function App() {
     message: '',
   });
   const [pendingMetadata, setPendingMetadata] = useState<ExamMetadata | null>(null);
+
+  const [isFirestoreQuotaExceeded, setIsFirestoreQuotaExceeded] = useState(UserDataSync.getIsQuotaExceeded());
+  const [isFirestoreQuotaBannerDismissed, setIsFirestoreQuotaBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => {
+      setIsFirestoreQuotaExceeded(true);
+    };
+    window.addEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    return () => window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+  }, []);
 
   // Handle dark mode toggle on root html element
   useEffect(() => {
@@ -715,6 +724,56 @@ export default function App() {
             />
 
             <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">
+              {isFirestoreQuotaExceeded && !isFirestoreQuotaBannerDismissed && (
+                <div className="mb-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-2xl p-3.5 flex items-start justify-between text-xs text-amber-900 dark:text-amber-200 shadow-sm animate-in fade-in">
+                  <div className="flex items-start space-x-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-amber-950 dark:text-amber-100">
+                        Cơ sở dữ liệu đám mây Firestore đã đạt hạn ngạch ghi miễn phí trong ngày (Free daily write units limit)
+                      </p>
+                      <p className="mt-0.5 text-amber-800 dark:text-amber-300 leading-relaxed">
+                        Ứng dụng đã tự động chuyển sang chế độ lưu trữ cục bộ (LocalStorage). Toàn bộ dữ liệu đề thi, ngân hàng câu hỏi, lớp học và kết quả làm bài vẫn hoạt động và lưu an toàn trên máy của bạn. Giới hạn ghi miễn phí của gói Spark sẽ tự động đặt lại vào ngày mai theo giờ Thái Bình Dương (PST). Nếu cần sử dụng không giới hạn, bạn có thể nâng cấp dự án sang gói Blaze trong{' '}
+                        <a
+                          href="https://console.firebase.google.com/project/gen-lang-client-0904703550/usage"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold underline hover:text-amber-950 dark:hover:text-amber-100"
+                        >
+                          Firebase Console
+                        </a>.
+                      </p>
+                      <div className="mt-2 flex items-center space-x-3">
+                        <button
+                          onClick={() => {
+                            UserDataSync.clearQuotaExceeded();
+                            setIsFirestoreQuotaExceeded(false);
+                          }}
+                          className="px-2.5 py-1 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer"
+                        >
+                          Thử lại kết nối Cloud
+                        </button>
+                        <a
+                          href="https://console.firebase.google.com/project/gen-lang-client-0904703550/usage"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-medium text-amber-700 dark:text-amber-300 underline hover:text-amber-900"
+                        >
+                          Xem thống kê Quota trên Firebase
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsFirestoreQuotaBannerDismissed(true)}
+                    className="p-1 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors ml-2 shrink-0 cursor-pointer"
+                    title="Đóng thông báo"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
               {activeTab === 'dashboard' && (
                 <DashboardView
                   examHistory={examHistory}

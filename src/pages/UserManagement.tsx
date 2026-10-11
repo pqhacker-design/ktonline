@@ -3,6 +3,7 @@ import {
   AppUser, 
   userService 
 } from '../services/userService';
+import { UserDataSync } from '../services/userDataSync';
 import { useAuth } from '../auth/useAuth';
 import { 
   Users, 
@@ -239,6 +240,7 @@ export const UserManagement: React.FC = () => {
           active: formData.active,
           password: formData.password.trim() ? formData.password.trim() : undefined,
         });
+        setToastMessage(`Đã cập nhật tài khoản "${formData.username.trim()}"!`);
       } else {
         await userService.addUser({
           username: formData.username.trim(),
@@ -247,7 +249,9 @@ export const UserManagement: React.FC = () => {
           role: formData.role,
           active: formData.active,
         });
+        setToastMessage(`Đã tạo tài khoản "${formData.username.trim()}" thành công!`);
       }
+      setTimeout(() => setToastMessage(null), 3500);
       setShowAddModal(false);
     } catch (err: any) {
       setFormError(err.message || 'Lỗi khi lưu tài khoản.');
@@ -379,6 +383,31 @@ export const UserManagement: React.FC = () => {
         <div className="fixed top-6 right-6 z-[999] px-4 py-3 bg-emerald-950 border border-emerald-500/80 text-emerald-200 text-xs font-bold rounded-2xl shadow-2xl flex items-center space-x-2 animate-in fade-in slide-in-from-top-4">
           <Check className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Quota Exceeded Warning Banner */}
+      {UserDataSync.getIsQuotaExceeded() && (
+        <div className="p-4 rounded-3xl bg-amber-500/10 border border-amber-500/40 flex items-start gap-3.5 shadow-sm text-xs text-amber-200">
+          <div className="p-2.5 bg-amber-500/20 text-amber-400 rounded-2xl shrink-0">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+          <div className="space-y-1 flex-1">
+            <h3 className="text-xs font-black text-amber-300 uppercase tracking-wider">
+              Đạt hạn ngạch ghi Firestore miễn phí trong ngày (Free daily write units limit)
+            </h3>
+            <p className="text-xs text-amber-200/90 leading-relaxed">
+              Dự án đã sử dụng hết hạn ngạch ghi của gói Spark miễn phí hôm nay. Việc tạo mới hoặc sửa đổi tài khoản người dùng trực tiếp trên Cloud có thể bị tạm ngưng cho đến khi Google tự động đặt lại hạn ngạch vào ngày mai (giờ PST), hoặc quản trị viên có thể nâng cấp dự án sang gói Blaze trong{' '}
+              <a
+                href="https://console.firebase.google.com/project/gen-lang-client-0904703550/usage"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-bold underline hover:text-white"
+              >
+                Firebase Console
+              </a>.
+            </p>
+          </div>
         </div>
       )}
 

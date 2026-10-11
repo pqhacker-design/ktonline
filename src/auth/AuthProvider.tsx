@@ -87,9 +87,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               localStorage.setItem(SESSION_USER_KEY, JSON.stringify(defaultAdminUser));
               setIsUnauthorized(false);
             } else {
-              localStorage.removeItem(SESSION_KEY);
-              localStorage.removeItem(SESSION_USER_KEY);
-              setUser(null);
+              // Only remove session if there is no valid cached user
+              const cachedUserRaw = localStorage.getItem(SESSION_USER_KEY);
+              if (cachedUserRaw) {
+                try {
+                  const cached = JSON.parse(cachedUserRaw);
+                  if (cached && (cached.id === savedUserId || cached.username === savedUserId)) {
+                    setUser(cached);
+                    setIsUnauthorized(!cached.active);
+                  } else {
+                    localStorage.removeItem(SESSION_KEY);
+                    localStorage.removeItem(SESSION_USER_KEY);
+                    setUser(null);
+                  }
+                } catch {
+                  localStorage.removeItem(SESSION_KEY);
+                  localStorage.removeItem(SESSION_USER_KEY);
+                  setUser(null);
+                }
+              } else {
+                localStorage.removeItem(SESSION_KEY);
+                localStorage.removeItem(SESSION_USER_KEY);
+                setUser(null);
+              }
             }
           }
         }
