@@ -247,6 +247,55 @@ export class OnlineExamService {
     }
   }
 
+  public static getDeletedStudentSbds(): Set<string> {
+    try {
+      const raw = localStorage.getItem(`aitest_deleted_student_sbds_shared`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return new Set(parsed.map((s: string) => String(s).trim().toUpperCase()));
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return new Set<string>();
+  }
+
+  public static addDeletedStudentSbds(sbds: string[]): void {
+    try {
+      if (!Array.isArray(sbds) || sbds.length === 0) return;
+      const set = this.getDeletedStudentSbds();
+      sbds.forEach((s) => {
+        if (s && String(s).trim()) {
+          set.add(String(s).trim().toUpperCase());
+        }
+      });
+      const arr = Array.from(set);
+      localStorage.setItem(`aitest_deleted_student_sbds_shared`, JSON.stringify(arr));
+
+      UserDataSync.saveUserData('shared_workspace', {
+        deletedStudentSbds: arr,
+      });
+      const userId = this.getActiveUserId();
+      if (userId && userId !== 'guest' && userId !== 'shared_workspace') {
+        UserDataSync.saveUserData(userId, {
+          deletedStudentSbds: arr,
+        });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  public static clearDeletedStudentSbds(): void {
+    try {
+      localStorage.removeItem(`aitest_deleted_student_sbds_shared`);
+    } catch {
+      // ignore
+    }
+  }
+
   private static async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     const userId = this.getActiveUserId();
     const headers: Record<string, string> = {
@@ -2422,6 +2471,18 @@ export class OnlineExamService {
 
     // 2. Delete students belonging to this class from local students immediately
     const localStudents = this.getLocalStudents();
+    const deletedStudents = localStudents.filter(
+      (s) =>
+        s.classId === id ||
+        s.classId === targetClass?.id ||
+        (s.className || '').trim().toLowerCase() === normClassName ||
+        (s.className || '').trim().toLowerCase() === normClassId
+    );
+    const deletedSbds = deletedStudents.map((s) => s.sbd).filter(Boolean);
+    if (deletedSbds.length > 0) {
+      this.addDeletedStudentSbds(deletedSbds);
+    }
+
     const remainingStudents = localStudents.filter(
       (s) =>
         s.classId !== id &&
@@ -2559,6 +2620,12 @@ export class OnlineExamService {
       });
     }
 
+    // Lọc bỏ bất kỳ học sinh nào có SBD nằm trong danh sách đã bị xóa
+    const deletedSbds = this.getDeletedStudentSbds();
+    if (deletedSbds.size > 0) {
+      allStudents = allStudents.filter((s) => !s.sbd || !deletedSbds.has(s.sbd.trim().toUpperCase()));
+    }
+
     // Sắp xếp danh sách học sinh ổn định (thứ tự nhập ban đầu / SBD / Tên tiếng Việt)
     allStudents = sortStudentsDefault(allStudents);
 
@@ -2667,7 +2734,15 @@ export class OnlineExamService {
     const userId = this.getActiveUserId();
 
     // 1. Immediately update Local Storage
-    const students = this.getLocalStudents().filter((s) => s.id !== id);
+    const existingStudents = this.getLocalStudents();
+    const targetStudent = existingStudents.find(
+      (s) => s.id === id || (s.sbd && s.sbd.trim().toUpperCase() === id.trim().toUpperCase())
+    );
+    if (targetStudent?.sbd) {
+      this.addDeletedStudentSbds([targetStudent.sbd]);
+    }
+
+    const students = existingStudents.filter((s) => s.id !== id);
     this.saveLocalStudents(students);
 
     // 2. Immediately update UserDataSync
@@ -2693,23 +2768,113 @@ export class OnlineExamService {
     return { success: true };
   }
 
+  /**
+   * Fast 1-click Wipe of ALL classes and students across all browsers, server, and Firestore
+   */
+  static async wipeAllClassesAndStudents(): Promise<{ success: boolean; message: string }> {
+    const userId = this.getActiveUserId();
+    const timestamp = new Date().toISOString();
+
+    // 1. Immediately wipe LocalStorage on current browser
+    this.saveLocalClasses([]);
+    this.saveLocalStudents([]);
+    try {
+      const keys = this.getStorageKeys();
+      localStorage.removeItem(keys.CLASSES);
+      localStorage.removeItem(keys.STUDENTS);
+      localStorage.setItem(keys.CLASSES, JSON.stringify([]));
+      localStorage.setItem(keys.STUDENTS, JSON.stringify([]));
+      localStorage.setItem('aitest_classes_wiped_at', timestamp);
+      this.clearDeletedStudentSbds();
+    } catch {}
+
+    // 2. Call backend server API to wipe classes.json and students.json
+    const apiPromise = this.request<{ success: boolean; message?: string }>('/api/classes/wipe-all', {
+      method: 'POST',
+    }).catch((e) => {
+      console.warn('Lỗi gọi /api/classes/wipe-all:', e);
+      return null;
+    });
+
+    // 3. Wipe Firestore collections: system_classes and system_students
+    const firestorePromise = (async () => {
+      if (UserDataSync.getIsQuotaExceeded()) return;
+      try {
+        // Wipe system_classes collection
+        const colClasses = collection(db, 'system_classes');
+        const snapClasses = await getDocs(colClasses);
+        const batch1 = writeBatch(db);
+        snapClasses.forEach((d) => batch1.delete(d.ref));
+        await batch1.commit().catch((e) => UserDataSync.checkAndMarkQuotaError(e));
+
+        // Wipe system_students collection
+        const colStudents = collection(db, 'system_students');
+        const snapStudents = await getDocs(colStudents);
+        const batch2 = writeBatch(db);
+        snapStudents.forEach((d) => batch2.delete(d.ref));
+        await batch2.commit().catch((e) => UserDataSync.checkAndMarkQuotaError(e));
+
+        // Update user_data documents with empty classes & students
+        const emptyPayload = {
+          classes: [],
+          students: [],
+          deletedStudentSbds: [],
+          classesWipedAt: timestamp,
+          updatedAt: timestamp,
+        };
+        UserDataSync.saveUserData('shared_workspace', emptyPayload).catch(() => {});
+        if (userId && userId !== 'guest' && userId !== 'shared_workspace') {
+          UserDataSync.saveUserData(userId, emptyPayload).catch(() => {});
+        }
+      } catch (err: any) {
+        if (!UserDataSync.checkAndMarkQuotaError(err)) {
+          console.warn('Lỗi dọn dẹp Firestore cho lớp và học sinh:', err);
+        }
+      }
+    })();
+
+    await Promise.allSettled([apiPromise, firestorePromise]);
+
+    return {
+      success: true,
+      message: 'Đã xóa sạch toàn bộ danh sách Lớp học và Học sinh trên toàn hệ thống (máy chủ, Cloud và mọi thiết bị).',
+    };
+  }
+
   // 15. Lookup Student by SBD
   static async lookupStudentBySbd(sbd: string, code?: string) {
     const cleanSbd = (sbd || '').trim();
     const cleanSbdUpper = cleanSbd.toUpperCase();
+
+    // Check if SBD was explicitly deleted or marked as purged
+    if (this.getDeletedStudentSbds().has(cleanSbdUpper)) {
+      const local = this.getLocalStudents().filter(
+        (s) => !s.sbd || s.sbd.trim().toUpperCase() !== cleanSbdUpper
+      );
+      this.saveLocalStudents(local);
+      throw new Error(`Không tìm thấy học sinh với số báo danh '${cleanSbd}'.`);
+    }
 
     // 1. Try API
     try {
       const queryCode = code ? `&code=${encodeURIComponent(code)}` : '';
       const res = await this.request<{
         success: boolean;
+        notFound?: boolean;
         student: { id: string; sbd: string; name: string; className: string; school?: string };
       }>(`/api/exam/lookup-student?sbd=${encodeURIComponent(cleanSbd)}${queryCode}`);
       if (res.success && res.student) {
         return res;
       }
-    } catch {
-      // ignore API failure
+    } catch (apiErr: any) {
+      // If server explicitly says student was not found (404), do not resurrect from local storage!
+      if (apiErr?.status === 404 || apiErr?.message?.includes('Không tìm thấy học sinh') || apiErr?.notFound) {
+        const local = this.getLocalStudents().filter(
+          (s) => !s.sbd || s.sbd.trim().toUpperCase() !== cleanSbdUpper
+        );
+        this.saveLocalStudents(local);
+        throw new Error(`Không tìm thấy học sinh với số báo danh '${cleanSbd}'.`);
+      }
     }
 
     // 2. Query Firestore & local students
@@ -2722,7 +2887,9 @@ export class OnlineExamService {
     }
 
     const studentsRes = await this.getStudents(undefined, true);
-    const allStudents = studentsRes.students || [];
+    const allStudents = (studentsRes.students || []).filter(
+      (s) => !s.sbd || !this.getDeletedStudentSbds().has(s.sbd.trim().toUpperCase())
+    );
 
     const normSbdA = cleanSbdUpper.replace(/[^a-zA-Z0-9]/g, '');
 

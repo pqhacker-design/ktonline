@@ -121,9 +121,36 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
 
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Fast Wipe All State
+  const [showWipeModal, setShowWipeModal] = useState<boolean>(false);
+  const [isWiping, setIsWiping] = useState<boolean>(false);
+  const [wipeConfirmInput, setWipeConfirmInput] = useState<string>('');
+
   const showToast = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  const handleWipeAll = async () => {
+    if (wipeConfirmInput.trim().toUpperCase() !== 'XOA') return;
+    setIsWiping(true);
+    try {
+      const res = await OnlineExamService.wipeAllClassesAndStudents();
+      if (res.success) {
+        setClasses([]);
+        setStudents([]);
+        setSelectedClassId(null);
+        showToast('success', 'Đã xóa sạch toàn bộ Lớp học và Học sinh trên máy chủ, Cloud và mọi trình duyệt.');
+        setShowWipeModal(false);
+        setWipeConfirmInput('');
+      } else {
+        showToast('error', res.message || 'Lỗi khi xóa dữ liệu');
+      }
+    } catch (err: any) {
+      showToast('error', 'Lỗi khi xóa dữ liệu: ' + (err.message || 'Thao tác thất bại'));
+    } finally {
+      setIsWiping(false);
+    }
   };
 
   // Load classes & students (non-blocking background sync)
@@ -819,6 +846,20 @@ export const ClassManagementView: React.FC<ClassManagementViewProps> = ({ onNavi
         </div>
 
         <div className="flex flex-wrap items-center gap-3 shrink-0">
+          {(classes.length > 0 || students.length > 0) && (
+            <button
+              onClick={() => {
+                setWipeConfirmInput('');
+                setShowWipeModal(true);
+              }}
+              className="px-4 py-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 font-bold text-sm transition-all flex items-center gap-2 cursor-pointer shadow-xs"
+              title="Xóa sạch toàn bộ danh sách lớp và học sinh trên toàn hệ thống"
+            >
+              <Trash2 className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+              <span>Xóa Sạch Tất Cả Lớp & HS</span>
+            </button>
+          )}
+
           <button
             onClick={() => setShowAddClassModal(true)}
             className="px-5 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer"
@@ -1739,6 +1780,96 @@ Ví dụ định dạng 2 (kèm SBD):
                   </>
                 ) : (
                   <span>{confirmModal.buttonText || 'Đồng ý'}</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Wipe All Classes and Students Modal */}
+      {showWipeModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-900/80 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in zoom-in-95">
+            <div className="flex items-start space-x-3.5">
+              <div className="p-3 bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 rounded-2xl shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Xóa Sạch Toàn Bộ Lớp & Học Sinh?
+                </h3>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold mt-0.5">
+                  Thao tác nguy hiểm không thể hoàn tác!
+                </p>
+              </div>
+              <button
+                disabled={isWiping}
+                onClick={() => {
+                  setShowWipeModal(false);
+                  setWipeConfirmInput('');
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300 bg-rose-50/50 dark:bg-rose-950/20 p-4 rounded-2xl border border-rose-200/80 dark:border-rose-900/40 leading-relaxed">
+              <p className="font-semibold text-rose-900 dark:text-rose-200">
+                Khi xác nhận xóa sạch:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                <li>Toàn bộ {classes.length} lớp học và {students.length} học sinh sẽ bị xóa vĩnh viễn trên máy chủ, Firestore và bộ nhớ đệm mọi thiết bị.</li>
+                <li>Tất cả mã học sinh / Số báo danh cũ sẽ bị vô hiệu hóa ngay tức thì.</li>
+                <li>Học sinh dùng bất kỳ trình duyệt nào khác cũng sẽ không thể đăng nhập bằng các mã này.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Nhập chữ <span className="text-rose-600 dark:text-rose-400 font-black tracking-widest uppercase">XOA</span> để xác nhận:
+              </label>
+              <input
+                type="text"
+                value={wipeConfirmInput}
+                onChange={(e) => setWipeConfirmInput(e.target.value)}
+                placeholder="Nhập XOA..."
+                disabled={isWiping}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white font-mono uppercase tracking-widest focus:outline-hidden focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                disabled={isWiping}
+                onClick={() => {
+                  setShowWipeModal(false);
+                  setWipeConfirmInput('');
+                }}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                disabled={isWiping || wipeConfirmInput.trim().toUpperCase() !== 'XOA'}
+                onClick={handleWipeAll}
+                className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs transition-colors shadow-xs flex items-center gap-2 cursor-pointer ${
+                  wipeConfirmInput.trim().toUpperCase() === 'XOA'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-slate-400 dark:bg-slate-700 opacity-60 cursor-not-allowed'
+                }`}
+              >
+                {isWiping ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang xóa sạch dữ liệu...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Xác Nhận Xóa Sạch</span>
+                  </>
                 )}
               </button>
             </div>

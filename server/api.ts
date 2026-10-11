@@ -453,6 +453,17 @@ export function registerExamRoutes(app: express.Express) {
     }
   });
 
+  // Wipe All Classes and Students endpoint
+  app.all('/api/classes/wipe-all', (req: Request, res: Response) => {
+    try {
+      const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
+      ClassRepository.wipeAllClassesAndStudents(userId);
+      return res.json({ success: true, message: 'Đã xóa sạch toàn bộ danh sách lớp học và học sinh trên máy chủ.' });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Lỗi xóa sạch lớp học và học sinh: ' + err.message });
+    }
+  });
+
   app.get('/api/students', (req: Request, res: Response) => {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
@@ -523,7 +534,7 @@ export function registerExamRoutes(app: express.Express) {
 
       const student = ClassRepository.findStudentBySbd(sbd, targetUserId, allowedClasses);
       if (!student) {
-        return res.status(404).json({ error: `Không tìm thấy học sinh có SBD: ${sbd}` });
+        return res.status(404).json({ success: false, notFound: true, error: `Không tìm thấy học sinh có SBD: ${sbd}` });
       }
 
       if (exam) {

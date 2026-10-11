@@ -11,6 +11,8 @@ export interface UserDataPayload {
   students?: any[];
   onlineExams?: any[];
   deletedExamCodes?: string[];
+  deletedStudentSbds?: string[];
+  classesWipedAt?: string;
   updatedAt?: string;
 }
 
@@ -226,8 +228,23 @@ export class UserDataSync {
         });
         const questionBank = Array.from(bankMap.values());
 
-        const classes = Array.isArray(remoteData.classes) && remoteData.classes.length > 0 ? remoteData.classes : local.classes || [];
-        const students = Array.isArray(remoteData.students) && remoteData.students.length > 0 ? remoteData.students : local.students || [];
+        // Deleted Student SBDs
+        const deletedStudentSbdsSet = new Set<string>();
+        (local.deletedStudentSbds || []).forEach((s) => s && deletedStudentSbdsSet.add(s.trim().toUpperCase()));
+        (remoteData.deletedStudentSbds || []).forEach((s) => s && deletedStudentSbdsSet.add(s.trim().toUpperCase()));
+        const mergedDeletedStudentSbds = Array.from(deletedStudentSbdsSet);
+
+        // Check if classes/students were wiped
+        const isWiped = !!remoteData.classesWipedAt || !!local.classesWipedAt;
+        const classes = isWiped && (!remoteData.classes || remoteData.classes.length === 0)
+          ? []
+          : (Array.isArray(remoteData.classes) ? remoteData.classes : local.classes || []);
+
+        const rawStudents = isWiped && (!remoteData.students || remoteData.students.length === 0)
+          ? []
+          : (Array.isArray(remoteData.students) ? remoteData.students : local.students || []);
+
+        const students = rawStudents.filter((s: any) => !s.sbd || !deletedStudentSbdsSet.has(s.sbd.trim().toUpperCase()));
 
         const mergedPayload: UserDataPayload = {
           settings,
@@ -237,6 +254,8 @@ export class UserDataSync {
           students,
           onlineExams,
           deletedExamCodes: mergedDeletedExamCodes,
+          deletedStudentSbds: mergedDeletedStudentSbds,
+          classesWipedAt: remoteData.classesWipedAt || local.classesWipedAt,
           updatedAt: remoteData.updatedAt,
         };
 
@@ -508,14 +527,42 @@ export class UserDataSync {
           const rawOnlineExams = remoteData.onlineExams || local.onlineExams || [];
           const onlineExams = rawOnlineExams.filter((oe: any) => !oe.code || !deletedSet.has(oe.code.trim().toUpperCase()));
 
+          // Deleted Student SBDs
+          const deletedStudentSbdsSet = new Set<string>();
+          (local.deletedStudentSbds || []).forEach((s) => s && deletedStudentSbdsSet.add(s.trim().toUpperCase()));
+          (remoteData.deletedStudentSbds || []).forEach((s) => s && deletedStudentSbdsSet.add(s.trim().toUpperCase()));
+          const mergedDeletedStudentSbds = Array.from(deletedStudentSbdsSet);
+
+          const isWiped = !!remoteData.classesWipedAt;
+          const classes = isWiped && (!remoteData.classes || remoteData.classes.length === 0)
+            ? []
+            : (Array.isArray(remoteData.classes) ? remoteData.classes : local.classes || []);
+
+          const rawStudents = isWiped && (!remoteData.students || remoteData.students.length === 0)
+            ? []
+            : (Array.isArray(remoteData.students) ? remoteData.students : local.students || []);
+
+          const students = rawStudents.filter((s: any) => !s.sbd || !deletedStudentSbdsSet.has(s.sbd.trim().toUpperCase()));
+
+          // If wiped, also clean up shared localStorage keys on this browser immediately
+          if (isWiped && classes.length === 0 && students.length === 0 && typeof window !== 'undefined' && window.localStorage) {
+            try {
+              localStorage.setItem('aitest_online_classes_store_shared', JSON.stringify([]));
+              localStorage.setItem('aitest_online_students_store_shared', JSON.stringify([]));
+              localStorage.setItem('aitest_classes_wiped_at', remoteData.classesWipedAt || new Date().toISOString());
+            } catch {}
+          }
+
           const payload: UserDataPayload = {
             settings,
             examHistory,
             questionBank,
-            classes: remoteData.classes || local.classes || [],
-            students: remoteData.students || local.students || [],
+            classes,
+            students,
             onlineExams,
             deletedExamCodes: mergedDeletedExamCodes,
+            deletedStudentSbds: mergedDeletedStudentSbds,
+            classesWipedAt: remoteData.classesWipedAt || local.classesWipedAt,
             updatedAt: remoteData.updatedAt,
           };
 

@@ -392,15 +392,25 @@ export class ClassRepository {
     return newStudents;
   }
 
-  static deleteStudent(id: string, userId?: string): boolean {
+  static deleteStudent(idOrSbd: string, userId?: string): boolean {
     let students = readJsonFile<StudentItem[]>(STUDENTS_FILE, []);
     const initialLen = students.length;
-    students = students.filter((s) => s.id !== id);
+    const cleanTarget = (idOrSbd || '').trim();
+    const cleanUpper = cleanTarget.toUpperCase();
+    students = students.filter(
+      (s) => s.id !== cleanTarget && (s.sbd ? s.sbd.trim().toUpperCase() !== cleanUpper : true)
+    );
     if (students.length !== initialLen) {
       writeJsonFile(STUDENTS_FILE, students);
       return true;
     }
     return false;
+  }
+
+  static wipeAllClassesAndStudents(userId?: string): boolean {
+    writeJsonFile(CLASSES_FILE, []);
+    writeJsonFile(STUDENTS_FILE, []);
+    return true;
   }
 
   static findStudentBySbd(sbd: string, targetUserId?: string, allowedClasses?: string[]): StudentItem | undefined {
