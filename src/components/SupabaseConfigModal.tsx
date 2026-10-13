@@ -26,6 +26,8 @@ import { StorageEngine } from '../services/storageEngine';
 import { userService, AppUser } from '../services/userService';
 import { UserDataSync } from '../services/userDataSync';
 
+import { SUPABASE_SCHEMA_SQL } from '../supabase/schemaSql';
+
 interface SupabaseConfigModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,6 +45,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; missingTables?: string[] } | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [showSqlPreview, setShowSqlPreview] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
   const [migrationProgress, setMigrationProgress] = useState<{ stage: string; percent: number } | null>(null);
   const [migrationSummary, setMigrationSummary] = useState<string | null>(null);
@@ -71,21 +74,37 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
   if (typeof document === 'undefined') return null;
 
   const handleCopySql = async () => {
-    try {
-      const res = await fetch('/api/supabase/schema-sql');
-      let sql = '';
-      if (res.ok) {
-        sql = await res.text();
-      }
-      if (!sql || sql.startsWith('-- Error')) {
-        // Fallback minimal script if fetch fails
-        sql = `-- SUPABASE SCHEMA\n-- Vui lòng chạy file supabase_schema.sql trong thư mục dự án`;
-      }
-      await navigator.clipboard.writeText(sql);
+    const sql = SUPABASE_SCHEMA_SQL;
+    let copied = false;
+
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(sql);
+        copied = true;
+      } catch {}
+    }
+
+    if (!copied) {
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = sql;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+      } catch {}
+    }
+
+    if (copied) {
       setCopiedSql(true);
       setTimeout(() => setCopiedSql(false), 3000);
-    } catch {
-      alert('Không thể sao chép tự động. Vui lòng mở file supabase_schema.sql trong mã nguồn để copy.');
+    } else {
+      setShowSqlPreview(true);
+      alert('Trình duyệt chưa cấp quyền sao chép tự động. Hệ thống đã mở khung xem mã SQL bên dưới để bạn bôi đen và copy.');
     }
   };
 
@@ -344,14 +363,43 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
               <li>Tạo một dự án mới trên Supabase (hoặc dùng dự án có sẵn).</li>
               <li>
                 Vào mục <strong>SQL Editor</strong> trên Supabase, dán và chạy kịch bản SQL khởi tạo bảng:
-                <button
-                  type="button"
-                  onClick={handleCopySql}
-                  className="ml-2 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors cursor-pointer shadow-xs"
-                >
-                  <Copy className="w-3 h-3" />
-                  {copiedSql ? 'Đã sao chép SQL!' : 'Sao chép mã SQL khởi tạo'}
-                </button>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopySql}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors cursor-pointer shadow-xs text-xs"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    {copiedSql ? '✓ Đã sao chép SQL!' : 'Sao chép mã SQL khởi tạo'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSqlPreview(!showSqlPreview)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 font-medium hover:bg-emerald-200 dark:hover:bg-emerald-900 transition-colors cursor-pointer text-xs"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    {showSqlPreview ? 'Ẩn mã SQL' : 'Xem mã SQL'}
+                  </button>
+                </div>
+
+                {showSqlPreview && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-slate-900 border border-slate-800 text-slate-100 text-[11px] font-mono">
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-slate-400">
+                      <span>supabase_schema.sql ({SUPABASE_SCHEMA_SQL.split('\n').length} dòng)</span>
+                      <button
+                        type="button"
+                        onClick={handleCopySql}
+                        className="text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1"
+                      >
+                        <Copy className="w-3 h-3" />
+                        {copiedSql ? 'Đã copy!' : 'Copy tất cả'}
+                      </button>
+                    </div>
+                    <pre className="max-h-48 overflow-y-auto whitespace-pre font-mono text-[11px] leading-relaxed text-slate-300 selection:bg-emerald-600 selection:text-white">
+                      {SUPABASE_SCHEMA_SQL}
+                    </pre>
+                  </div>
+                )}
               </li>
               <li>Vào <strong>Project Settings → API</strong> để lấy <strong>Project URL</strong> và <strong>anon / public API key</strong> rồi dán vào bên dưới.</li>
             </ol>
