@@ -56,6 +56,8 @@ export interface StudentResultItem {
   totalQuestions: number;
   tabSwitches: number;
   activityLogs: { timestamp: string; event: string; details?: string }[];
+  answers?: any;
+  detailedGrading?: any[];
   createdBy?: string;
   teacherId?: string;
 }
@@ -784,6 +786,7 @@ export class OnlineExamService {
       } catch (sbErr) {
         console.warn('Lỗi lưu student_results tới Supabase:', sbErr);
       }
+      return; // Dừng ngay, Supabase đã lưu an toàn, không gọi Firestore tránh lỗi quota/treo tiến trình
     }
 
     if (UserDataSync.getIsQuotaExceeded()) return;
@@ -795,7 +798,8 @@ export class OnlineExamService {
         examCode: resultItem.examCode ? resultItem.examCode.trim().toUpperCase() : '',
         updatedAt: new Date().toISOString(),
       });
-      await setDoc(docRef, cleanData, { merge: true });
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 2000));
+      await Promise.race([setDoc(docRef, cleanData, { merge: true }), timeoutPromise]);
     } catch (e: any) {
       if (UserDataSync.checkAndMarkQuotaError(e)) {
         console.warn('Lỗi lưu student_results tới Firestore do quota: Dữ liệu đã lưu trên trình duyệt.');
