@@ -230,15 +230,17 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          {/* Quick Access to Supabase Modal */}
-          <button
-            onClick={() => setShowSupabaseModal(true)}
-            className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-2xl font-bold text-[10px] sm:text-[11px] px-2.5 sm:px-3.5 py-1.5 sm:py-2 transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer shrink-0 shadow-xs"
-            title="Cấu hình cơ sở dữ liệu Supabase (PostgreSQL) và chuyển dữ liệu"
-          >
-            <Database className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-            <span className="hidden sm:inline">Supabase</span>
-          </button>
+          {/* Quick Access to Supabase Modal (Admin Only) */}
+          {isAdmin && (
+            <button
+              onClick={() => setShowSupabaseModal(true)}
+              className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-2xl font-bold text-[10px] sm:text-[11px] px-2.5 sm:px-3.5 py-1.5 sm:py-2 transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer shrink-0 shadow-xs"
+              title="Cấu hình cơ sở dữ liệu Supabase (PostgreSQL) và chuyển dữ liệu"
+            >
+              <Database className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+              <span className="hidden sm:inline">Supabase</span>
+            </button>
+          )}
         </div>
 
         <div className="h-6 w-[1px] bg-slate-200/80 dark:bg-slate-800/80 mx-0.5"></div>
@@ -316,20 +318,22 @@ export const Header: React.FC<HeaderProps> = ({
                   <span>Đổi Mật Khẩu</span>
                 </button>
 
-                <button
-                  onClick={() => {
-                    setIsUserMenuOpen(false);
-                    if (onOpenSupabaseModal) {
-                      onOpenSupabaseModal();
-                    } else {
-                      setShowSupabaseModal(true);
-                    }
-                  }}
-                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center space-x-2 transition-colors cursor-pointer"
-                >
-                  <Database className="w-4 h-4" />
-                  <span>Cấu Hình Supabase (PostgreSQL)</span>
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      if (onOpenSupabaseModal) {
+                        onOpenSupabaseModal();
+                      } else {
+                        setShowSupabaseModal(true);
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-xl hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-bold flex items-center space-x-2 transition-colors cursor-pointer"
+                  >
+                    <Database className="w-4 h-4" />
+                    <span>Cấu Hình Supabase (PostgreSQL)</span>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
@@ -445,11 +449,13 @@ export const Header: React.FC<HeaderProps> = ({
         document.body
       )}
 
-      {/* Supabase Configuration & Migration Modal */}
-      <SupabaseConfigModal
-        isOpen={showSupabaseModal}
-        onClose={() => setShowSupabaseModal(false)}
-      />
+      {/* Supabase Configuration & Migration Modal (Admin Only) */}
+      {isAdmin && (
+        <SupabaseConfigModal
+          isOpen={showSupabaseModal}
+          onClose={() => setShowSupabaseModal(false)}
+        />
+      )}
     </header>
   );
 };

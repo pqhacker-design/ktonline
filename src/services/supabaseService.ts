@@ -319,9 +319,11 @@ export class SupabaseService {
             createdBy: teacherStudent.created_by,
           };
         }
+        // If searching for a specific teacher's exam and student not found, do not leak other teachers' students
+        return null;
       }
 
-      // 2. Tìm chung trong toàn bộ bảng học sinh
+      // 2. Tìm chung trong toàn bộ bảng học sinh (khi không chỉ định teacherId)
       const { data: anyStudent } = await client
         .from('system_students')
         .select('*')

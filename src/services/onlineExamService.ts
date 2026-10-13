@@ -1546,6 +1546,7 @@ export class OnlineExamService {
             allowedClasses: firestoreExam.allowedClasses,
             scheduledStartTime: firestoreExam.scheduledStartTime,
             startTimeType: firestoreExam.startTimeType,
+            createdBy: firestoreExam.createdBy,
           },
         };
       }
@@ -1577,6 +1578,7 @@ export class OnlineExamService {
           allowedClasses: exam.allowedClasses,
           scheduledStartTime: exam.scheduledStartTime,
           startTimeType: exam.startTimeType,
+          createdBy: exam.createdBy,
         },
       };
     } catch {
@@ -1599,6 +1601,7 @@ export class OnlineExamService {
           allowedClasses?: string[];
           scheduledStartTime?: string;
           startTimeType?: 'immediate' | 'scheduled';
+          createdBy?: string;
         };
       }>(`/api/exam/student-info/${encodeURIComponent(cleanCode)}`);
       return res;
@@ -1685,11 +1688,20 @@ export class OnlineExamService {
         }
       }
 
-      // Database validation against classes & students (Firestore, API, Local)
+      // Database validation against classes & students (Firestore, API, Local) belonging to exam creator
+      const targetTeacherId = exam.createdBy;
       const classesRes = await this.getClasses(true);
       const studentsRes = await this.getStudents(undefined, true);
-      const localClasses = classesRes.classes || [];
-      const localStudents = studentsRes.students || [];
+      const allLocalClasses = classesRes.classes || [];
+      const allLocalStudents = studentsRes.students || [];
+
+      // Filter classes & students strictly for the exam creator
+      const localClasses = targetTeacherId && targetTeacherId !== 'guest'
+        ? allLocalClasses.filter((c) => c.createdBy === targetTeacherId || (!c.createdBy && targetTeacherId === 'guest'))
+        : allLocalClasses;
+      const localStudents = targetTeacherId && targetTeacherId !== 'guest'
+        ? allLocalStudents.filter((s) => s.createdBy === targetTeacherId || (!s.createdBy && targetTeacherId === 'guest'))
+        : allLocalStudents;
 
       const normClass = normalizeClassName(data.studentClass);
       const normName = data.studentName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
@@ -1712,7 +1724,7 @@ export class OnlineExamService {
 
         if (!isClassValid) {
           throw new Error(
-            `Cảnh báo: Lớp "${data.studentClass}" không tồn tại trên hệ thống. Vui lòng kiểm tra lại thông tin tên và lớp!`
+            `Cảnh báo: Lớp "${data.studentClass}" không thuộc danh sách lớp được quản lý bởi giáo viên tạo đề thi này. Vui lòng kiểm tra lại thông tin tên và lớp!`
           );
         }
       }
@@ -3035,9 +3047,7 @@ export class OnlineExamService {
           (s) => s.createdBy === targetUserId || (!s.createdBy && targetUserId === 'guest')
         );
         student = userStudents.find(matchStudent);
-      }
-
-      if (!student) {
+      } else {
         student = allStudents.find(matchStudent);
       }
     }

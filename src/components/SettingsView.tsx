@@ -71,7 +71,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSaveSettings,
   onClearAllData,
 }) => {
-  const { user: authUser, updateProfile, role } = useAuth();
+  const { user: authUser, updateProfile, role, isAdmin } = useAuth();
   const [profileUsername, setProfileUsername] = useState(authUser?.username || '');
   const [profileDisplayName, setProfileDisplayName] = useState(authUser?.displayName || '');
   const [newProfilePassword, setNewProfilePassword] = useState('');
@@ -578,64 +578,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </div>
 
-      {/* 6. Supabase Cloud Database (PostgreSQL) Section */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
-          <div className="flex items-center space-x-2">
-            <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-600 dark:text-emerald-400">
-              <Database className="w-5 h-5" />
+      {/* 6. Supabase Cloud Database (PostgreSQL) Section (Admin Only) */}
+      {isAdmin && (
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3">
+            <div className="flex items-center space-x-2">
+              <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-600 dark:text-emerald-400">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
+                  6. Cơ Sở Dữ Liệu Đám Mây Supabase (PostgreSQL)
+                  {supabaseActive ? (
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Đang hoạt động
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> Chưa cấu hình
+                    </span>
+                  )}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Lưu trữ người dùng, đề thi, danh sách lớp & học sinh và kết quả làm bài trên Supabase không giới hạn lượt ghi.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-extrabold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                6. Cơ Sở Dữ Liệu Đám Mây Supabase (PostgreSQL)
-                {supabaseActive ? (
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3" /> Đang hoạt động
-                  </span>
-                ) : (
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Chưa cấu hình
-                  </span>
-                )}
-              </h3>
-              <p className="text-xs text-slate-500">
-                Lưu trữ người dùng, đề thi, danh sách lớp & học sinh và kết quả làm bài trên Supabase không giới hạn lượt ghi.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowSupabaseModal(true)}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors self-start sm:self-auto shrink-0"
-          >
-            <Database className="w-4 h-4" />
-            <span>{supabaseActive ? 'Quản lý Supabase & Chuyển Dữ Liệu' : 'Cấu hình Supabase ngay'}</span>
-          </button>
-        </div>
-
-        <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 space-y-2 leading-relaxed">
-          <p>
-            {supabaseActive ? (
-              <span className="text-emerald-700 dark:text-emerald-300 font-semibold">
-                ✓ Hệ thống đang kết nối với Supabase! Mọi thao tác lưu đề thi, danh sách lớp, học sinh và kết quả làm bài đều được đồng bộ lên Supabase PostgreSQL.
-              </span>
-            ) : (
-              <span>
-                Cơ sở dữ liệu đám mây Supabase giúp thay thế hoàn toàn giới hạn hạn ngạch ghi của Firebase Spark (tránh lỗi <code>resource-exhausted: Quota limit exceeded</code>). Nhấn nút bên trên để kết nối và chuyển toàn bộ dữ liệu chỉ với 1 cú nhấp chuột.
-              </span>
-            )}
-          </p>
-          <div className="flex flex-wrap items-center gap-2 pt-1">
             <button
               type="button"
               onClick={() => setShowSupabaseModal(true)}
-              className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer flex items-center gap-1"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors self-start sm:self-auto shrink-0"
             >
-              Mở bảng điều khiển Supabase & 1-Click Migration →
+              <Database className="w-4 h-4" />
+              <span>{supabaseActive ? 'Quản lý Supabase & Chuyển Dữ Liệu' : 'Cấu hình Supabase ngay'}</span>
             </button>
           </div>
+
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 space-y-2 leading-relaxed">
+            <p>
+              {supabaseActive ? (
+                <span className="text-emerald-700 dark:text-emerald-300 font-semibold">
+                  ✓ Hệ thống đang kết nối với Supabase! Mọi thao tác lưu đề thi, danh sách lớp, học sinh và kết quả làm bài đều được đồng bộ lên Supabase PostgreSQL.
+                </span>
+              ) : (
+                <span>
+                  Cơ sở dữ liệu đám mây Supabase giúp thay thế hoàn toàn giới hạn hạn ngạch ghi của Firebase Spark (tránh lỗi <code>resource-exhausted: Quota limit exceeded</code>). Nhấn nút bên trên để kết nối và chuyển toàn bộ dữ liệu chỉ với 1 cú nhấp chuột.
+                </span>
+              )}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowSupabaseModal(true)}
+                className="text-emerald-600 dark:text-emerald-400 font-bold hover:underline cursor-pointer flex items-center gap-1"
+              >
+                Mở bảng điều khiển Supabase & 1-Click Migration →
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 7. Backup & Data Export Section */}
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
@@ -1088,11 +1090,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* Supabase Configuration & 1-Click Migration Modal */}
-      <SupabaseConfigModal
-        isOpen={showSupabaseModal}
-        onClose={() => setShowSupabaseModal(false)}
-      />
+      {/* Supabase Configuration & 1-Click Migration Modal (Admin Only) */}
+      {isAdmin && (
+        <SupabaseConfigModal
+          isOpen={showSupabaseModal}
+          onClose={() => setShowSupabaseModal(false)}
+        />
+      )}
     </div>
   );
 };

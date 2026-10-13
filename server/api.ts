@@ -715,8 +715,7 @@ export function registerExamRoutes(app: express.Express) {
             if (targetUserId) {
               const res = await client.from('system_students').select('*').eq('created_by', targetUserId).ilike('sbd', cleanSbdUpper).maybeSingle();
               data = res.data;
-            }
-            if (!data) {
+            } else {
               const res = await client.from('system_students').select('*').ilike('sbd', cleanSbdUpper).limit(1).maybeSingle();
               data = res.data;
             }
@@ -1002,6 +1001,7 @@ export function registerExamRoutes(app: express.Express) {
           scheduledStartTime: exam.scheduledStartTime,
           startTimeType: exam.startTimeType || (exam.scheduledStartTime ? 'scheduled' : 'immediate'),
           questionCount: exam.examPackage?.exams?.[0]?.questions?.length || 0,
+          createdBy: exam.createdBy,
         },
       });
     } catch (err: any) {
@@ -1093,15 +1093,53 @@ export function registerExamRoutes(app: express.Express) {
         }
       }
 
-      // 3. Validate student Name and Class against system database (ClassRepository)
-      const allClasses = ClassRepository.getClasses();
-      const allStudents = ClassRepository.getStudents();
+      // 3. Validate student Name and Class against system database (ClassRepository) belonging to exam creator
+      const targetUserId = exam.createdBy;
+      let allClasses = ClassRepository.getClasses(targetUserId);
+      let allStudents = ClassRepository.getStudents(undefined, targetUserId);
+
+      // If local DB doesn't have them, attempt Supabase lookup for this teacher
+      if (allClasses.length === 0 && allStudents.length === 0 && targetUserId) {
+        const client = getServerSupabaseClient();
+        if (client) {
+          try {
+            const [clsRes, stRes] = await Promise.all([
+              client.from('system_classes').select('*').eq('created_by', targetUserId),
+              client.from('system_students').select('*').eq('created_by', targetUserId),
+            ]);
+            if (clsRes.data && clsRes.data.length > 0) {
+              allClasses = clsRes.data.map((r: any) => ({
+                id: r.id,
+                name: r.name,
+                grade: r.grade,
+                school: r.school,
+                createdBy: r.created_by,
+                studentCount: r.student_count || 0,
+              }));
+            }
+            if (stRes.data && stRes.data.length > 0) {
+              allStudents = stRes.data.map((r: any) => ({
+                id: r.id,
+                classId: r.class_id,
+                className: r.class_name,
+                sbd: r.sbd,
+                name: r.name,
+                gender: r.gender,
+                dob: r.dob,
+                notes: r.notes,
+                createdBy: r.created_by,
+                createdAt: r.created_at,
+              }));
+            }
+          } catch {}
+        }
+      }
 
       const normClass = normalizeClassName(studentClass);
       const normName = studentName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
       const normSbd = studentId ? studentId.trim().toLowerCase() : '';
 
-      // Validate class existence if system has class or student database
+      // Validate class existence if system has class or student database for this teacher
       if (allClasses.length > 0 || allStudents.length > 0) {
         const matchingClass = allClasses.find((c) => normalizeClassName(c.name) === normClass || c.id === studentClass);
         if (matchingClass && examGradeNum) {
@@ -1120,7 +1158,7 @@ export function registerExamRoutes(app: express.Express) {
 
         if (!isClassInSystem) {
           return res.status(400).json({
-            error: `Cảnh báo: Lớp "${studentClass}" không tồn tại trên hệ thống. Vui lòng kiểm tra lại thông tin tên và lớp!`,
+            error: `Cảnh báo: Lớp "${studentClass}" không thuộc danh sách lớp được quản lý bởi giáo viên tạo đề thi này. Vui lòng kiểm tra lại thông tin tên và lớp!`,
           });
         }
       }

@@ -442,6 +442,14 @@ export class ClassRepository {
       return false;
     };
 
+    // If targetUserId is specified, ONLY search within that teacher's students
+    if (targetUserId && targetUserId !== 'admin' && targetUserId !== 'ALL') {
+      const userStudents = students.filter(
+        (s) => s.createdBy === targetUserId || (!s.createdBy && targetUserId === 'guest')
+      );
+      return userStudents.find(matchStudent);
+    }
+
     return students.find(matchStudent);
   }
 }

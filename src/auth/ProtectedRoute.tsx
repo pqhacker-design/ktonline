@@ -11,8 +11,10 @@ interface ProtectedRouteProps {
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
+  requiredRole,
+  fallback,
 }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
 
   if (loading) {
     return (
@@ -26,6 +28,22 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // Not logged in
   if (!user) {
     return <Login />;
+  }
+
+  // Role restriction
+  if (requiredRole === 'admin' && !isAdmin) {
+    if (fallback) return <>{fallback}</>;
+    return (
+      <div className="p-8 max-w-lg mx-auto my-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-center space-y-4 shadow-xl">
+        <div className="w-12 h-12 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mx-auto">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h3 className="font-extrabold text-base text-slate-900 dark:text-white">Quyền Truy Cập Bị Giới Hạn</h3>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Khu vực này chỉ dành riêng cho tài khoản Quản trị viên (Admin). Tài khoản của bạn không có quyền truy cập vào mục này.
+        </p>
+      </div>
+    );
   }
 
   return <>{children}</>;

@@ -111,6 +111,13 @@ export default function App() {
     };
   }, [currentUserId]);
 
+  // If a regular user is on an admin-only tab (settings or user_management), redirect to dashboard
+  useEffect(() => {
+    if (!isAdmin && (activeTab === 'settings' || activeTab === 'user_management')) {
+      setActiveTab('dashboard');
+    }
+  }, [isAdmin, activeTab]);
+
   // Online Exam System States
   const [studentInitialCode, setStudentInitialCode] = useState<string>('');
   const [resultsSelectedCode, setResultsSelectedCode] = useState<string>('ALL');
@@ -901,11 +908,13 @@ export default function App() {
               )}
 
               {activeTab === 'settings' && (
-                <SettingsView
-                  settings={settings}
-                  onSaveSettings={handleSaveSettings}
-                  onClearAllData={handleClearAllData}
-                />
+                <ProtectedRoute requiredRole="admin">
+                  <SettingsView
+                    settings={settings}
+                    onSaveSettings={handleSaveSettings}
+                    onClearAllData={handleClearAllData}
+                  />
+                </ProtectedRoute>
               )}
             </main>
           </div>
@@ -1020,10 +1029,12 @@ export default function App() {
         onClose={() => setNotificationModal({ isOpen: false, title: '', message: '' })}
       />
 
-      <SupabaseConfigModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-      />
+      {isAdmin && (
+        <SupabaseConfigModal
+          isOpen={isSupabaseModalOpen}
+          onClose={() => setIsSupabaseModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

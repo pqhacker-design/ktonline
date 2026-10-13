@@ -94,14 +94,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'specification', label: 'Bảng đặc tả YCCĐ', icon: Layers },
     { id: 'bank', label: 'Ngân hàng câu hỏi', icon: BookOpen },
     { id: 'answers', label: 'Đáp án & Rubric', icon: CheckSquare },
-    ...(isAdmin ? [{
-      id: 'user_management' as TabType,
-      label: 'Quản lý người dùng',
-      icon: Users,
-      badge: 'ADMIN',
-      glowColor: 'indigo'
-    }] : []),
-    { id: 'settings', label: 'Cài đặt hệ thống', icon: Settings, badge: 'API key' },
+    ...(isAdmin ? [
+      {
+        id: 'user_management' as TabType,
+        label: 'Quản lý người dùng',
+        icon: Users,
+        badge: 'ADMIN',
+        glowColor: 'indigo'
+      },
+      {
+        id: 'settings' as TabType,
+        label: 'Cài đặt hệ thống',
+        icon: Settings,
+        badge: 'API key'
+      }
+    ] : []),
     { id: 'student_exam', label: 'Học sinh làm bài', icon: Laptop, badge: 'ONLINE', glowColor: 'indigo' },
   ];
 
@@ -210,87 +217,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               );
             })}
 
-            {/* Supabase PostgreSQL Configuration Entry */}
-            <div className="pt-2 mt-2 border-t border-slate-200/50 dark:border-slate-800/50">
-              <button
-                type="button"
-                onClick={() => {
-                  if (onOpenSupabaseModal) {
-                    onOpenSupabaseModal();
-                  }
-                  setIsOpen(false);
-                }}
-                title={isCollapsed ? 'Cấu hình Supabase (PostgreSQL)' : undefined}
-                className={`group relative w-full flex items-center ${
-                  isCollapsed ? 'justify-center px-2' : 'justify-between px-3'
-                } py-2.5 rounded-2xl font-bold text-xs transition-all duration-200 cursor-pointer ${
-                  isSupabaseActive
-                    ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
-                    : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 shadow-xs'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div
-                    className={`p-1.5 rounded-xl transition-transform group-hover:scale-105 shrink-0 text-white shadow-xs ${
-                      isSupabaseActive
-                        ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
-                        : 'bg-gradient-to-br from-amber-500 to-orange-500 animate-pulse'
-                    }`}
-                  >
-                    <Database className="w-4 h-4 shrink-0" />
-                  </div>
-                  {!isCollapsed && (
-                    <div className="text-left min-w-0 truncate">
-                      <div className="truncate font-extrabold text-[12px] flex items-center gap-1.5">
-                        <span>Cấu hình Supabase</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
-                        {isSupabaseActive ? 'PostgreSQL đang kết nối' : 'Nhập URL & API Key'}
-                      </div>
-                    </div>
-                  )}
-                </div>
-                {!isCollapsed && (
-                  <span
-                    className={`px-2 py-0.5 text-[9px] font-black tracking-wider uppercase rounded-full text-white shadow-xs shrink-0 ${
-                      isSupabaseActive ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
-                    }`}
-                  >
-                    {isSupabaseActive ? 'ĐÃ KẾT NỐI' : 'CẦN CẤU HÌNH'}
-                  </span>
-                )}
-              </button>
-            </div>
-          </nav>
-
-          {/* Footer Settings & Theme Toggle */}
-          <div className="p-3 border-t border-slate-200/50 dark:border-slate-800/50 space-y-2 shrink-0">
-            {/* Supabase Quick Management in Footer */}
-            {!isCollapsed ? (
-              <div
-                className={`p-2.5 rounded-2xl border transition-all ${
-                  isSupabaseActive
-                    ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-500/30'
-                    : 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-500/40'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Database className={`w-3.5 h-3.5 ${isSupabaseActive ? 'text-emerald-500' : 'text-amber-500'}`} />
-                    <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">
-                      Supabase Cloud DB
-                    </span>
-                  </div>
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
-                      isSupabaseActive
-                        ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
-                        : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold'
-                    }`}
-                  >
-                    {isSupabaseActive ? 'Hoạt động' : 'Chưa cấu hình'}
-                  </span>
-                </div>
+            {/* Supabase PostgreSQL Configuration Entry (Admin Only) */}
+            {isAdmin && (
+              <div className="pt-2 mt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                 <button
                   type="button"
                   onClick={() => {
@@ -299,34 +228,116 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }
                     setIsOpen(false);
                   }}
-                  className={`w-full py-1.5 px-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer text-white ${
+                  title={isCollapsed ? 'Cấu hình Supabase (PostgreSQL)' : undefined}
+                  className={`group relative w-full flex items-center ${
+                    isCollapsed ? 'justify-center px-2' : 'justify-between px-3'
+                  } py-2.5 rounded-2xl font-bold text-xs transition-all duration-200 cursor-pointer ${
                     isSupabaseActive
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
-                      : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+                      ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+                      : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 shadow-xs'
                   }`}
                 >
-                  <Settings className="w-3 h-3" />
-                  <span>{isSupabaseActive ? 'Quản lý Supabase' : 'Nhập cấu hình Supabase ngay'}</span>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`p-1.5 rounded-xl transition-transform group-hover:scale-105 shrink-0 text-white shadow-xs ${
+                        isSupabaseActive
+                          ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
+                          : 'bg-gradient-to-br from-amber-500 to-orange-500 animate-pulse'
+                      }`}
+                    >
+                      <Database className="w-4 h-4 shrink-0" />
+                    </div>
+                    {!isCollapsed && (
+                      <div className="text-left min-w-0 truncate">
+                        <div className="truncate font-extrabold text-[12px] flex items-center gap-1.5">
+                          <span>Cấu hình Supabase</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400 font-medium truncate">
+                          {isSupabaseActive ? 'PostgreSQL đang kết nối' : 'Nhập URL & API Key'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {!isCollapsed && (
+                    <span
+                      className={`px-2 py-0.5 text-[9px] font-black tracking-wider uppercase rounded-full text-white shadow-xs shrink-0 ${
+                        isSupabaseActive ? 'bg-emerald-600' : 'bg-amber-500 animate-pulse'
+                      }`}
+                    >
+                      {isSupabaseActive ? 'ĐÃ KẾT NỐI' : 'CẦN CẤU HÌNH'}
+                    </span>
+                  )}
                 </button>
               </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (onOpenSupabaseModal) {
-                    onOpenSupabaseModal();
-                  }
-                  setIsOpen(false);
-                }}
-                className={`w-full flex items-center justify-center p-2 rounded-xl border transition-colors cursor-pointer ${
-                  isSupabaseActive
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600'
-                    : 'border-amber-500/40 bg-amber-500/10 text-amber-600'
-                }`}
-                title={isSupabaseActive ? 'Supabase: Đã kết nối' : 'Cấu hình Supabase (Chưa kết nối)'}
-              >
-                <Database className="w-4 h-4" />
-              </button>
+            )}
+          </nav>
+
+          {/* Footer Settings & Theme Toggle */}
+          <div className="p-3 border-t border-slate-200/50 dark:border-slate-800/50 space-y-2 shrink-0">
+            {/* Supabase Quick Management in Footer (Admin Only) */}
+            {isAdmin && (
+              !isCollapsed ? (
+                <div
+                  className={`p-2.5 rounded-2xl border transition-all ${
+                    isSupabaseActive
+                      ? 'bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-500/30'
+                      : 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-500/40'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Database className={`w-3.5 h-3.5 ${isSupabaseActive ? 'text-emerald-500' : 'text-amber-500'}`} />
+                      <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">
+                        Supabase Cloud DB
+                      </span>
+                    </div>
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                        isSupabaseActive
+                          ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 font-bold'
+                      }`}
+                    >
+                      {isSupabaseActive ? 'Hoạt động' : 'Chưa cấu hình'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenSupabaseModal) {
+                        onOpenSupabaseModal();
+                      }
+                      setIsOpen(false);
+                    }}
+                    className={`w-full py-1.5 px-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer text-white ${
+                      isSupabaseActive
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+                    }`}
+                  >
+                    <Settings className="w-3 h-3" />
+                    <span>{isSupabaseActive ? 'Quản lý Supabase' : 'Nhập cấu hình Supabase ngay'}</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenSupabaseModal) {
+                      onOpenSupabaseModal();
+                    }
+                    setIsOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-center p-2 rounded-xl border transition-colors cursor-pointer ${
+                    isSupabaseActive
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-600'
+                      : 'border-amber-500/40 bg-amber-500/10 text-amber-600'
+                  }`}
+                  title={isSupabaseActive ? 'Supabase: Đã kết nối' : 'Cấu hình Supabase (Chưa kết nối)'}
+                >
+                  <Database className="w-4 h-4" />
+                </button>
+              )
             )}
 
             {!isCollapsed && (

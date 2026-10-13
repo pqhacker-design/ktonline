@@ -323,9 +323,18 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
     const studentNormName = curName.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
     const examGradeNum = examInfo?.grade ? extractGradeNumber(examInfo.grade) : null;
 
+    // Filter systemClasses and systemStudents strictly for the teacher who created this exam
+    const examCreatorId = examInfo?.createdBy;
+    const filteredClasses = examCreatorId && examCreatorId !== 'guest'
+      ? systemClasses.filter((c) => c.createdBy === examCreatorId || (!c.createdBy && examCreatorId === 'guest'))
+      : systemClasses;
+    const filteredStudents = examCreatorId && examCreatorId !== 'guest'
+      ? systemStudents.filter((s) => s.createdBy === examCreatorId || (!s.createdBy && examCreatorId === 'guest'))
+      : systemStudents;
+
     // 3. Client-side validation for System Classes
-    if (systemClasses.length > 0 || systemStudents.length > 0) {
-      const matchingClass = systemClasses.find((c) => normalizeClassName(c.name) === studentNormClass || c.id === curClass);
+    if (filteredClasses.length > 0 || filteredStudents.length > 0) {
+      const matchingClass = filteredClasses.find((c) => normalizeClassName(c.name) === studentNormClass || c.id === curClass);
       if (matchingClass && examGradeNum) {
         const classGradeNum = extractGradeNumber(matchingClass.grade) || extractGradeNumber(matchingClass.name);
         if (classGradeNum && classGradeNum !== examGradeNum) {
@@ -337,19 +346,19 @@ export const StudentExamView: React.FC<StudentExamViewProps> = ({
 
       const isClassValid =
         !!matchingClass ||
-        systemStudents.some((s) => normalizeClassName(s.className) === studentNormClass) ||
+        filteredStudents.some((s) => normalizeClassName(s.className) === studentNormClass) ||
         (examInfo?.allowedClasses && examInfo.allowedClasses.some((c: string) => normalizeClassName(c) === studentNormClass));
 
       if (!isClassValid) {
-        setLoginError(`Cảnh báo: Lớp "${curClass}" không tồn tại trên hệ thống. Vui lòng kiểm tra lại thông tin Lớp!`);
+        setLoginError(`Cảnh báo: Lớp "${curClass}" không thuộc danh sách lớp được quản lý bởi giáo viên tạo đề thi này. Vui lòng kiểm tra lại thông tin Lớp!`);
         setCheckingCode(false);
         return;
       }
     }
 
     // 4. Client-side validation for System Students
-    if (systemStudents.length > 0) {
-      const matchingNameStudents = systemStudents.filter(
+    if (filteredStudents.length > 0) {
+      const matchingNameStudents = filteredStudents.filter(
         (s) => s.name.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ') === studentNormName ||
                s.name.trim().toLowerCase() === curName.trim().toLowerCase()
       );
