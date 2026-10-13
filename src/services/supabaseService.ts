@@ -100,11 +100,50 @@ export class SupabaseService {
     }
   }
 
-  static async deleteUser(id: string): Promise<boolean> {
+  static async deleteUser(id: string, cascade: boolean = false): Promise<boolean> {
     const client = getSupabaseClient();
     if (!client) return false;
 
     try {
+      if (cascade) {
+        // 1. Find all exam codes published by this user to delete their student results
+        try {
+          const { data: userExams } = await client
+            .from('published_exams')
+            .select('code')
+            .eq('created_by', id);
+
+          const codes = (userExams || []).map((e: any) => (e.code || '').trim().toUpperCase()).filter(Boolean);
+          if (codes.length > 0) {
+            await client.from('student_results').delete().in('exam_code', codes);
+          }
+        } catch (e) {
+          console.warn('[Supabase Cascade] Lỗi xóa student_results của các đề thi do user tạo:', e);
+        }
+
+        // 2. Delete published_exams created by user
+        try {
+          await client.from('published_exams').delete().eq('created_by', id);
+        } catch (e) {
+          console.warn('[Supabase Cascade] Lỗi xóa published_exams:', e);
+        }
+
+        // 3. Delete classes and students created by user
+        try {
+          await client.from('system_classes').delete().eq('created_by', id);
+          await client.from('system_students').delete().eq('created_by', id);
+        } catch (e) {
+          console.warn('[Supabase Cascade] Lỗi xóa system_classes/students:', e);
+        }
+
+        // 4. Delete user_data for user
+        try {
+          await client.from('user_data').delete().eq('user_id', id);
+        } catch (e) {
+          console.warn('[Supabase Cascade] Lỗi xóa user_data:', e);
+        }
+      }
+
       const { error } = await client.from('users').delete().eq('id', id);
       if (error) throw error;
       return true;

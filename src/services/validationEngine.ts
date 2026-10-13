@@ -1,4 +1,4 @@
-import { ExamMetadata, MatrixRow, Question, SpecRow } from '../types';
+import { ExamMetadata, MatrixRow, Question, SpecRow, calculateExamScores } from '../types';
 import { safeJsonParse } from './jsonRepair';
 
 export interface ValidationResult {
@@ -198,6 +198,63 @@ export class ValidationEngine {
       }
 
       repairedQuestions.push(validQuestion);
+    }
+
+    // 1b. ĐẢM BẢO TỔNG ĐIỂM TOÀN ĐỀ THI VÀ PHẦN TỰ LUẬN CHÍNH XÁC 10.0 ĐIỂM
+    const part4List = repairedQuestions.filter((q) => q.partType === 'PART4');
+    if (part4List.length > 0) {
+      const p1Sum = repairedQuestions
+        .filter((q) => q.partType === 'PART1')
+        .reduce((sum, q) => sum + (q.points || 0), 0);
+      const p2Sum = repairedQuestions
+        .filter((q) => q.partType === 'PART2')
+        .reduce((sum, q) => sum + (q.points || 0), 0);
+      const p3Sum = repairedQuestions
+        .filter((q) => q.partType === 'PART3')
+        .reduce((sum, q) => sum + (q.points || 0), 0);
+
+      const targetP4Total = Math.max(0, Math.round((10.0 - (p1Sum + p2Sum + p3Sum)) * 100) / 100);
+      const currentP4Sum = part4List.reduce((sum, q) => sum + (q.points || 0), 0);
+
+      // Nếu tổng điểm phần tự luận bị lệch so với 10.0 điểm, tự động cân bằng chính xác
+      if (Math.abs(currentP4Sum - targetP4Total) > 0.01) {
+        const examScoreConfig = calculateExamScores(metadata.questionCounts);
+        const configuredAdvPoints = metadata.questionCounts.part4_AdvancedPoints ?? examScoreConfig.advPts;
+        const configuredApplyPoints = examScoreConfig.applyPts;
+
+        let accumulated = 0;
+        part4List.forEach((q, idx) => {
+          if (idx === part4List.length - 1) {
+            // Câu cuối cùng bù trừ để tổng đạt chính xác targetP4Total
+            const finalPts = Math.max(0.25, Math.round((targetP4Total - accumulated) * 100) / 100);
+            q.points = finalPts;
+          } else {
+            const isAdv = q.cognitiveLevel === 'ADVANCED' || q.cognitiveLevel === 'VDC';
+            const defaultPt = isAdv ? configuredAdvPoints : configuredApplyPoints;
+            const assignedPt = Math.max(0.25, Math.round((defaultPt || (targetP4Total / part4List.length)) * 100) / 100);
+            q.points = assignedPt;
+            accumulated += assignedPt;
+          }
+
+          // Cân bằng lại rubric của câu tự luận nếu có để khớp với points của câu
+          if (Array.isArray(q.rubric) && q.rubric.length > 0) {
+            const currentRubricSum = q.rubric.reduce((s, r) => s + (Number(r.points) || 0), 0);
+            if (currentRubricSum > 0 && Math.abs(currentRubricSum - q.points) > 0.01) {
+              const ratio = q.points / currentRubricSum;
+              let rAccum = 0;
+              q.rubric.forEach((r, rIdx) => {
+                if (rIdx === q.rubric!.length - 1) {
+                  r.points = Math.round((q.points! - rAccum) * 100) / 100;
+                } else {
+                  const p = Math.round((Number(r.points) * ratio) * 100) / 100;
+                  r.points = p;
+                  rAccum += p;
+                }
+              });
+            }
+          }
+        });
+      }
     }
 
     // Repair Matrix if needed

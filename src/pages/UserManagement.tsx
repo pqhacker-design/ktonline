@@ -74,6 +74,7 @@ export const UserManagement: React.FC = () => {
 
   // Delete Confirm State
   const [deletingUser, setDeletingUser] = useState<AppUser | null>(null);
+  const [deleteCascade, setDeleteCascade] = useState(true);
   const [deleting, setDeleting] = useState(false);
 
   // Wipe / Reset Database Modal State
@@ -296,7 +297,7 @@ export const UserManagement: React.FC = () => {
     setDeleting(true);
     try {
       const targetId = deletingUser.id || deletingUser.username || 'admin';
-      await userService.deleteUser(targetId);
+      await userService.deleteUser(targetId, deleteCascade);
       setDeletingUser(null);
     } catch (err: any) {
       alert('Không thể xóa tài khoản: ' + err.message);
@@ -1098,16 +1099,37 @@ export const UserManagement: React.FC = () => {
       {/* Delete Confirmation Modal */}
       {deletingUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 text-center space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl">
             <div className="w-12 h-12 bg-rose-950 text-rose-400 border border-rose-800 rounded-2xl flex items-center justify-center mx-auto">
               <AlertTriangle className="w-6 h-6" />
             </div>
             <div>
               <h3 className="font-extrabold text-white text-base">Xác Nhận Xóa Tài Khoản</h3>
               <p className="text-xs text-slate-400 mt-1">
-                Bạn có chắc chắn muốn xóa tài khoản <strong className="text-rose-400">{deletingUser.username}</strong> không?
+                Bạn có chắc chắn muốn xóa tài khoản <strong className="text-rose-400">{deletingUser.displayName ? `${deletingUser.displayName} (${deletingUser.username})` : deletingUser.username}</strong> không?
               </p>
             </div>
+
+            {/* Cascade deletion option */}
+            <div className="text-left bg-slate-950/70 border border-slate-800 p-3.5 rounded-2xl space-y-2">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteCascade}
+                  onChange={(e) => setDeleteCascade(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-rose-600 focus:ring-rose-500 bg-slate-900 border-slate-700 cursor-pointer shrink-0"
+                />
+                <div className="space-y-0.5">
+                  <span className="text-xs font-bold text-slate-200 block">
+                    Xóa sạch toàn bộ dữ liệu đi theo người dùng này (Khuyên dùng)
+                  </span>
+                  <span className="text-[11px] text-slate-400 block leading-relaxed">
+                    Bao gồm tất cả đề thi trực tuyến (<code className="text-rose-400 font-mono">published_exams</code>), kết quả bài thi học sinh (<code className="text-rose-400 font-mono">student_results</code>), danh sách lớp & học sinh (<code className="text-rose-400 font-mono">system_classes</code>, <code className="text-rose-400 font-mono">system_students</code>) và kho đề cá nhân do tài khoản này tạo.
+                  </span>
+                </div>
+              </label>
+            </div>
+
             <div className="flex items-center space-x-3 pt-2">
               <button
                 onClick={() => setDeletingUser(null)}
@@ -1120,7 +1142,7 @@ export const UserManagement: React.FC = () => {
                 disabled={deleting}
                 className="w-1/2 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs rounded-xl transition-colors flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-60"
               >
-                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Xóa Ngay</span>}
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Xóa Tài Khoản</span>}
               </button>
             </div>
           </div>

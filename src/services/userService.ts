@@ -574,12 +574,12 @@ export const userService = {
   },
 
   /**
-   * Admin deletes a user account
+   * Admin deletes a user account with optional cascade deletion of user-associated data
    */
-  async deleteUser(docId: string): Promise<void> {
+  async deleteUser(docId: string, cascade: boolean = false): Promise<void> {
     if (SupabaseService.isEnabled()) {
       try {
-        await SupabaseService.deleteUser(docId);
+        await SupabaseService.deleteUser(docId, cascade);
       } catch (e) {
         console.warn('Lỗi xóa user trên Supabase:', e);
       }
@@ -587,11 +587,69 @@ export const userService = {
 
     if (UserDataSync.getIsQuotaExceeded()) {
       if (SupabaseService.isEnabled()) {
-        return; // Successfully deleted in Supabase
+        return; // Successfully handled in Supabase
       }
       throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn. Vui lòng thử lại vào ngày mai.');
     }
+
     try {
+      if (cascade) {
+        // 1. Delete user_data document for this user
+        try {
+          await deleteDoc(doc(db, 'user_data', docId));
+        } catch (e) {
+          console.warn('[Cascade] Lỗi xóa user_data trên Firestore:', e);
+        }
+
+        // 2. Query and delete published_exams created by this user & their student_results
+        try {
+          const qExams = query(collection(db, 'published_exams'), where('createdBy', '==', docId));
+          const examSnaps = await getDocs(qExams);
+          const examCodes: string[] = [];
+
+          for (const examDoc of examSnaps.docs) {
+            const data = examDoc.data();
+            if (data && data.code) {
+              examCodes.push(data.code.trim().toUpperCase());
+            }
+            await deleteDoc(doc(db, 'published_exams', examDoc.id));
+          }
+
+          // Delete all student_results corresponding to those exam codes
+          for (const code of examCodes) {
+            try {
+              const qResults = query(collection(db, 'student_results'), where('examCode', '==', code));
+              const resSnaps = await getDocs(qResults);
+              for (const resDoc of resSnaps.docs) {
+                await deleteDoc(doc(db, 'student_results', resDoc.id));
+              }
+            } catch (errRes) {
+              console.warn(`[Cascade] Lỗi xóa student_results cho mã đề ${code}:`, errRes);
+            }
+          }
+        } catch (e) {
+          console.warn('[Cascade] Lỗi xóa published_exams trên Firestore:', e);
+        }
+
+        // 3. Delete system_classes and system_students created by this user
+        try {
+          const qClasses = query(collection(db, 'system_classes'), where('createdBy', '==', docId));
+          const classSnaps = await getDocs(qClasses);
+          for (const clsDoc of classSnaps.docs) {
+            await deleteDoc(doc(db, 'system_classes', clsDoc.id));
+          }
+
+          const qStudents = query(collection(db, 'system_students'), where('createdBy', '==', docId));
+          const studentSnaps = await getDocs(qStudents);
+          for (const stDoc of studentSnaps.docs) {
+            await deleteDoc(doc(db, 'system_students', stDoc.id));
+          }
+        } catch (e) {
+          console.warn('[Cascade] Lỗi xóa system_classes/students trên Firestore:', e);
+        }
+      }
+
+      // Delete user document in users collection
       const userDocRef = doc(db, USERS_COLLECTION, docId);
       await deleteDoc(userDocRef);
     } catch (err: any) {

@@ -166,7 +166,7 @@ export class ShuffleEngine {
         part4Answers: processedPart4.map((q) => ({
           questionNumber: q.number,
           essayAnswerGuide: q.essayAnswerGuide || '',
-          points: q.points || 1.0,
+          points: typeof q.points === 'number' ? q.points : 1.0,
           rubric: q.rubric,
         })),
       };

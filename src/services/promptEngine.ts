@@ -15,8 +15,8 @@ BẮT BUỘC TUÂN THỦ CÁC NGUYÊN TẮC SAU:
    - PHẦN I: Trắc nghiệm nhiều phương án lựa chọn (Mỗi câu hỏi có 4 phương án A, B, C, D, chỉ chọn 1 phương án đúng).
    - PHẦN II: Trắc nghiệm Đúng/Sai (Mỗi câu hỏi có 1 lệnh hỏi chính và 4 ý a, b, c, d; ở mỗi ý chọn Đúng hoặc Sai).
    - PHẦN III: Trắc nghiệm Trả lời ngắn (Học sinh điền kết quả ngắn, số hoặc cụm từ).
-   - PHẦN IV: Tự luận (Các câu hỏi tự luận bao gồm ĐẦY ĐỦ CẢ 4 MỨC ĐỘ NHẬN THỨC: Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao kèm Thang điểm & Rubric chi tiết).
-4. Phân bổ đúng tỷ lệ mức độ nhận thức: Nhận biết (REMEMBER / NB), Thông hiểu (UNDERSTAND / TH), Vận dụng (APPLY / VD), Vận dụng cao (ADVANCED / VDC). Với phần Tự luận (Phần IV), BẮT BUỘC phải bao gồm đầy đủ cả 4 mức độ nhận thức này.
+   - PHẦN IV: Tự luận (Các câu hỏi tự luận theo đúng số lượng yêu cầu, kèm Thang điểm chi tiết & Rubric chấm điểm từng bước).
+4. Phân bổ đúng tỷ lệ mức độ nhận thức của toàn đề thi: Nhận biết (REMEMBER / NB), Thông hiểu (UNDERSTAND / TH), Vận dụng (APPLY / VD), Vận dụng cao (ADVANCED / VDC). Với phần Tự luận (Phần IV), các câu hỏi tự luận chủ yếu tập trung vào Vận dụng (APPLY) và Vận dụng cao (ADVANCED), hoặc theo đúng số lượng đã cấu hình. Điểm số của từng câu tự luận PHẢI khớp chính xác với quỹ điểm được giao.
 5. QUY TẮC CÔNG THỨC TOÁN HỌC, HÓA HỌC & TIẾNG VIỆT (BẮT BUỘC TUÂN THỦ 100%):
    - CHỈ bọc KÝ HIỆU HOẶC BIỂU THỨC TOÁN HỌC / HÓA HỌC bằng dấu $...$ (ví dụ: $\Delta ABC$, $AB = 4\\text{ cm}$, $\\widehat{A} = 60^\\circ$, $k = \\frac{2}{3}$, $\\forall x \\in \\mathbb{R}$).
    - MỌI CÔNG THỨC HÓA HỌC ($C_2H_5OH$, $CH_3COOH$, $H_2SO_4$, $CO_2$, $H_2O$, $NaHCO_3$), PHƯƠNG TRÌNH HÓA HỌC VÀ ĐẠI LƯỢNG $n_{acid}$, $m_{\\text{ester}}$, $CO_2\\uparrow$, $BaSO_4\\downarrow$ BẮT BUỘC BỌC TRONG $...$.
@@ -100,12 +100,28 @@ HÃY SINH MA TRẬN, BẢNG ĐẶC TẢ VÀ ĐỀ KIỂM TRA CHUẨN CÔNG VĂN 
 - Chế độ đề: ${modeDescription}
 ${referenceSection}
 📊 CẤU TRÚC SỐ LƯỢNG CÂU HỎI THEO DẠNG VÀ THANG ĐIỂM CHI TIẾT:
-- Phần I (Trắc nghiệm 4 lựa chọn): ${questionCounts.part1_MCQSingle} câu (Mỗi câu ${questionCounts.part1_PointsPerQuestion ?? 0.25} điểm)
-- Phần II (Trắc nghiệm Đúng/Sai): ${questionCounts.part2_MCQTrueFalse} câu (Mỗi câu ${questionCounts.part2_PointsPerQuestion ?? 1.0} điểm, gồm chính xác ${questionCounts.part2_TFStatementsPerQuestion ?? 4} ý Đúng/Sai, điểm chia đều: ${((questionCounts.part2_PointsPerQuestion ?? 1.0) / (questionCounts.part2_TFStatementsPerQuestion ?? 4)).toFixed(2)}đ/ý)
-- Phần III (Trắc nghiệm Trả lời ngắn): ${questionCounts.part3_MCQShort} câu (Mỗi câu ${questionCounts.part3_PointsPerQuestion ?? 0.25} điểm)
+- Phần I (Trắc nghiệm 4 lựa chọn): ${questionCounts.part1_MCQSingle} câu (Mỗi câu ${questionCounts.part1_PointsPerQuestion ?? 0.25} điểm, Tổng = ${Math.round((questionCounts.part1_MCQSingle || 0) * (questionCounts.part1_PointsPerQuestion ?? 0.25) * 100) / 100}đ)
+- Phần II (Trắc nghiệm Đúng/Sai): ${questionCounts.part2_MCQTrueFalse} câu (Mỗi câu ${questionCounts.part2_PointsPerQuestion ?? 1.0} điểm, gồm chính xác ${questionCounts.part2_TFStatementsPerQuestion ?? 4} ý Đúng/Sai, điểm chia đều: ${((questionCounts.part2_PointsPerQuestion ?? 1.0) / (questionCounts.part2_TFStatementsPerQuestion ?? 4)).toFixed(2)}đ/ý, Tổng = ${Math.round((questionCounts.part2_MCQTrueFalse || 0) * (questionCounts.part2_PointsPerQuestion ?? 1.0) * 100) / 100}đ)
+- Phần III (Trắc nghiệm Trả lời ngắn): ${questionCounts.part3_MCQShort} câu (Mỗi câu ${questionCounts.part3_PointsPerQuestion ?? 0.25} điểm, Tổng = ${Math.round((questionCounts.part3_MCQShort || 0) * (questionCounts.part3_PointsPerQuestion ?? 0.25) * 100) / 100}đ)
 - Phần IV (Tự luận): ${questionCounts.part4_Essay} câu tự luận.
-  * YÊU CẦU PHẦN TỰ LUẬN BẮT BUỘC ĐẦY ĐỦ CẢ 4 MỨC ĐỘ NHẬN THỨC: Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao.
-  * LƯU Ý GÁN ĐIỂM SỐ CÂU TỰ LUẬN: Tổng quỹ điểm tự luận là ${Math.max(0, Math.round((10.0 - ((questionCounts.part1_MCQSingle || 0) * (questionCounts.part1_PointsPerQuestion ?? 0.25) + (questionCounts.part2_MCQTrueFalse || 0) * (questionCounts.part2_PointsPerQuestion ?? 1.0) + (questionCounts.part3_MCQShort || 0) * (questionCounts.part3_PointsPerQuestion ?? 0.25))) * 100) / 100)}đ. KHÔNG chia đều điểm máy móc. Hãy căn cứ độ khó và độ dài từng câu tự luận (NB, TH, VD, VDC) để gán điểm số thích hợp (ví dụ câu NB/TH 0.5đ - 1.0đ, câu VD/VDC 1.5đ - 2.5đ...) sao cho tổng điểm toàn đề đúng 10.0 điểm.
+  * BẮT BUỘC ĐẢM BẢO TỔNG ĐIỂM TOÀN ĐỀ THI LÀ ĐÚNG 10.0 ĐIỂM.
+  * Tổng quỹ điểm dành cho Phần IV (Tự luận) là: ${Math.max(0, Math.round((10.0 - ((questionCounts.part1_MCQSingle || 0) * (questionCounts.part1_PointsPerQuestion ?? 0.25) + (questionCounts.part2_MCQTrueFalse || 0) * (questionCounts.part2_PointsPerQuestion ?? 1.0) + (questionCounts.part3_MCQShort || 0) * (questionCounts.part3_PointsPerQuestion ?? 0.25))) * 100) / 100)} điểm.
+  * Phân bổ số câu và điểm số chi tiết từng câu Tự luận như sau:
+    ${questionCounts.part4_Essay > 0 ? (() => {
+      const p1 = (questionCounts.part1_MCQSingle || 0) * (questionCounts.part1_PointsPerQuestion ?? 0.25);
+      const p2 = (questionCounts.part2_MCQTrueFalse || 0) * (questionCounts.part2_PointsPerQuestion ?? 1.0);
+      const p3 = (questionCounts.part3_MCQShort || 0) * (questionCounts.part3_PointsPerQuestion ?? 0.25);
+      const essayPool = Math.max(0, Math.round((10.0 - p1 - p2 - p3) * 100) / 100);
+      const n = questionCounts.part4_Essay;
+      const advCount = questionCounts.part4_AdvancedCount !== undefined ? questionCounts.part4_AdvancedCount : Math.floor(n / 2);
+      const applyCount = n - advCount;
+      const advPts = questionCounts.part4_AdvancedPoints !== undefined ? questionCounts.part4_AdvancedPoints : 1.0;
+      const totalAdv = Math.min(essayPool, advCount * advPts);
+      const remApply = essayPool - totalAdv;
+      const applyPts = applyCount > 0 ? Math.round((remApply / applyCount) * 100) / 100 : 0;
+      return `+ Gồm ${applyCount} câu Vận dụng (APPLY) với mức điểm khoảng ${applyPts}đ/câu và ${advCount} câu Vận dụng cao (ADVANCED) với mức điểm khoảng ${advPts}đ/câu.
+    + TỔNG ĐIỂM TẤT CẢ CÁC CÂU TỰ LUẬN CỘNG LẠI PHẢI BẰNG CHÍNH XÁC ${essayPool} ĐIỂM (không được thiếu hay dư dù chỉ 0.25đ hoặc 0.5đ). Mỗi câu tự luận phải có trường "points" và các tiêu chí trong "rubric" phải có tổng điểm đúng bằng trường "points" của câu đó!`;
+    })() : 'Không có phần Tự luận.'}
 
 🎯 TỶ LỆ MỨC ĐỘ NHẬN THỨC:
 - Nhận biết (REMEMBER): ${cognitiveRatio.remember}%
