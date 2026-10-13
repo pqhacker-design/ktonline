@@ -2,6 +2,7 @@
 
 import { UserDataSync } from './userDataSync';
 import { StorageEngine } from './storageEngine';
+import { SupabaseService } from './supabaseService';
 import { doc, getDoc, setDoc, getDocs, collection, query, where, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { extractGradeNumber, matchGrade, normalizeClassName, validateStudentEligibility } from '../types';
@@ -387,7 +388,7 @@ export class OnlineExamService {
     }
   }
 
-  private static getLocalSessions(): any[] {
+  public static getLocalSessions(): any[] {
     try {
       const keys = this.getStorageKeys();
       const data = localStorage.getItem(keys.SESSIONS);
@@ -642,8 +643,20 @@ export class OnlineExamService {
       return;
     }
 
+    // 0. Đồng bộ sang Supabase nếu được cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        await SupabaseService.saveExam(exam);
+        console.log(`[OnlineExamService] Đã đồng bộ mã đề ${codeUpper} sang Supabase thành công.`);
+      } catch (sbErr) {
+        console.warn('Lỗi lưu đề thi lên Supabase:', sbErr);
+      }
+    }
+
     if (UserDataSync.getIsQuotaExceeded()) {
-      console.warn(`[OnlineExamService] Bỏ qua ghi Firestore cho mã đề ${codeUpper} vì hệ thống đang tạm dừng do vượt hạn ngạch Firestore miễn phí trong ngày.`);
+      if (!SupabaseService.isEnabled()) {
+        console.warn(`[OnlineExamService] Bỏ qua ghi Firestore cho mã đề ${codeUpper} vì hệ thống đang tạm dừng do vượt hạn ngạch Firestore miễn phí trong ngày.`);
+      }
       return;
     }
 
@@ -663,8 +676,10 @@ export class OnlineExamService {
         console.warn(`[OnlineExamService] Đạt giới hạn ghi miễn phí Firestore (Quota limit exceeded). Đề thi ${codeUpper} vẫn được lưu an toàn trên máy của bạn.`);
         return;
       }
-      console.error(`[OnlineExamService] Lỗi đồng bộ mã đề ${codeUpper} tới Firestore:`, e);
-      throw new Error(`Không thể đồng bộ mã đề ${codeUpper} lên Cloud: ${e.message || 'Lỗi mạng hoặc quyền truy cập'}`);
+      if (!SupabaseService.isEnabled()) {
+        console.error(`[OnlineExamService] Lỗi đồng bộ mã đề ${codeUpper} tới Firestore:`, e);
+        throw new Error(`Không thể đồng bộ mã đề ${codeUpper} lên Cloud: ${e.message || 'Lỗi mạng hoặc quyền truy cập'}`);
+      }
     }
   }
 
@@ -673,6 +688,16 @@ export class OnlineExamService {
     const codeUpper = code.trim().toUpperCase();
     if (this.getDeletedExamCodes().has(codeUpper)) {
       return null;
+    }
+
+    // 0. Kiểm tra trực tiếp trên Supabase nếu đã cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        const spExam = await SupabaseService.getExamByCode(codeUpper);
+        if (spExam) return spExam;
+      } catch (sbErr) {
+        console.warn('Lỗi đọc đề thi từ Supabase:', sbErr);
+      }
     }
 
     // 1. Kiểm tra trực tiếp document trong collection 'published_exams/{code}'
@@ -826,6 +851,16 @@ export class OnlineExamService {
 
   private static async syncStudentResultToFirestore(resultItem: StudentResultItem): Promise<void> {
     if (!resultItem || !resultItem.id) return;
+
+    // 0. Lưu sang Supabase nếu được cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        await SupabaseService.saveStudentResult(resultItem);
+      } catch (sbErr) {
+        console.warn('Lỗi lưu student_results tới Supabase:', sbErr);
+      }
+    }
+
     if (UserDataSync.getIsQuotaExceeded()) return;
 
     try {
@@ -846,6 +881,16 @@ export class OnlineExamService {
   }
 
   private static async getStudentResultsFromFirestore(examCode: string = 'ALL'): Promise<StudentResultItem[]> {
+    // 0. Đọc từ Supabase nếu đã cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        const spResults = await SupabaseService.getStudentResults(examCode);
+        if (spResults && spResults.length > 0) return spResults;
+      } catch (sbErr) {
+        console.warn('Lỗi đọc student_results từ Supabase:', sbErr);
+      }
+    }
+
     try {
       const colRef = collection(db, 'student_results');
       let q = colRef as any;
@@ -1400,6 +1445,15 @@ export class OnlineExamService {
       this.saveLocalSessions(remainingSessions);
     } catch (e) {
       console.warn('Lỗi dọn dẹp sessions cục bộ:', e);
+    }
+
+    // 4b. Xóa trên Supabase nếu được cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        await SupabaseService.deleteExam(cleanCode);
+      } catch (sbErr) {
+        console.warn('Lỗi xóa đề thi trên Supabase:', sbErr);
+      }
     }
 
     // 5. Xóa trực tiếp document 'published_exams/{cleanCode}' trên Firestore (nếu quota cho phép)
@@ -2248,6 +2302,16 @@ export class OnlineExamService {
 
   private static async syncClassToFirestore(cls: any): Promise<void> {
     if (!cls || !cls.id) return;
+
+    // 0. Lưu lên Supabase nếu được cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        await SupabaseService.saveClass(cls);
+      } catch (sbErr) {
+        console.warn('Lỗi lưu class lên Supabase:', sbErr);
+      }
+    }
+
     if (UserDataSync.getIsQuotaExceeded()) return;
     try {
       const docRef = doc(db, 'system_classes', cls.id);
@@ -2272,6 +2336,16 @@ export class OnlineExamService {
 
   private static async syncStudentToFirestore(student: any): Promise<void> {
     if (!student || !student.id) return;
+
+    // 0. Lưu lên Supabase nếu được cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        await SupabaseService.saveStudents([student]);
+      } catch (sbErr) {
+        console.warn('Lỗi lưu student lên Supabase:', sbErr);
+      }
+    }
+
     if (UserDataSync.getIsQuotaExceeded()) return;
     try {
       const docRef = doc(db, 'system_students', student.id);
@@ -2298,6 +2372,16 @@ export class OnlineExamService {
   }
 
   private static async getSystemClassesFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[] | null> {
+    // 0. Đọc từ Supabase nếu đã kích hoạt
+    if (SupabaseService.isEnabled()) {
+      try {
+        const spClasses = await SupabaseService.getClasses();
+        if (spClasses && spClasses.length > 0) return spClasses;
+      } catch (sbErr) {
+        console.warn('Lỗi đọc system_classes từ Supabase:', sbErr);
+      }
+    }
+
     const userId = this.getActiveUserId();
     try {
       const colRef = collection(db, 'system_classes');
@@ -2330,6 +2414,16 @@ export class OnlineExamService {
   }
 
   private static async getSystemStudentsFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[] | null> {
+    // 0. Đọc từ Supabase nếu đã kích hoạt
+    if (SupabaseService.isEnabled()) {
+      try {
+        const spStudents = await SupabaseService.getStudents();
+        if (spStudents && spStudents.length > 0) return spStudents;
+      } catch (sbErr) {
+        console.warn('Lỗi đọc system_students từ Supabase:', sbErr);
+      }
+    }
+
     const userId = this.getActiveUserId();
     try {
       const colRef = collection(db, 'system_students');
@@ -2512,6 +2606,7 @@ export class OnlineExamService {
 
     // 4b. Firestore delete class documents and student documents via batch
     const firestoreCleanup = async () => {
+      if (UserDataSync.getIsQuotaExceeded()) return;
       try {
         const batch = writeBatch(db);
 
@@ -2562,8 +2657,10 @@ export class OnlineExamService {
         });
 
         await batch.commit();
-      } catch (err) {
-        console.warn('Lỗi dọn dẹp Firestore cho lớp:', err);
+      } catch (err: any) {
+        if (!UserDataSync.checkAndMarkQuotaError(err)) {
+          console.warn('Lỗi dọn dẹp Firestore cho lớp:', err);
+        }
       }
     };
 
@@ -2693,6 +2790,7 @@ export class OnlineExamService {
 
     // 5. Batch sync to Firestore + API in background
     const backgroundSync = async () => {
+      if (UserDataSync.getIsQuotaExceeded()) return;
       try {
         const batch = writeBatch(db);
         savedList.forEach((st) => {
@@ -2711,8 +2809,10 @@ export class OnlineExamService {
           );
         });
         await batch.commit();
-      } catch (err) {
-        console.warn('Lỗi batch sync student lên Firestore:', err);
+      } catch (err: any) {
+        if (!UserDataSync.checkAndMarkQuotaError(err)) {
+          console.warn('Lỗi batch sync student lên Firestore:', err);
+        }
       }
 
       try {
@@ -2756,6 +2856,11 @@ export class OnlineExamService {
         method: 'DELETE',
       }).catch(() => {}),
     ];
+    if (SupabaseService.isEnabled()) {
+      deleteRemoteTasks.push(
+        SupabaseService.deleteStudent(id).catch(() => {})
+      );
+    }
     if (!UserDataSync.getIsQuotaExceeded()) {
       deleteRemoteTasks.push(
         deleteDoc(doc(db, 'system_students', id)).catch((e) => {
@@ -2796,6 +2901,11 @@ export class OnlineExamService {
       return null;
     });
 
+    // 2b. Wipe Supabase if enabled
+    const supabasePromise = SupabaseService.isEnabled()
+      ? SupabaseService.wipeAllClassesAndStudents().catch(() => {})
+      : Promise.resolve();
+
     // 3. Wipe Firestore collections: system_classes and system_students
     const firestorePromise = (async () => {
       if (UserDataSync.getIsQuotaExceeded()) return;
@@ -2833,7 +2943,7 @@ export class OnlineExamService {
       }
     })();
 
-    await Promise.allSettled([apiPromise, firestorePromise]);
+    await Promise.allSettled([apiPromise, supabasePromise, firestorePromise]);
 
     return {
       success: true,

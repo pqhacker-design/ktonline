@@ -1,4 +1,6 @@
 import express, { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { GoogleGenAI } from '@google/genai';
 import {
   ExamRepository,
@@ -13,6 +15,11 @@ import {
   normalizeClassName,
 } from './db';
 import { generateShuffledExamPaper } from './shuffle';
+import {
+  getServerSupabaseConfig,
+  saveServerSupabaseConfig,
+  getServerSupabaseClient,
+} from './supabase';
 
 function generateRandomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Exclude ambiguous chars like 0, O, 1, I
@@ -401,6 +408,32 @@ export function registerExamRoutes(app: express.Express) {
       };
 
       const saved = ExamRepository.saveExam(examData, userId);
+
+      // Async mirror to Supabase if configured
+      const supabase = getServerSupabaseClient();
+      if (supabase) {
+        supabase.from('published_exams').upsert({
+          id: saved.id,
+          code: saved.code.toUpperCase(),
+          title: saved.title,
+          subject: saved.subject,
+          grade: saved.grade,
+          duration: saved.duration,
+          total_points: saved.totalPoints,
+          topic: saved.topic || '',
+          package_id: saved.packageId || saved.examPackageId || saved.id,
+          status: saved.status || 'active',
+          allow_explanations: saved.allowExplanations !== false,
+          allowed_classes: saved.allowedClasses || [],
+          scheduled_start_time: saved.scheduledStartTime || null,
+          start_time_type: saved.startTimeType || 'immediate',
+          anti_cheat: saved.antiCheat || {},
+          exam_package: saved.examPackage || {},
+          created_by: saved.createdBy || 'admin',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'code' }).then(() => {}, (e: any) => console.warn('[Supabase Sync Exam]', e?.message));
+      }
+
       return res.json({ success: true, code: saved.code, exam: saved });
     } catch (err: any) {
       console.error('Lỗi khi lưu đề thi:', err);
@@ -409,10 +442,29 @@ export function registerExamRoutes(app: express.Express) {
   });
 
   // --- CLASS & STUDENT MANAGEMENT ROUTES ---
-  app.get('/api/classes', (req: Request, res: Response) => {
+  app.get('/api/classes', async (req: Request, res: Response) => {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      const classes = ClassRepository.getClasses(userId);
+      let classes = ClassRepository.getClasses(userId);
+      if (classes.length === 0) {
+        const client = getServerSupabaseClient();
+        if (client) {
+          const { data } = await client.from('system_classes').select('*').order('name', { ascending: true });
+          if (data && data.length > 0) {
+            classes = data.map((row: any) => ({
+              id: row.id,
+              name: row.name,
+              grade: row.grade,
+              schoolYear: row.school_year,
+              teacherName: row.teacher_name,
+              notes: row.notes,
+              studentCount: row.student_count || 0,
+              createdBy: row.created_by,
+              createdAt: row.created_at,
+            }));
+          }
+        }
+      }
       return res.json({ success: true, classes });
     } catch (err: any) {
       return res.status(500).json({ error: 'Lỗi lấy danh sách lớp: ' + err.message });
@@ -437,6 +489,23 @@ export function registerExamRoutes(app: express.Express) {
         createdAt: new Date().toISOString(),
       };
       const saved = ClassRepository.saveClass(classItem, userId);
+
+      // Async mirror to Supabase
+      const client = getServerSupabaseClient();
+      if (client) {
+        client.from('system_classes').upsert({
+          id: saved.id,
+          name: saved.name,
+          grade: saved.grade,
+          school_year: saved.schoolYear,
+          teacher_name: saved.teacherName,
+          notes: saved.notes,
+          student_count: saved.studentCount || 0,
+          created_by: saved.createdBy,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' }).then(() => {}, (e: any) => console.warn('[Supabase Sync Class]', e?.message));
+      }
+
       return res.json({ success: true, class: saved });
     } catch (err: any) {
       return res.status(500).json({ error: 'Lỗi lưu lớp học: ' + err.message });
@@ -446,7 +515,16 @@ export function registerExamRoutes(app: express.Express) {
   app.delete('/api/classes/:id', (req: Request, res: Response) => {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      const deleted = ClassRepository.deleteClass(req.params.id, userId);
+      const targetId = req.params.id;
+      const deleted = ClassRepository.deleteClass(targetId, userId);
+
+      // Async delete in Supabase
+      const client = getServerSupabaseClient();
+      if (client) {
+        client.from('system_classes').delete().eq('id', targetId).then(() => {}, () => {});
+        client.from('system_students').delete().eq('class_id', targetId).then(() => {}, () => {});
+      }
+
       return res.json({ success: deleted });
     } catch (err: any) {
       return res.status(500).json({ error: 'Lỗi xóa lớp học: ' + err.message });
@@ -458,17 +536,49 @@ export function registerExamRoutes(app: express.Express) {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
       ClassRepository.wipeAllClassesAndStudents(userId);
+
+      // Async wipe in Supabase
+      const client = getServerSupabaseClient();
+      if (client) {
+        client.from('system_classes').delete().neq('id', '___dummy___').then(() => {}, () => {});
+        client.from('system_students').delete().neq('id', '___dummy___').then(() => {}, () => {});
+      }
+
       return res.json({ success: true, message: 'Đã xóa sạch toàn bộ danh sách lớp học và học sinh trên máy chủ.' });
     } catch (err: any) {
       return res.status(500).json({ error: 'Lỗi xóa sạch lớp học và học sinh: ' + err.message });
     }
   });
 
-  app.get('/api/students', (req: Request, res: Response) => {
+  app.get('/api/students', async (req: Request, res: Response) => {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
       const classId = req.query.classId as string;
-      const students = ClassRepository.getStudents(classId, userId);
+      let students = ClassRepository.getStudents(classId, userId);
+      if (students.length === 0) {
+        const client = getServerSupabaseClient();
+        if (client) {
+          let q = client.from('system_students').select('*').order('name', { ascending: true });
+          if (classId && classId !== 'ALL') {
+            q = q.eq('class_id', classId);
+          }
+          const { data } = await q;
+          if (data && data.length > 0) {
+            students = data.map((row: any) => ({
+              id: row.id,
+              classId: row.class_id,
+              className: row.class_name,
+              sbd: row.sbd,
+              name: row.name,
+              gender: row.gender,
+              dob: row.dob,
+              notes: row.notes,
+              createdBy: row.created_by,
+              createdAt: row.created_at,
+            }));
+          }
+        }
+      }
       return res.json({ success: true, students });
     } catch (err: any) {
       return res.status(500).json({ error: 'Lỗi lấy danh sách học sinh: ' + err.message });
@@ -493,6 +603,25 @@ export function registerExamRoutes(app: express.Express) {
         createdAt: new Date().toISOString(),
       }));
       const saved = ClassRepository.saveStudents(prepared, userId);
+
+      // Async mirror to Supabase
+      const client = getServerSupabaseClient();
+      if (client && saved.length > 0) {
+        const rows = saved.map((s) => ({
+          id: s.id,
+          class_id: s.classId,
+          class_name: s.className,
+          sbd: (s.sbd || '').trim().toUpperCase(),
+          name: s.name,
+          gender: s.gender,
+          dob: s.dob,
+          notes: s.notes,
+          created_by: s.createdBy,
+          updated_at: new Date().toISOString(),
+        }));
+        client.from('system_students').upsert(rows, { onConflict: 'id' }).then(() => {}, (e: any) => console.warn('[Supabase Sync Students]', e?.message));
+      }
+
       return res.json({ success: true, students: saved });
     } catch (err: any) {
       return res.status(400).json({ error: err.message || 'Lỗi lưu danh sách học sinh' });
@@ -502,14 +631,22 @@ export function registerExamRoutes(app: express.Express) {
   app.delete('/api/students/:id', (req: Request, res: Response) => {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
-      const deleted = ClassRepository.deleteStudent(req.params.id, userId);
+      const targetId = req.params.id;
+      const deleted = ClassRepository.deleteStudent(targetId, userId);
+
+      // Async delete from Supabase
+      const client = getServerSupabaseClient();
+      if (client) {
+        client.from('system_students').delete().or(`id.eq.${targetId},sbd.eq.${targetId}`).then(() => {}, () => {});
+      }
+
       return res.json({ success: deleted });
     } catch (err: any) {
       return res.status(500).json({ error: 'Lỗi xóa học sinh: ' + err.message });
     }
   });
 
-  app.get('/api/exam/lookup-student', (req: Request, res: Response) => {
+  app.get('/api/exam/lookup-student', async (req: Request, res: Response) => {
     try {
       const sbd = ((req.query.sbd as string) || '').trim();
       const code = ((req.query.code as string) || '').trim();
@@ -524,6 +661,35 @@ export function registerExamRoutes(app: express.Express) {
 
       if (code) {
         exam = ExamRepository.getExamByCode(code);
+        if (!exam) {
+          const client = getServerSupabaseClient();
+          if (client) {
+            try {
+              const { data } = await client.from('published_exams').select('*').eq('code', code.toUpperCase()).maybeSingle();
+              if (data) {
+                exam = {
+                  id: data.id,
+                  code: data.code,
+                  title: data.title,
+                  subject: data.subject,
+                  grade: data.grade,
+                  duration: data.duration,
+                  totalPoints: Number(data.total_points) || 10,
+                  status: data.status,
+                  allowExplanations: data.allow_explanations,
+                  allowedClasses: data.allowed_classes || [],
+                  scheduledStartTime: data.scheduled_start_time,
+                  startTimeType: data.start_time_type,
+                  antiCheat: data.anti_cheat,
+                  examPackage: data.exam_package,
+                  createdBy: data.created_by,
+                };
+                ExamRepository.saveExam(exam);
+              }
+            } catch {}
+          }
+        }
+
         if (exam) {
           targetUserId = exam.createdBy;
           if (Array.isArray(exam.allowedClasses)) {
@@ -532,7 +698,31 @@ export function registerExamRoutes(app: express.Express) {
         }
       }
 
-      const student = ClassRepository.findStudentBySbd(sbd, targetUserId, allowedClasses);
+      let student = ClassRepository.findStudentBySbd(sbd, targetUserId, allowedClasses);
+      if (!student) {
+        const client = getServerSupabaseClient();
+        if (client) {
+          try {
+            const cleanSbdUpper = sbd.trim().toUpperCase();
+            const { data } = await client.from('system_students').select('*').ilike('sbd', cleanSbdUpper).maybeSingle();
+            if (data) {
+              student = {
+                id: data.id,
+                classId: data.class_id,
+                className: data.class_name,
+                sbd: data.sbd,
+                name: data.name,
+                gender: data.gender,
+                dob: data.dob,
+                notes: data.notes,
+                createdBy: data.created_by,
+                createdAt: data.created_at,
+              };
+            }
+          } catch {}
+        }
+      }
+
       if (!student) {
         return res.status(404).json({ success: false, notFound: true, error: `Không tìm thấy học sinh có SBD: ${sbd}` });
       }
@@ -739,10 +929,41 @@ export function registerExamRoutes(app: express.Express) {
   });
 
   // 6. Check Student Exam Code (Public)
-  app.get('/api/exam/student-info/:code', (req: Request, res: Response) => {
+  app.get('/api/exam/student-info/:code', async (req: Request, res: Response) => {
     try {
       const code = req.params.code;
-      const exam = ExamRepository.getExamByCode(code);
+      let exam = ExamRepository.getExamByCode(code);
+
+      if (!exam) {
+        const client = getServerSupabaseClient();
+        if (client) {
+          try {
+            const { data } = await client.from('published_exams').select('*').eq('code', code.toUpperCase()).maybeSingle();
+            if (data) {
+              exam = {
+                id: data.id,
+                code: data.code,
+                title: data.title,
+                subject: data.subject,
+                grade: data.grade,
+                duration: data.duration,
+                totalPoints: Number(data.total_points) || 10,
+                topic: data.topic,
+                status: data.status,
+                allowExplanations: data.allow_explanations,
+                allowedClasses: data.allowed_classes || [],
+                scheduledStartTime: data.scheduled_start_time,
+                startTimeType: data.start_time_type,
+                antiCheat: data.anti_cheat,
+                examPackage: data.exam_package,
+                createdBy: data.created_by,
+                createdDate: data.created_at || new Date().toISOString(),
+              };
+              ExamRepository.saveExam(exam);
+            }
+          } catch {}
+        }
+      }
 
       if (!exam) {
         return res.status(404).json({ error: 'Mã đề không tồn tại.' });
@@ -774,7 +995,7 @@ export function registerExamRoutes(app: express.Express) {
   });
 
   // 7. Student Start / Resume Exam Session
-  app.post('/api/exam/start', (req: Request, res: Response) => {
+  app.post('/api/exam/start', async (req: Request, res: Response) => {
     try {
       const { code, studentName, studentClass, studentSchool, studentId } = req.body;
 
@@ -782,7 +1003,38 @@ export function registerExamRoutes(app: express.Express) {
         return res.status(400).json({ error: 'Vui lòng điền đầy đủ Mã đề, Họ tên và Lớp.' });
       }
 
-      const exam = ExamRepository.getExamByCode(code);
+      let exam = ExamRepository.getExamByCode(code);
+      if (!exam) {
+        const client = getServerSupabaseClient();
+        if (client) {
+          try {
+            const { data } = await client.from('published_exams').select('*').eq('code', code.toUpperCase()).maybeSingle();
+            if (data) {
+              exam = {
+                id: data.id,
+                code: data.code,
+                title: data.title,
+                subject: data.subject,
+                grade: data.grade,
+                duration: data.duration,
+                totalPoints: Number(data.total_points) || 10,
+                topic: data.topic,
+                status: data.status,
+                allowExplanations: data.allow_explanations,
+                allowedClasses: data.allowed_classes || [],
+                scheduledStartTime: data.scheduled_start_time,
+                startTimeType: data.start_time_type,
+                antiCheat: data.anti_cheat,
+                examPackage: data.exam_package,
+                createdBy: data.created_by,
+                createdDate: data.created_at || new Date().toISOString(),
+              };
+              ExamRepository.saveExam(exam);
+            }
+          } catch {}
+        }
+      }
+
       if (!exam) {
         return res.status(404).json({ error: 'Mã đề không tồn tại.' });
       }
@@ -1118,6 +1370,29 @@ export function registerExamRoutes(app: express.Express) {
 
       ExamRepository.saveSession(session);
 
+      // Async mirror result to Supabase
+      const client = getServerSupabaseClient();
+      if (client) {
+        client.from('student_results').upsert({
+          id: session.id,
+          exam_code: (session.examCode || '').trim().toUpperCase(),
+          exam_title: exam?.title || '',
+          student_name: session.studentName || '',
+          student_class: session.studentClass || '',
+          sbd: session.studentId || '',
+          score: result.score || 0,
+          total_points: exam?.totalPoints || 10.0,
+          correct_count: result.correctCount || 0,
+          incorrect_count: result.incorrectCount || 0,
+          total_questions: result.totalQuestions || 0,
+          start_time: session.startTime,
+          submit_time: session.submitTime,
+          answers: session.answers || {},
+          detailed_grading: result.detailedGrading || [],
+          activity_logs: session.activityLogs || [],
+        }, { onConflict: 'id' }).then(() => {}, (e: any) => console.warn('[Supabase Sync Result]', e?.message));
+      }
+
       return res.json({
         success: true,
         result,
@@ -1155,11 +1430,50 @@ export function registerExamRoutes(app: express.Express) {
   });
 
   // 11. Teacher Get Results
-  app.get('/api/teacher/results', (req: Request, res: Response) => {
+  app.get('/api/teacher/results', async (req: Request, res: Response) => {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
       const code = (req.query.code as string) || 'ALL';
-      const results = ExamRepository.getResultsByExamCode(code, userId);
+      let results = ExamRepository.getResultsByExamCode(code, userId);
+
+      if (results.length === 0) {
+        const client = getServerSupabaseClient();
+        if (client) {
+          try {
+            let q = client.from('student_results').select('*').order('created_at', { ascending: false });
+            if (code && code !== 'ALL') {
+              q = q.eq('exam_code', code.trim().toUpperCase());
+            }
+            const { data } = await q;
+            if (data && data.length > 0) {
+              const mappedFromSb = data.map((row: any) => {
+                const start = new Date(row.start_time || row.created_at).getTime();
+                const end = row.submit_time ? new Date(row.submit_time).getTime() : start;
+                const durationMinutes = Math.round((end - start) / 60000);
+                return {
+                  id: row.id,
+                  examCode: row.exam_code,
+                  studentName: row.student_name,
+                  studentClass: row.student_class,
+                  studentSbd: row.sbd || '',
+                  studentId: row.sbd || '',
+                  studentSchool: '',
+                  startTime: row.start_time,
+                  submitTime: row.submit_time,
+                  durationMinutes,
+                  score: Number(row.score) || 0,
+                  correctCount: Number(row.correct_count) || 0,
+                  incorrectCount: Number(row.incorrect_count) || 0,
+                  totalQuestions: Number(row.total_questions) || 0,
+                  tabSwitches: Number(row.tab_switches) || 0,
+                  activityLogs: row.activity_logs || [],
+                };
+              });
+              return res.json({ success: true, results: mappedFromSb });
+            }
+          } catch {}
+        }
+      }
 
       const mapped = results.map((s) => {
         const tabSwitches = (s.activityLogs || []).filter((l) =>
@@ -1201,6 +1515,13 @@ export function registerExamRoutes(app: express.Express) {
     try {
       const sessionId = req.params.sessionId;
       const deleted = ExamRepository.deleteSession(sessionId);
+
+      // Async delete from Supabase
+      const client = getServerSupabaseClient();
+      if (client) {
+        client.from('student_results').delete().eq('id', sessionId).then(() => {}, () => {});
+      }
+
       if (!deleted) {
         return res.status(404).json({ error: 'Không tìm thấy kết quả để xóa.' });
       }
@@ -1283,6 +1604,110 @@ export function registerExamRoutes(app: express.Express) {
       }
     } catch (err: any) {
       return res.status(500).json({ error: 'Lỗi reset lượt làm bài: ' + err.message });
+    }
+  });
+
+  // ==========================================
+  // 14. Supabase Configuration & Status APIs
+  // ==========================================
+
+  app.get('/api/supabase/config', (req: Request, res: Response) => {
+    try {
+      const config = getServerSupabaseConfig();
+      const isConfigured = Boolean(config.url && config.anonKey && config.url.startsWith('http'));
+      return res.json({
+        success: true,
+        isConfigured,
+        url: config.url || '',
+        anonKeyMasked: config.anonKey
+          ? `${config.anonKey.substring(0, 8)}...${config.anonKey.slice(-6)}`
+          : '',
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/supabase/config', (req: Request, res: Response) => {
+    try {
+      const { url, anonKey } = req.body;
+      if (!url || !anonKey) {
+        return res.status(400).json({ error: 'Thiếu url hoặc anonKey cho Supabase.' });
+      }
+      saveServerSupabaseConfig({
+        url: String(url).trim(),
+        anonKey: String(anonKey).trim(),
+      });
+      return res.json({
+        success: true,
+        message: 'Đã lưu cấu hình Supabase thành công trên máy chủ!',
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Lỗi lưu cấu hình: ' + err.message });
+    }
+  });
+
+  app.get('/api/supabase/schema-sql', (req: Request, res: Response) => {
+    try {
+      const schemaPath = path.join(process.cwd(), 'supabase_schema.sql');
+      if (fs.existsSync(schemaPath)) {
+        const sql = fs.readFileSync(schemaPath, 'utf-8');
+        return res.type('text/plain').send(sql);
+      }
+      return res.status(404).send('-- supabase_schema.sql not found');
+    } catch (err: any) {
+      return res.status(500).send('-- Error reading schema: ' + err.message);
+    }
+  });
+
+  app.post('/api/supabase/test', async (req: Request, res: Response) => {
+    try {
+      const client = getServerSupabaseClient();
+      if (!client) {
+        return res.status(400).json({
+          success: false,
+          error: 'Supabase chưa được cấu hình trên máy chủ.',
+        });
+      }
+
+      const requiredTables = ['users', 'system_classes', 'system_students', 'published_exams', 'student_results', 'user_data'];
+      const tablesFound: string[] = [];
+      const missingTables: string[] = [];
+
+      for (const table of requiredTables) {
+        try {
+          const { error } = await client.from(table).select('count', { count: 'exact', head: true });
+          if (!error) {
+            tablesFound.push(table);
+          } else if (error.code === '42P01' || error.message?.includes('does not exist')) {
+            missingTables.push(table);
+          } else {
+            tablesFound.push(table);
+          }
+        } catch {
+          missingTables.push(table);
+        }
+      }
+
+      if (missingTables.length > 0) {
+        return res.json({
+          success: false,
+          message: `Chưa tìm thấy các bảng: ${missingTables.join(', ')}. Hãy chạy file supabase_schema.sql trong SQL Editor của Supabase.`,
+          tablesFound,
+          missingTables,
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: 'Kết nối máy chủ tới Supabase thành công! Cả 6 bảng dữ liệu đã sẵn sàng.',
+        tablesFound,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: 'Lỗi kiểm tra kết nối Supabase: ' + err.message,
+      });
     }
   });
 }

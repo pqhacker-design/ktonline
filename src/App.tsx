@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, X, Database } from 'lucide-react';
 import { Sidebar, TabType } from './components/Sidebar';
 import { Header } from './components/Header';
 import { DashboardView } from './components/DashboardView';
@@ -21,6 +21,7 @@ import { ApiKeyInputModal, QuotaExceededModal, NotificationModal } from './compo
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { useAuth } from './auth/useAuth';
 import { UserManagement } from './pages/UserManagement';
+import { SupabaseConfigModal } from './components/SupabaseConfigModal';
 
 import { AppSettings, ExamMetadata, ExamPackage, MatrixRow, Question, QuestionBankItem, SpecRow } from './types';
 import { StorageEngine } from './services/storageEngine';
@@ -164,6 +165,7 @@ export default function App() {
 
   const [isFirestoreQuotaExceeded, setIsFirestoreQuotaExceeded] = useState(UserDataSync.getIsQuotaExceeded());
   const [isFirestoreQuotaBannerDismissed, setIsFirestoreQuotaBannerDismissed] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
 
   useEffect(() => {
     const handleQuotaExceeded = () => {
@@ -679,6 +681,7 @@ export default function App() {
             setIsOpen={setIsSidebarOpen}
             isCollapsed={isSidebarCollapsed}
             setIsCollapsed={setIsSidebarCollapsed}
+            onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
           />
 
           {/* Main Content Area */}
@@ -721,6 +724,7 @@ export default function App() {
               onExportPdf={() => handleExportPdf()}
               onExportExcel={() => handleExportExcel()}
               onNavigateTab={(tab) => setActiveTab(tab as TabType)}
+              onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
             />
 
             <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto">
@@ -743,7 +747,7 @@ export default function App() {
                           Firebase Console
                         </a>.
                       </p>
-                      <div className="mt-2 flex items-center space-x-3">
+                      <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
                         <button
                           onClick={() => {
                             UserDataSync.clearQuotaExceeded();
@@ -752,6 +756,13 @@ export default function App() {
                           className="px-2.5 py-1 text-xs font-medium rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer"
                         >
                           Thử lại kết nối Cloud
+                        </button>
+                        <button
+                          onClick={() => setIsSupabaseModalOpen(true)}
+                          className="px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                        >
+                          <Database className="w-3.5 h-3.5" />
+                          Chuyển sang Supabase (Không giới hạn)
                         </button>
                         <a
                           href="https://console.firebase.google.com/project/gen-lang-client-0904703550/usage"
@@ -999,6 +1010,11 @@ export default function App() {
         title={notificationModal.title}
         message={notificationModal.message}
         onClose={() => setNotificationModal({ isOpen: false, title: '', message: '' })}
+      />
+
+      <SupabaseConfigModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
       />
     </div>
   );

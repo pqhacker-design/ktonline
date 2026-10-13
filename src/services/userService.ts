@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { UserDataSync } from './userDataSync';
+import { SupabaseService } from './supabaseService';
 
 export interface AppUser {
   id?: string;
@@ -50,6 +51,10 @@ export const userService = {
       createdAt: new Date().toISOString(),
     };
 
+    if (UserDataSync.getIsQuotaExceeded()) {
+      return defaultAdmin;
+    }
+
     const adminDocRef = doc(db, USERS_COLLECTION, 'admin');
     
     try {
@@ -57,38 +62,15 @@ export const userService = {
 
       if (adminSnap && adminSnap.exists()) {
         const data = adminSnap.data() as AppUser;
-        const updatedFields: Partial<AppUser> = {};
-
-        if (!data.password || data.password === 'admin' || data.password === '300506') {
-          updatedFields.password = 'Hungdiemly300506';
-        }
-        if (!data.username || data.username === 'admin') {
-          updatedFields.username = 'pqhacker@gamil.com';
-        }
-        if (!data.email || data.email === 'admin@system.local') {
-          updatedFields.email = 'pqhacker@gamil.com';
-        }
-        if (data.role !== 'admin') updatedFields.role = 'admin';
-        if (data.active !== true) updatedFields.active = true;
-
-        if (Object.keys(updatedFields).length > 0 && !UserDataSync.getIsQuotaExceeded()) {
-          setDoc(adminDocRef, updatedFields, { merge: true }).catch((e) => {
-            UserDataSync.checkAndMarkQuotaError(e);
-          });
-        }
-
         return {
           ...data,
-          ...updatedFields,
           id: 'admin',
-          username: updatedFields.username || data.username || 'pqhacker@gamil.com',
-          email: updatedFields.email || data.email || 'pqhacker@gamil.com',
-          password: updatedFields.password || data.password || 'Hungdiemly300506',
+          username: data.username || 'pqhacker@gamil.com',
+          email: data.email || 'pqhacker@gamil.com',
+          password: data.password || 'Hungdiemly300506',
+          role: 'admin',
+          active: true,
         };
-      } else if (!UserDataSync.getIsQuotaExceeded()) {
-        setDoc(adminDocRef, defaultAdmin, { merge: true }).catch((e) => {
-          UserDataSync.checkAndMarkQuotaError(e);
-        });
       }
     } catch (err: any) {
       UserDataSync.checkAndMarkQuotaError(err);
@@ -135,6 +117,19 @@ export const userService = {
     let matchedId = '';
     let networkTimeoutOccurred = false;
 
+    // 0. Check Supabase if active
+    if (SupabaseService.isEnabled()) {
+      try {
+        const spUser = await SupabaseService.getUser(cleanUsername);
+        if (spUser) {
+          matchedUser = spUser;
+          matchedId = spUser.id || cleanUsername;
+        }
+      } catch (err) {
+        console.warn('Lỗi đọc user từ Supabase:', err);
+      }
+    }
+
     // 1. Check doc ID directly (try formatted ID first, then cleanUsername directly)
     const formattedId = cleanUsername.replace(/[^a-zA-Z0-9]/g, '_');
     const docIdsToTry = [formattedId];
@@ -142,20 +137,22 @@ export const userService = {
       docIdsToTry.push(cleanUsername);
     }
 
-    for (const dId of docIdsToTry) {
-      try {
-        const userDocRef = doc(db, USERS_COLLECTION, dId);
-        const userDocSnap = await fetchWithTimeout(getDoc(userDocRef), 8000);
-        if (userDocSnap === null) {
-          networkTimeoutOccurred = true;
-        } else if (userDocSnap.exists()) {
-          matchedUser = userDocSnap.data() as AppUser;
-          matchedId = userDocSnap.id;
-          networkTimeoutOccurred = false;
-          break;
+    if (!matchedUser) {
+      for (const dId of docIdsToTry) {
+        try {
+          const userDocRef = doc(db, USERS_COLLECTION, dId);
+          const userDocSnap = await fetchWithTimeout(getDoc(userDocRef), 8000);
+          if (userDocSnap === null) {
+            networkTimeoutOccurred = true;
+          } else if (userDocSnap.exists()) {
+            matchedUser = userDocSnap.data() as AppUser;
+            matchedId = userDocSnap.id;
+            networkTimeoutOccurred = false;
+            break;
+          }
+        } catch (e) {
+          console.warn('Lỗi đọc userDoc:', e);
         }
-      } catch (e) {
-        console.warn('Lỗi đọc userDoc:', e);
       }
     }
 
@@ -305,16 +302,33 @@ export const userService = {
       throw new Error('Mật khẩu mới không được trùng với mật khẩu hiện tại.');
     }
 
-    await updateDoc(userDocRef, {
-      password: cleanNew,
-      updatedAt: new Date().toISOString(),
-    });
+    if (UserDataSync.getIsQuotaExceeded()) {
+      return;
+    }
+
+    try {
+      await updateDoc(userDocRef, {
+        password: cleanNew,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      if (UserDataSync.checkAndMarkQuotaError(err)) {
+        return;
+      }
+      throw err;
+    }
   },
 
   /**
    * Listen to real-time users collection updates for Admin
    */
   subscribeUsers(callback: (users: AppUser[]) => void) {
+    if (SupabaseService.isEnabled()) {
+      SupabaseService.getUsers().then((list) => {
+        if (list && list.length > 0) callback(list);
+      }).catch(() => {});
+    }
+
     const colRef = collection(db, USERS_COLLECTION);
     return onSnapshot(
       colRef,
@@ -336,6 +350,28 @@ export const userService = {
         console.error('Error fetching users:', error);
       }
     );
+  },
+
+  /**
+   * Get all users for administration or data migration
+   */
+  async getAllUsers(): Promise<AppUser[]> {
+    if (SupabaseService.isEnabled()) {
+      try {
+        const sp = await SupabaseService.getUsers();
+        if (sp && sp.length > 0) return sp;
+      } catch {}
+    }
+    const defaultAdmin = await this.ensureDefaultAdmin();
+    try {
+      const colRef = collection(db, USERS_COLLECTION);
+      const snapshot = await fetchWithTimeout(getDocs(colRef), 5000);
+      if (snapshot && !snapshot.empty) {
+        const list: AppUser[] = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as AppUser) }));
+        return list;
+      }
+    } catch {}
+    return [defaultAdmin];
   },
 
   /**
@@ -370,6 +406,7 @@ export const userService = {
     }
 
     const appUserData: AppUser = {
+      id: docId,
       username: cleanUsername,
       email: cleanUsername.includes('@') ? cleanUsername : `${cleanUsername}@system.local`,
       password: newUser.password.trim(),
@@ -378,6 +415,19 @@ export const userService = {
       active: newUser.active,
       createdAt: new Date().toISOString(),
     };
+
+    // Save to Supabase if enabled
+    if (SupabaseService.isEnabled()) {
+      try {
+        await SupabaseService.saveUser(appUserData);
+      } catch (sbErr) {
+        console.warn('Lỗi lưu user lên Supabase:', sbErr);
+      }
+    }
+
+    if (UserDataSync.getIsQuotaExceeded()) {
+      return;
+    }
 
     // Dispatch write to Firestore without hanging forever if network ACK is slow
     try {
@@ -388,7 +438,7 @@ export const userService = {
       ]);
     } catch (saveErr: any) {
       if (UserDataSync.checkAndMarkQuotaError(saveErr)) {
-        throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn (Resource-exhausted Quota limit exceeded). Vui lòng thử lại vào ngày mai hoặc nâng cấp hạn ngạch Firebase.');
+        return;
       }
       throw saveErr;
     }
@@ -426,11 +476,26 @@ export const userService = {
       payload.password = updates.password.trim();
     }
 
+    if (SupabaseService.isEnabled()) {
+      try {
+        const existing = await SupabaseService.getUser(docId);
+        if (existing) {
+          await SupabaseService.saveUser({ ...existing, ...payload });
+        }
+      } catch (e) {
+        console.warn('Lỗi cập nhật user trên Supabase:', e);
+      }
+    }
+
+    if (UserDataSync.getIsQuotaExceeded()) {
+      return;
+    }
+
     try {
       await setDoc(userDocRef, payload, { merge: true });
     } catch (err: any) {
       if (UserDataSync.checkAndMarkQuotaError(err)) {
-        throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn (Resource-exhausted Quota limit exceeded). Vui lòng thử lại vào ngày mai.');
+        return;
       }
       throw err;
     }
@@ -489,7 +554,13 @@ export const userService = {
       payload.password = updates.password.trim();
     }
 
-    await setDoc(userDocRef, payload, { merge: true });
+    if (!UserDataSync.getIsQuotaExceeded()) {
+      try {
+        await setDoc(userDocRef, payload, { merge: true });
+      } catch (err: any) {
+        UserDataSync.checkAndMarkQuotaError(err);
+      }
+    }
 
     return {
       ...currentData,
@@ -506,7 +577,18 @@ export const userService = {
    * Admin deletes a user account
    */
   async deleteUser(docId: string): Promise<void> {
+    if (SupabaseService.isEnabled()) {
+      try {
+        await SupabaseService.deleteUser(docId);
+      } catch (e) {
+        console.warn('Lỗi xóa user trên Supabase:', e);
+      }
+    }
+
     if (UserDataSync.getIsQuotaExceeded()) {
+      if (SupabaseService.isEnabled()) {
+        return; // Successfully deleted in Supabase
+      }
       throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn. Vui lòng thử lại vào ngày mai.');
     }
     try {
@@ -514,9 +596,12 @@ export const userService = {
       await deleteDoc(userDocRef);
     } catch (err: any) {
       if (UserDataSync.checkAndMarkQuotaError(err)) {
-        throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn. Vui lòng thử lại vào ngày mai.');
+        if (!SupabaseService.isEnabled()) {
+          throw new Error('Hạn ngạch ghi Firestore miễn phí hôm nay đã đạt giới hạn. Vui lòng thử lại vào ngày mai.');
+        }
+      } else {
+        throw err;
       }
-      throw err;
     }
   },
 

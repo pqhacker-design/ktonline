@@ -34,11 +34,13 @@ import {
   KeyRound,
   Share2
 } from 'lucide-react';
+import { SupabaseConfigModal } from '../components/SupabaseConfigModal';
 
 export const UserManagement: React.FC = () => {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
   
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -361,11 +363,19 @@ export const UserManagement: React.FC = () => {
               setWipeProgress(0);
               setShowWipeModal(true);
             }}
-            className="px-4 py-3 bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 font-bold text-xs rounded-2xl shadow-lg transition-all flex items-center space-x-2 cursor-pointer active:scale-95 shrink-0"
-            title="Xóa tất cả dữ liệu hệ thống (Cloud Firestore & LocalStorage)"
+            className="px-4 py-3 bg-rose-950/80 hover:bg-rose-900 border border-rose-600/80 text-rose-200 font-bold text-xs rounded-2xl shadow-lg transition-all flex items-center space-x-2 cursor-pointer active:scale-95 shrink-0"
           >
             <Flame className="w-4 h-4 text-rose-400" />
             <span>Xóa Tất Cả Dữ Liệu Hệ Thống</span>
+          </button>
+
+          <button
+            onClick={() => setShowSupabaseModal(true)}
+            className="px-4 py-3 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-600/80 text-emerald-200 font-bold text-xs rounded-2xl shadow-lg transition-all flex items-center space-x-2 cursor-pointer active:scale-95 shrink-0"
+            title="Cấu hình cơ sở dữ liệu Supabase (PostgreSQL) và chuyển dữ liệu"
+          >
+            <Database className="w-4 h-4 text-emerald-400" />
+            <span>Cấu Hình Supabase (PostgreSQL)</span>
           </button>
 
           <button
@@ -1186,6 +1196,12 @@ export const UserManagement: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Supabase Configuration & Migration Modal */}
+      <SupabaseConfigModal
+        isOpen={showSupabaseModal}
+        onClose={() => setShowSupabaseModal(false)}
+      />
     </div>
   );
 };

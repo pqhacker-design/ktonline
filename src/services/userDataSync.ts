@@ -1,7 +1,8 @@
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, disableNetwork, enableNetwork } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { AppSettings, ExamPackage, QuestionBankItem } from '../types';
 import { defaultSettings } from './storageEngine';
+import { SupabaseService } from './supabaseService';
 
 export interface UserDataPayload {
   settings: AppSettings;
@@ -164,6 +165,32 @@ export class UserDataSync {
       return { settings: defaultSettings, examHistory: [], questionBank: [], classes: [], students: [], onlineExams: [] };
     }
 
+    // 0. Đọc từ Supabase nếu được cấu hình
+    if (SupabaseService.isEnabled()) {
+      try {
+        const spData = await SupabaseService.loadUserData(userId);
+        if (spData && (spData.examHistory?.length || spData.classes?.length || spData.students?.length || spData.questionBank?.length)) {
+          const local = this.getLocalUserData(userId);
+          const merged: UserDataPayload = {
+            settings: { ...defaultSettings, ...(spData.settings || local.settings || {}) },
+            examHistory: spData.examHistory || local.examHistory || [],
+            questionBank: spData.questionBank || local.questionBank || [],
+            classes: spData.classes || local.classes || [],
+            students: spData.students || local.students || [],
+            onlineExams: spData.onlineExams || local.onlineExams || [],
+            deletedExamCodes: spData.deletedExamCodes || local.deletedExamCodes || [],
+            deletedStudentSbds: spData.deletedStudentSbds || local.deletedStudentSbds || [],
+            classesWipedAt: spData.classesWipedAt || local.classesWipedAt,
+            updatedAt: spData.updatedAt || new Date().toISOString(),
+          };
+          this.saveLocalUserData(userId, merged);
+          return merged;
+        }
+      } catch (sbErr) {
+        console.warn('Lỗi đọc user_data từ Supabase:', sbErr);
+      }
+    }
+
     const docRef = doc(db, USER_DATA_COLLECTION, userId);
 
     try {
@@ -264,8 +291,12 @@ export class UserDataSync {
 
         return mergedPayload;
       }
-    } catch (err) {
-      console.warn(`Lỗi đọc Firestore user_data cho ${userId}:`, err);
+    } catch (err: any) {
+      if (this.checkAndMarkQuotaError(err)) {
+        console.warn(`[UserDataSync] Firestore Quota exceeded khi đọc user_data cho ${userId}.`);
+      } else {
+        console.warn(`Lỗi đọc Firestore user_data cho ${userId}:`, err);
+      }
     }
 
     // Fallback if doc does not exist yet or offline:
@@ -285,22 +316,8 @@ export class UserDataSync {
       updatedAt: new Date().toISOString(),
     };
 
-    // Save initial document to Firestore if quota is available
-    if (!this.getIsQuotaExceeded()) {
-      try {
-        const cleanInitial = sanitizeForFirestore(initialPayload);
-        await setDoc(docRef, cleanInitial, { merge: true });
-        this.saveLocalUserData(userId, initialPayload);
-      } catch (err: any) {
-        if (this.checkAndMarkQuotaError(err)) {
-          console.warn(`[UserDataSync] Firestore Quota exceeded khi khởi tạo document. Chuyển sang lưu trữ cục bộ.`);
-        } else {
-          console.warn(`Lỗi khởi tạo document Firestore cho ${userId}:`, err);
-        }
-      }
-    } else {
-      this.saveLocalUserData(userId, initialPayload);
-    }
+    // Save only to local storage without writing to Firestore on read initialization
+    this.saveLocalUserData(userId, initialPayload);
 
     return initialPayload;
   }
@@ -317,9 +334,12 @@ export class UserDataSync {
         const raw = localStorage.getItem('firestore_quota_exceeded_timestamp');
         if (raw) {
           const ts = Number(raw);
-          // Gói miễn phí Spark được đặt lại vào nửa đêm (khoảng 6-24h). Tạm dừng ghi để tránh lỗi liên tục.
+          // Spark free plan resets daily (UTC midnight). Suppress writes for 6h to avoid backoff loops.
           if (Date.now() - ts < 6 * 60 * 60 * 1000) {
             this.isQuotaExceeded = true;
+            try {
+              disableNetwork(db).catch(() => {});
+            } catch {}
             return true;
           } else {
             localStorage.removeItem('firestore_quota_exceeded_timestamp');
@@ -341,8 +361,20 @@ export class UserDataSync {
         }
       }
     } catch {}
-    if (val && typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+
+    if (val) {
+      // Disconnect Firestore network so SDK halts backoff retry loop and stops flooding errors
+      try {
+        disableNetwork(db).catch(() => {});
+      } catch {}
+    } else {
+      try {
+        enableNetwork(db).catch(() => {});
+      } catch {}
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded', { detail: { exceeded: val } }));
     }
   }
 
@@ -352,14 +384,18 @@ export class UserDataSync {
 
   public static checkAndMarkQuotaError(err: any): boolean {
     if (!err) return false;
-    const msg = String(err?.message || '');
+    const msg = String(err?.message || err || '');
     const code = String(err?.code || '');
     const isQuota =
       code === 'resource-exhausted' ||
+      code.includes('resource-exhausted') ||
       msg.includes('Quota limit exceeded') ||
       msg.includes('resource-exhausted') ||
       msg.includes('Free daily write units') ||
-      msg.includes('Free daily read units');
+      msg.includes('Free daily read units') ||
+      msg.includes('Using maximum backoff delay') ||
+      msg.includes('quota metric') ||
+      msg.includes('cannot exceed free quota limits');
 
     if (isQuota) {
       this.setIsQuotaExceeded(true);
@@ -388,6 +424,11 @@ export class UserDataSync {
 
     // 1. Update Local Storage cache immediately
     this.saveLocalUserData(userId, sanitizedUpdates);
+
+    // 1b. Sync to Supabase if configured
+    if (SupabaseService.isEnabled()) {
+      SupabaseService.saveUserData(userId, sanitizedUpdates).catch(() => {});
+    }
 
     // If quota was already exceeded, avoid spamming Firestore with failing writes
     if (this.getIsQuotaExceeded()) {
@@ -572,8 +613,21 @@ export class UserDataSync {
         }
       },
       (error) => {
-        console.warn(`Lỗi lắng nghe dữ liệu Firestore cho ${userId}:`, error);
+        if (this.checkAndMarkQuotaError(error)) {
+          console.warn(`[UserDataSync] Firestore Quota exceeded khi lắng nghe ${userId}.`);
+        } else {
+          console.warn(`Lỗi lắng nghe dữ liệu Firestore cho ${userId}:`, error);
+        }
       }
     );
   }
+}
+
+// Proactively disconnect network on load if quota was marked exceeded
+if (typeof window !== 'undefined') {
+  try {
+    if (UserDataSync.getIsQuotaExceeded()) {
+      disableNetwork(db).catch(() => {});
+    }
+  } catch {}
 }

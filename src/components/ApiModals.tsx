@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Key, AlertTriangle, ExternalLink, Eye, EyeOff, Sparkles, CheckCircle2, RefreshCw, X } from 'lucide-react';
 import { StorageEngine } from '../services/storageEngine';
 
@@ -36,9 +37,9 @@ export const ApiKeyInputModal: React.FC<ApiKeyInputModalProps> = ({
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 text-left space-y-5 shadow-2xl relative">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 animate-in fade-in overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 text-left space-y-5 shadow-2xl relative my-auto max-h-[88vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
@@ -118,7 +119,8 @@ export const ApiKeyInputModal: React.FC<ApiKeyInputModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -151,9 +153,9 @@ export const QuotaExceededModal: React.FC<QuotaExceededModalProps> = ({
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 text-left space-y-5 shadow-2xl relative">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 animate-in fade-in overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 text-left space-y-5 shadow-2xl relative my-auto max-h-[88vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
@@ -235,7 +237,8 @@ export const QuotaExceededModal: React.FC<QuotaExceededModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -256,9 +259,9 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl relative">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 animate-in fade-in overflow-y-auto">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 text-center space-y-4 shadow-2xl relative my-auto max-h-[88vh] overflow-y-auto">
         <div
           className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto border ${
             type === 'error'
@@ -281,6 +284,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
           Đồng Ý
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
