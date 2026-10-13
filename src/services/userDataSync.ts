@@ -169,7 +169,7 @@ export class UserDataSync {
     if (SupabaseService.isEnabled()) {
       try {
         const spData = await SupabaseService.loadUserData(userId);
-        if (spData && (spData.examHistory?.length || spData.classes?.length || spData.students?.length || spData.questionBank?.length)) {
+        if (spData) {
           const local = this.getLocalUserData(userId);
           const merged: UserDataPayload = {
             settings: { ...defaultSettings, ...(spData.settings || local.settings || {}) },
@@ -185,6 +185,10 @@ export class UserDataSync {
           };
           this.saveLocalUserData(userId, merged);
           return merged;
+        } else {
+          // Chưa có document trên Supabase nhưng Supabase đang bật -> Trả về dữ liệu local, không quét Firestore
+          const local = this.getLocalUserData(userId);
+          return local;
         }
       } catch (sbErr) {
         console.warn('Lỗi đọc user_data từ Supabase:', sbErr);

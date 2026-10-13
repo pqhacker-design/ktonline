@@ -125,8 +125,21 @@ export class StorageEngine {
   }
 
   private static getKey(baseKey: string): string {
-    this.ensureMigration();
-    return baseKey; // Dùng chung hệ thống cho tất cả tài khoản
+    const userId = this.currentUserId;
+    if (!userId || userId === 'guest') {
+      return baseKey;
+    }
+    const cleanId = userId.replace(/[^a-zA-Z0-9_]/g, '_');
+    const userScopedKey = `${baseKey}_${cleanId}`;
+
+    // Khởi tạo từ dữ liệu mặc định nếu chưa có
+    if (!localStorage.getItem(userScopedKey) && localStorage.getItem(baseKey)) {
+      try {
+        localStorage.setItem(userScopedKey, localStorage.getItem(baseKey)!);
+      } catch {}
+    }
+
+    return userScopedKey;
   }
 
   // Settings
@@ -156,10 +169,8 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.SETTINGS);
       localStorage.setItem(key, JSON.stringify(settings));
 
-      UserDataSync.saveUserData('shared_workspace', { settings });
-      if (this.currentUserId) {
-        UserDataSync.saveUserData(this.currentUserId, { settings });
-      }
+      const targetId = this.currentUserId || 'guest';
+      UserDataSync.saveUserData(targetId, { settings });
       this.notifyListeners();
     } catch (e) {
       console.error('Lỗi lưu settings:', e);
@@ -198,10 +209,8 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
 
-      UserDataSync.saveUserData('shared_workspace', { examHistory: updated });
-      if (this.currentUserId) {
-        UserDataSync.saveUserData(this.currentUserId, { examHistory: updated });
-      }
+      const targetId = this.currentUserId || 'guest';
+      UserDataSync.saveUserData(targetId, { examHistory: updated });
       this.notifyListeners();
     } catch (e) {
       console.error('Lỗi lưu gói đề thi:', e);
@@ -215,10 +224,8 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
 
-      UserDataSync.saveUserData('shared_workspace', { examHistory: updated });
-      if (this.currentUserId) {
-        UserDataSync.saveUserData(this.currentUserId, { examHistory: updated });
-      }
+      const targetId = this.currentUserId || 'guest';
+      UserDataSync.saveUserData(targetId, { examHistory: updated });
       this.notifyListeners();
     } catch (e) {
       console.error('Lỗi xóa gói đề thi:', e);
@@ -247,10 +254,8 @@ export class StorageEngine {
       if (changed) {
         const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
         localStorage.setItem(key, JSON.stringify(updated));
-        UserDataSync.saveUserData('shared_workspace', { examHistory: updated });
-        if (this.currentUserId) {
-          UserDataSync.saveUserData(this.currentUserId, { examHistory: updated });
-        }
+        const targetId = this.currentUserId || 'guest';
+        UserDataSync.saveUserData(targetId, { examHistory: updated });
         this.notifyListeners();
       }
     } catch (e) {
@@ -291,10 +296,8 @@ export class StorageEngine {
       const key = this.getKey(STORAGE_KEYS.QUESTION_BANK);
       localStorage.setItem(key, JSON.stringify(clean));
 
-      UserDataSync.saveUserData('shared_workspace', { questionBank: clean });
-      if (this.currentUserId) {
-        UserDataSync.saveUserData(this.currentUserId, { questionBank: clean });
-      }
+      const targetId = this.currentUserId || 'guest';
+      UserDataSync.saveUserData(targetId, { questionBank: clean });
       this.notifyListeners();
     } catch (e) {
       console.error('Lỗi lưu ngân hàng câu hỏi:', e);

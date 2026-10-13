@@ -449,7 +449,11 @@ export function registerExamRoutes(app: express.Express) {
       if (classes.length === 0) {
         const client = getServerSupabaseClient();
         if (client) {
-          const { data } = await client.from('system_classes').select('*').order('name', { ascending: true });
+          let q = client.from('system_classes').select('*').order('name', { ascending: true });
+          if (userId && userId !== 'admin' && userId !== 'ALL') {
+            q = q.eq('created_by', userId);
+          }
+          const { data } = await q;
           if (data && data.length > 0) {
             classes = data.map((row: any) => ({
               id: row.id,
@@ -561,6 +565,9 @@ export function registerExamRoutes(app: express.Express) {
           let q = client.from('system_students').select('*').order('name', { ascending: true });
           if (classId && classId !== 'ALL') {
             q = q.eq('class_id', classId);
+          }
+          if (userId && userId !== 'admin' && userId !== 'ALL') {
+            q = q.eq('created_by', userId);
           }
           const { data } = await q;
           if (data && data.length > 0) {
@@ -704,7 +711,15 @@ export function registerExamRoutes(app: express.Express) {
         if (client) {
           try {
             const cleanSbdUpper = sbd.trim().toUpperCase();
-            const { data } = await client.from('system_students').select('*').ilike('sbd', cleanSbdUpper).maybeSingle();
+            let data: any = null;
+            if (targetUserId) {
+              const res = await client.from('system_students').select('*').eq('created_by', targetUserId).ilike('sbd', cleanSbdUpper).maybeSingle();
+              data = res.data;
+            }
+            if (!data) {
+              const res = await client.from('system_students').select('*').ilike('sbd', cleanSbdUpper).limit(1).maybeSingle();
+              data = res.data;
+            }
             if (data) {
               student = {
                 id: data.id,

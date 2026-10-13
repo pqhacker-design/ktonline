@@ -61,116 +61,42 @@ export interface StudentResultItem {
 }
 
 export class OnlineExamService {
-  public static getActiveUserId(): string {
-    return StorageEngine.getCurrentUserId() || UserDataSync.getActiveUserId() || 'guest';
+  private static activeUserId: string | null = null;
+
+  public static setActiveUserId(userId: string | null): void {
+    this.activeUserId = userId;
   }
 
-  private static migrated = false;
-  private static ensureMigration(): void {
-    if (this.migrated) return;
-    this.migrated = true;
-    try {
-      const targetExamsKey = `aitest_online_exams_store_shared`;
-      const targetClassesKey = `aitest_online_classes_store_shared`;
-      const targetStudentsKey = `aitest_online_students_store_shared`;
-      const targetSessionsKey = `aitest_online_sessions_store_shared`;
-
-      // Merge exams from any existing keys
-      const examsMap = new Map<string, any>();
-      const existingSharedExams = localStorage.getItem(targetExamsKey);
-      if (existingSharedExams) {
-        try { JSON.parse(existingSharedExams).forEach((e: any) => e && e.code && examsMap.set(e.code.toUpperCase(), e)); } catch {}
-      }
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('aitest_online_exams_store_') && k !== targetExamsKey) {
-          try {
-            const raw = localStorage.getItem(k);
-            if (raw) {
-              const list = JSON.parse(raw);
-              if (Array.isArray(list)) {
-                list.forEach((e) => {
-                  if (e && e.code && !examsMap.has(e.code.toUpperCase())) {
-                    examsMap.set(e.code.toUpperCase(), e);
-                  }
-                });
-              }
-            }
-          } catch {}
-        }
-      }
-      if (examsMap.size > 0) {
-        localStorage.setItem(targetExamsKey, JSON.stringify(Array.from(examsMap.values())));
-      }
-
-      // Merge classes
-      const classesMap = new Map<string, any>();
-      const existingSharedClasses = localStorage.getItem(targetClassesKey);
-      if (existingSharedClasses) {
-        try { JSON.parse(existingSharedClasses).forEach((c: any) => c && c.id && classesMap.set(c.id, c)); } catch {}
-      }
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('aitest_online_classes_store_') && k !== targetClassesKey) {
-          try {
-            const raw = localStorage.getItem(k);
-            if (raw) {
-              const list = JSON.parse(raw);
-              if (Array.isArray(list)) {
-                list.forEach((c) => {
-                  if (c && c.id && !classesMap.has(c.id)) {
-                    classesMap.set(c.id, c);
-                  }
-                });
-              }
-            }
-          } catch {}
-        }
-      }
-      if (classesMap.size > 0) {
-        localStorage.setItem(targetClassesKey, JSON.stringify(Array.from(classesMap.values())));
-      }
-
-      // Merge students
-      const studentsMap = new Map<string, any>();
-      const existingSharedStudents = localStorage.getItem(targetStudentsKey);
-      if (existingSharedStudents) {
-        try { JSON.parse(existingSharedStudents).forEach((s: any) => s && s.id && studentsMap.set(s.id, s)); } catch {}
-      }
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('aitest_online_students_store_') && k !== targetStudentsKey) {
-          try {
-            const raw = localStorage.getItem(k);
-            if (raw) {
-              const list = JSON.parse(raw);
-              if (Array.isArray(list)) {
-                list.forEach((s) => {
-                  if (s && s.id && !studentsMap.has(s.id)) {
-                    studentsMap.set(s.id, s);
-                  }
-                });
-              }
-            }
-          } catch {}
-        }
-      }
-      if (studentsMap.size > 0) {
-        localStorage.setItem(targetStudentsKey, JSON.stringify(Array.from(studentsMap.values())));
-      }
-    } catch (err) {
-      console.warn('Lỗi di chuyển online exams / classes:', err);
-    }
+  public static getActiveUserId(): string {
+    return this.activeUserId || StorageEngine.getCurrentUserId() || UserDataSync.getActiveUserId() || 'guest';
   }
 
   private static getStorageKeys() {
-    this.ensureMigration();
-    return {
-      EXAMS: `aitest_online_exams_store_shared`,
-      SESSIONS: `aitest_online_sessions_store_shared`,
-      CLASSES: `aitest_online_classes_store_shared`,
-      STUDENTS: `aitest_online_students_store_shared`,
+    const userId = this.getActiveUserId();
+    const cleanId = userId && userId !== 'guest' ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
+    const keys = {
+      EXAMS: `aitest_online_exams_store_${cleanId}`,
+      SESSIONS: `aitest_online_sessions_store_${cleanId}`,
+      CLASSES: `aitest_online_classes_store_${cleanId}`,
+      STUDENTS: `aitest_online_students_store_${cleanId}`,
     };
+
+    // Khởi tạo từ bộ nhớ cũ nếu tài khoản này chưa có dữ liệu riêng
+    if (cleanId !== 'guest') {
+      try {
+        if (!localStorage.getItem(keys.CLASSES) && localStorage.getItem('aitest_online_classes_store_shared')) {
+          localStorage.setItem(keys.CLASSES, localStorage.getItem('aitest_online_classes_store_shared')!);
+        }
+        if (!localStorage.getItem(keys.STUDENTS) && localStorage.getItem('aitest_online_students_store_shared')) {
+          localStorage.setItem(keys.STUDENTS, localStorage.getItem('aitest_online_students_store_shared')!);
+        }
+        if (!localStorage.getItem(keys.EXAMS) && localStorage.getItem('aitest_online_exams_store_shared')) {
+          localStorage.setItem(keys.EXAMS, localStorage.getItem('aitest_online_exams_store_shared')!);
+        }
+      } catch {}
+    }
+
+    return keys;
   }
 
   private static syncToFirestore(): void {
@@ -179,9 +105,8 @@ export class OnlineExamService {
       students: this.getLocalStudents(),
       onlineExams: this.getLocalExams(),
     };
-    UserDataSync.saveUserData('shared_workspace', payload);
     const userId = this.getActiveUserId();
-    if (userId && userId !== 'guest' && userId !== 'shared_workspace') {
+    if (userId && userId !== 'guest') {
       UserDataSync.saveUserData(userId, payload);
     }
   }
@@ -1140,63 +1065,123 @@ export class OnlineExamService {
     localItems.forEach((it) => it.code && localKnownCodes.add(it.code.toUpperCase()));
     historyItems.forEach((it) => it.code && localKnownCodes.add(it.code.toUpperCase()));
 
+    // 2b. Lấy từ Supabase collection 'published_exams' (cho phép truy cập đa thiết bị không giới hạn)
+    let supabaseExams: (OnlineExamItem & { createdBy?: string })[] = [];
+    if (SupabaseService.isEnabled()) {
+      try {
+        const filterUser = (userId && userId !== 'guest' && userId !== 'admin') ? userId : undefined;
+        const spExams = await SupabaseService.getExams(filterUser);
+        if (spExams && Array.isArray(spExams)) {
+          spExams.forEach((e) => {
+            if (e && e.code) {
+              const codeUpper = e.code.trim().toUpperCase();
+              if (deletedCodes.has(codeUpper)) return;
+              const isOwner =
+                Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && e.createdBy === userId) ||
+                (!e.createdBy && localKnownCodes.has(codeUpper)) ||
+                (userId === 'admin');
+
+              if (isOwner) {
+                const pkg = e.examPackage || {};
+                const qCount = pkg.exams?.[0]?.questions?.length || 10;
+                supabaseExams.push({
+                  id: e.id || 'exam_sp_' + codeUpper,
+                  code: codeUpper,
+                  title: e.title || 'Đề kiểm tra',
+                  subject: e.subject || 'Môn học',
+                  grade: e.grade || 'Khối 10',
+                  duration: e.duration || 45,
+                  totalPoints: e.totalPoints || 10.0,
+                  topic: e.topic || e.examPackage?.metadata?.chapterTitle || '',
+                  packageId: e.packageId || e.examPackageId || e.examPackage?.id,
+                  examPackageId: e.packageId || e.examPackageId || e.examPackage?.id,
+                  examPackage: e.examPackage,
+                  createdDate: e.createdDate || e.createdAt || new Date().toISOString(),
+                  status: e.status || 'active',
+                  allowedClasses: e.allowedClasses || [],
+                  scheduledStartTime: e.scheduledStartTime,
+                  startTimeType: e.startTimeType,
+                  questionCount: qCount,
+                  submissionCount: e.submissionCount || 0,
+                  activeSessionCount: e.activeSessionCount || 0,
+                  antiCheat: e.antiCheat || {
+                    disallowPrevious: false,
+                    shuffleQuestions: true,
+                    shuffleOptions: true,
+                    autoSubmitOnTimeout: true,
+                    warnTabSwitch: true,
+                    tabSwitchLimit: 3,
+                  },
+                  createdBy: e.createdBy || userId,
+                });
+              }
+            }
+          });
+        }
+      } catch (sbErr) {
+        console.warn('Lỗi đọc published_exams từ Supabase:', sbErr);
+      }
+    }
+
     // 3. Lấy từ Firestore collection 'published_exams' (chỉ lấy đề của chính user này và chưa bị xóa)
     let firestoreExams: (OnlineExamItem & { createdBy?: string })[] = [];
-    try {
-      const colRef = collection(db, 'published_exams');
-      const snap = await getDocs(colRef);
-      snap.forEach((d) => {
-        const e = d.data() as any;
-        if (e && e.code) {
-          const codeUpper = e.code.trim().toUpperCase();
-          if (deletedCodes.has(codeUpper)) return;
-          const isOwner =
-            Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && e.createdBy === userId) ||
-            (!e.createdBy && localKnownCodes.has(codeUpper));
+    if (!SupabaseService.isEnabled()) {
+      try {
+        const colRef = collection(db, 'published_exams');
+        const snap = await getDocs(colRef);
+        snap.forEach((d) => {
+          const e = d.data() as any;
+          if (e && e.code) {
+            const codeUpper = e.code.trim().toUpperCase();
+            if (deletedCodes.has(codeUpper)) return;
+            const isOwner =
+              Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && e.createdBy === userId) ||
+              (!e.createdBy && localKnownCodes.has(codeUpper));
 
-          if (isOwner) {
-            const pkg = e.examPackage || {};
-            const qCount = pkg.exams?.[0]?.questions?.length || 10;
-            firestoreExams.push({
-              id: e.id || 'exam_fs_' + codeUpper,
-              code: codeUpper,
-              title: e.title || 'Đề kiểm tra',
-              subject: e.subject || 'Môn học',
-              grade: e.grade || 'Khối 10',
-              duration: e.duration || 45,
-              totalPoints: e.totalPoints || 10.0,
-              topic: e.topic || e.examPackage?.metadata?.chapterTitle || '',
-              packageId: e.packageId || e.examPackageId || e.examPackage?.id,
-              examPackageId: e.packageId || e.examPackageId || e.examPackage?.id,
-              examPackage: e.examPackage,
-              createdDate: e.createdDate || new Date().toISOString(),
-              status: e.status || 'active',
-              allowedClasses: e.allowedClasses || [],
-              scheduledStartTime: e.scheduledStartTime,
-              startTimeType: e.startTimeType,
-              questionCount: qCount,
-              submissionCount: 0,
-              activeSessionCount: 0,
-              antiCheat: e.antiCheat || {
-                disallowPrevious: false,
-                shuffleQuestions: true,
-                shuffleOptions: true,
-                autoSubmitOnTimeout: true,
-                warnTabSwitch: true,
-                tabSwitchLimit: 3,
-              },
-              createdBy: e.createdBy || userId,
-            });
+            if (isOwner) {
+              const pkg = e.examPackage || {};
+              const qCount = pkg.exams?.[0]?.questions?.length || 10;
+              firestoreExams.push({
+                id: e.id || 'exam_fs_' + codeUpper,
+                code: codeUpper,
+                title: e.title || 'Đề kiểm tra',
+                subject: e.subject || 'Môn học',
+                grade: e.grade || 'Khối 10',
+                duration: e.duration || 45,
+                totalPoints: e.totalPoints || 10.0,
+                topic: e.topic || e.examPackage?.metadata?.chapterTitle || '',
+                packageId: e.packageId || e.examPackageId || e.examPackage?.id,
+                examPackageId: e.packageId || e.examPackageId || e.examPackage?.id,
+                examPackage: e.examPackage,
+                createdDate: e.createdDate || new Date().toISOString(),
+                status: e.status || 'active',
+                allowedClasses: e.allowedClasses || [],
+                scheduledStartTime: e.scheduledStartTime,
+                startTimeType: e.startTimeType,
+                questionCount: qCount,
+                submissionCount: 0,
+                activeSessionCount: 0,
+                antiCheat: e.antiCheat || {
+                  disallowPrevious: false,
+                  shuffleQuestions: true,
+                  shuffleOptions: true,
+                  autoSubmitOnTimeout: true,
+                  warnTabSwitch: true,
+                  tabSwitchLimit: 3,
+                },
+                createdBy: e.createdBy || userId,
+              });
+            }
           }
-        }
-      });
-    } catch (e) {
-      console.warn('Lỗi đọc published_exams từ Firestore:', e);
+        });
+      } catch (e) {
+        console.warn('Lỗi đọc published_exams từ Firestore:', e);
+      }
     }
 
     // 4. Hợp nhất tất cả các nguồn đề và khử trùng lặp theo Mã đề (chỉ giữ đề của user hiện tại)
     const map = new Map<string, OnlineExamItem>();
-    [...apiExams, ...firestoreExams, ...localItems, ...historyItems].forEach((item: any) => {
+    [...supabaseExams, ...apiExams, ...firestoreExams, ...localItems, ...historyItems].forEach((item: any) => {
       if (item && item.code) {
         const key = item.code.trim().toUpperCase();
         if (deletedCodes.has(key)) return;
@@ -2372,17 +2357,18 @@ export class OnlineExamService {
   }
 
   private static async getSystemClassesFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[] | null> {
+    const userId = this.getActiveUserId();
     // 0. Đọc từ Supabase nếu đã kích hoạt
     if (SupabaseService.isEnabled()) {
       try {
-        const spClasses = await SupabaseService.getClasses();
-        if (spClasses && spClasses.length > 0) return spClasses;
+        const filterUser = (ignoreUserIdFilter || userId === 'guest' || userId === 'admin') ? undefined : userId;
+        const spClasses = await SupabaseService.getClasses(filterUser);
+        if (spClasses) return spClasses;
       } catch (sbErr) {
         console.warn('Lỗi đọc system_classes từ Supabase:', sbErr);
       }
     }
 
-    const userId = this.getActiveUserId();
     try {
       const colRef = collection(db, 'system_classes');
       let snap;
@@ -2414,17 +2400,18 @@ export class OnlineExamService {
   }
 
   private static async getSystemStudentsFromFirestore(ignoreUserIdFilter: boolean = false): Promise<any[] | null> {
+    const userId = this.getActiveUserId();
     // 0. Đọc từ Supabase nếu đã kích hoạt
     if (SupabaseService.isEnabled()) {
       try {
-        const spStudents = await SupabaseService.getStudents();
-        if (spStudents && spStudents.length > 0) return spStudents;
+        const filterUser = (ignoreUserIdFilter || userId === 'guest' || userId === 'admin') ? undefined : userId;
+        const spStudents = await SupabaseService.getStudents(undefined, filterUser);
+        if (spStudents) return spStudents;
       } catch (sbErr) {
         console.warn('Lỗi đọc system_students từ Supabase:', sbErr);
       }
     }
 
-    const userId = this.getActiveUserId();
     try {
       const colRef = collection(db, 'system_students');
       let snap;
@@ -2987,7 +2974,7 @@ export class OnlineExamService {
       }
     }
 
-    // 2. Query Firestore & local students
+    // 2. Query Supabase, Firestore & local students
     let targetUserId: string | undefined = undefined;
     if (code) {
       const examRes = await this.getExamDetail(code).catch(() => null);
@@ -2996,44 +2983,59 @@ export class OnlineExamService {
       }
     }
 
-    const studentsRes = await this.getStudents(undefined, true);
-    const allStudents = (studentsRes.students || []).filter(
-      (s) => !s.sbd || !this.getDeletedStudentSbds().has(s.sbd.trim().toUpperCase())
-    );
-
-    const normSbdA = cleanSbdUpper.replace(/[^a-zA-Z0-9]/g, '');
-
-    const matchStudent = (s: any) => {
-      if (!s || !s.sbd) return false;
-      const sbdVal = String(s.sbd).trim();
-      const sbdValUpper = sbdVal.toUpperCase();
-      const normSbdB = sbdValUpper.replace(/[^a-zA-Z0-9]/g, '');
-
-      if (sbdValUpper === cleanSbdUpper || sbdVal === cleanSbd || (normSbdA && normSbdA === normSbdB)) {
-        return true;
-      }
-
-      const clsVal = String(s.className || '').trim();
-      const normCls = clsVal.toUpperCase().replace(/[^a-zA-Z0-9]/g, '');
-      const normStSbd = sbdVal.toUpperCase().replace(/[^a-zA-Z0-9]/g, '');
-
-      if (normCls && normStSbd && normCls + normStSbd === normSbdA) return true;
-      if (sbdVal && cleanSbdUpper.endsWith('/' + sbdVal.toUpperCase())) return true;
-      if (sbdVal && cleanSbdUpper.endsWith('-' + sbdVal.toUpperCase())) return true;
-
-      return false;
-    };
-
     let student: any = null;
-    if (targetUserId) {
-      const userStudents = allStudents.filter(
-        (s) => s.createdBy === targetUserId || (!s.createdBy && targetUserId === 'guest')
-      );
-      student = userStudents.find(matchStudent);
+
+    // 2a. Thử tra cứu trực tiếp trên Supabase
+    if (SupabaseService.isEnabled()) {
+      try {
+        const spStudent = await SupabaseService.findStudentBySbd(cleanSbd, targetUserId);
+        if (spStudent) {
+          student = spStudent;
+        }
+      } catch (err) {
+        console.warn('Lỗi Supabase findStudentBySbd:', err);
+      }
     }
 
     if (!student) {
-      student = allStudents.find(matchStudent);
+      const studentsRes = await this.getStudents(undefined, true);
+      const allStudents = (studentsRes.students || []).filter(
+        (s) => !s.sbd || !this.getDeletedStudentSbds().has(s.sbd.trim().toUpperCase())
+      );
+
+      const normSbdA = cleanSbdUpper.replace(/[^a-zA-Z0-9]/g, '');
+
+      const matchStudent = (s: any) => {
+        if (!s || !s.sbd) return false;
+        const sbdVal = String(s.sbd).trim();
+        const sbdValUpper = sbdVal.toUpperCase();
+        const normSbdB = sbdValUpper.replace(/[^a-zA-Z0-9]/g, '');
+
+        if (sbdValUpper === cleanSbdUpper || sbdVal === cleanSbd || (normSbdA && normSbdA === normSbdB)) {
+          return true;
+        }
+
+        const clsVal = String(s.className || '').trim();
+        const normCls = clsVal.toUpperCase().replace(/[^a-zA-Z0-9]/g, '');
+        const normStSbd = sbdVal.toUpperCase().replace(/[^a-zA-Z0-9]/g, '');
+
+        if (normCls && normStSbd && normCls + normStSbd === normSbdA) return true;
+        if (sbdVal && cleanSbdUpper.endsWith('/' + sbdVal.toUpperCase())) return true;
+        if (sbdVal && cleanSbdUpper.endsWith('-' + sbdVal.toUpperCase())) return true;
+
+        return false;
+      };
+
+      if (targetUserId) {
+        const userStudents = allStudents.filter(
+          (s) => s.createdBy === targetUserId || (!s.createdBy && targetUserId === 'guest')
+        );
+        student = userStudents.find(matchStudent);
+      }
+
+      if (!student) {
+        student = allStudents.find(matchStudent);
+      }
     }
 
     if (!student) {

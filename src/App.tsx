@@ -70,8 +70,12 @@ export default function App() {
   // Synchronize user data upon account change / login
   useEffect(() => {
     StorageEngine.setCurrentUserId(currentUserId);
+    OnlineExamService.setActiveUserId(currentUserId);
+    UserDataSync.setActiveUserId(currentUserId);
 
-    // 1. Instantly load local shared cache
+    const targetId = currentUserId || 'guest';
+
+    // 1. Instantly load local user cache
     const localSettings = StorageEngine.getSettings();
     setSettings(localSettings);
     const localHist = StorageEngine.getExamHistory();
@@ -80,22 +84,26 @@ export default function App() {
     setQuestionBank(localBank);
     setCurrentExamPackage(localHist[0] || null);
 
-    // 2. Fetch remote shared data from Firestore (shared_workspace) for cross-device sync
-    UserDataSync.loadUserData('shared_workspace').then((data) => {
-      setSettings(data.settings);
-      setExamHistory(data.examHistory);
-      setQuestionBank(data.questionBank);
-      const pkg = (data.examHistory && data.examHistory.length > 0)
-        ? data.examHistory[0]
-        : null;
-      setCurrentExamPackage(pkg);
+    // 2. Fetch remote user data from Supabase / Cloud for cross-device sync
+    UserDataSync.loadUserData(targetId).then((data) => {
+      if (data) {
+        setSettings(data.settings);
+        setExamHistory(data.examHistory);
+        setQuestionBank(data.questionBank);
+        const pkg = (data.examHistory && data.examHistory.length > 0)
+          ? data.examHistory[0]
+          : null;
+        setCurrentExamPackage(pkg);
+      }
     });
 
-    // 3. Listen to real-time updates from Firestore for shared workspace
-    const unsubscribe = UserDataSync.subscribeUserData('shared_workspace', (data) => {
-      setSettings(data.settings);
-      setExamHistory(data.examHistory);
-      setQuestionBank(data.questionBank);
+    // 3. Listen to real-time updates for this specific user
+    const unsubscribe = UserDataSync.subscribeUserData(targetId, (data) => {
+      if (data) {
+        setSettings(data.settings);
+        setExamHistory(data.examHistory);
+        setQuestionBank(data.questionBank);
+      }
     });
 
     return () => {

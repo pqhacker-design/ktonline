@@ -117,15 +117,21 @@ export class SupabaseService {
   // 2. LỚP HỌC (system_classes)
   // ==========================================
 
-  static async getClasses(): Promise<any[]> {
+  static async getClasses(userId?: string): Promise<any[]> {
     const client = getSupabaseClient();
     if (!client) return [];
 
     try {
-      const { data, error } = await client
+      let query = client
         .from('system_classes')
         .select('*')
         .order('name', { ascending: true });
+
+      if (userId && userId !== 'admin' && userId !== 'ALL') {
+        query = query.eq('created_by', userId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       return (data || []).map((row) => ({
@@ -160,7 +166,7 @@ export class SupabaseService {
           teacher_name: cls.teacherName,
           notes: cls.notes,
           student_count: cls.studentCount || 0,
-          created_by: cls.createdBy,
+          created_by: cls.createdBy || 'guest',
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'id' }
@@ -187,13 +193,18 @@ export class SupabaseService {
     }
   }
 
-  static async wipeAllClassesAndStudents(): Promise<boolean> {
+  static async wipeAllClassesAndStudents(userId?: string): Promise<boolean> {
     const client = getSupabaseClient();
     if (!client) return false;
 
     try {
-      await client.from('system_classes').delete().neq('id', '___dummy___');
-      await client.from('system_students').delete().neq('id', '___dummy___');
+      if (userId && userId !== 'admin') {
+        await client.from('system_classes').delete().eq('created_by', userId);
+        await client.from('system_students').delete().eq('created_by', userId);
+      } else {
+        await client.from('system_classes').delete().neq('id', '___dummy___');
+        await client.from('system_students').delete().neq('id', '___dummy___');
+      }
       return true;
     } catch {
       return false;
@@ -204,7 +215,7 @@ export class SupabaseService {
   // 3. HỌC SINH (system_students)
   // ==========================================
 
-  static async getStudents(classId?: string): Promise<any[]> {
+  static async getStudents(classId?: string, userId?: string): Promise<any[]> {
     const client = getSupabaseClient();
     if (!client) return [];
 
@@ -212,6 +223,9 @@ export class SupabaseService {
       let query = client.from('system_students').select('*').order('name', { ascending: true });
       if (classId) {
         query = query.eq('class_id', classId);
+      }
+      if (userId && userId !== 'admin' && userId !== 'ALL') {
+        query = query.eq('created_by', userId);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -249,7 +263,7 @@ export class SupabaseService {
         gender: s.gender,
         dob: s.dob,
         notes: s.notes,
-        created_by: s.createdBy,
+        created_by: s.createdBy || 'guest',
         updated_at: new Date().toISOString(),
       }));
 
@@ -275,19 +289,82 @@ export class SupabaseService {
     }
   }
 
+  /**
+   * Tra cứu học sinh theo SBD phục vụ học sinh vào phòng thi
+   * Ưu tiên tìm trong học sinh do giáo viên ra đề quản lý, nếu không tìm thấy sẽ quét toàn hệ thống
+   */
+  static async findStudentBySbd(sbd: string, teacherId?: string): Promise<any | null> {
+    const client = getSupabaseClient();
+    if (!client) return null;
+
+    try {
+      const cleanSbd = (sbd || '').trim().toUpperCase();
+      if (!cleanSbd) return null;
+
+      // 1. Ưu tiên tìm trong danh sách của giáo viên tạo đề
+      if (teacherId && teacherId !== 'guest') {
+        const { data: teacherStudent } = await client
+          .from('system_students')
+          .select('*')
+          .eq('created_by', teacherId)
+          .ilike('sbd', cleanSbd)
+          .maybeSingle();
+
+        if (teacherStudent) {
+          return {
+            id: teacherStudent.id,
+            sbd: teacherStudent.sbd,
+            name: teacherStudent.name,
+            className: teacherStudent.class_name,
+            createdBy: teacherStudent.created_by,
+          };
+        }
+      }
+
+      // 2. Tìm chung trong toàn bộ bảng học sinh
+      const { data: anyStudent } = await client
+        .from('system_students')
+        .select('*')
+        .ilike('sbd', cleanSbd)
+        .limit(1)
+        .maybeSingle();
+
+      if (anyStudent) {
+        return {
+          id: anyStudent.id,
+          sbd: anyStudent.sbd,
+          name: anyStudent.name,
+          className: anyStudent.class_name,
+          createdBy: anyStudent.created_by,
+        };
+      }
+
+      return null;
+    } catch (err) {
+      console.warn('[Supabase] Lỗi tra cứu SBD học sinh:', err);
+      return null;
+    }
+  }
+
   // ==========================================
   // 4. ĐỀ THI TRỰC TUYẾN (published_exams)
   // ==========================================
 
-  static async getExams(): Promise<any[]> {
+  static async getExams(userId?: string): Promise<any[]> {
     const client = getSupabaseClient();
     if (!client) return [];
 
     try {
-      const { data, error } = await client
+      let query = client
         .from('published_exams')
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (userId && userId !== 'admin' && userId !== 'ALL') {
+        query = query.eq('created_by', userId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       return (data || []).map((row) => ({

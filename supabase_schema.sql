@@ -111,7 +111,10 @@ CREATE TABLE IF NOT EXISTS public.user_data (
 -- TẠO CHỈ MỤC TĂNG TỐC TRUY VẤN
 CREATE INDEX IF NOT EXISTS idx_students_sbd ON public.system_students(sbd);
 CREATE INDEX IF NOT EXISTS idx_students_class_id ON public.system_students(class_id);
+CREATE INDEX IF NOT EXISTS idx_students_created_by ON public.system_students(created_by);
+CREATE INDEX IF NOT EXISTS idx_classes_created_by ON public.system_classes(created_by);
 CREATE INDEX IF NOT EXISTS idx_exams_code ON public.published_exams(code);
+CREATE INDEX IF NOT EXISTS idx_exams_created_by ON public.published_exams(created_by);
 CREATE INDEX IF NOT EXISTS idx_results_exam_code ON public.student_results(exam_code);
 CREATE INDEX IF NOT EXISTS idx_results_sbd ON public.student_results(sbd);
 
