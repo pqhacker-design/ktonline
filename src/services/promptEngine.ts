@@ -29,8 +29,28 @@ BẮT BUỘC TUÂN THỦ CÁC NGUYÊN TẮC SAU:
    - HỆ PHƯƠNG TRÌNH bắt buộc dùng môi trường \\begin{cases} ... \\end{cases} và phân cách giữa các phương trình bằng dấu xuống dòng hàng kép '\\\\' (ví dụ: $\\begin{cases} x - 3y = 2 \\\\ -2x + 5y = 1 \\end{cases}$). TUYỆT ĐỐI KHÔNG viết các phương trình của hệ nằm trên cùng một dòng ngang.
 6. TUYỆT ĐỐI KHÔNG chèn các nhãn mã như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [TH_TN] vào cuối hoặc trong chuỗi văn bản 'content', 'explanation', 'essayAnswerGuide' của câu hỏi. Mức độ nhận thức CHỈ ĐƯỢC khai báo thông qua trường JSON 'cognitiveLevel' ('REMEMBER', 'UNDERSTAND', 'APPLY', 'ADVANCED').
 7. TRONG CHUỖI JSON TRẢ VỀ, MỌI DẤU GẠCH CHÉO NGƯỢC '\\' CỦA LATEX BẮT BUỘC PHẢI ĐƯỢC ESCAPE THÀNH '\\\\' (VÍ DỤ VIẾT '\\\\frac', '\\\\sqrt', '\\\\alpha', '\\\\begin', VÀ DẤU XUỐNG DÒNG HỆ PHƯƠNG TRÌNH PHẢI VIẾT LÀ '\\\\\\\\' TRONG JSON CHUẨN) ĐỂ JSON KHÔNG BỊ LỖI CÚ PHÁP.
-7. Trả về đúng 1 đối tượng JSON duy nhất theo đúng cấu trúc schema được yêu cầu, không có lời mở đầu hay kết luận thừa ngoài JSON.
-7. ĐẶC BIỆT DÀNH CHO CÂU HỎI HÌNH HỌC VÀ ĐỒ THỊ HÀM SỐ:
+8. Trả về đúng 1 đối tượng JSON duy nhất theo đúng cấu trúc schema được yêu cầu, không có lời mở đầu hay kết luận thừa ngoài JSON.
+9. QUY TẮC ĐẶC THÙ MÔN HỌC CHUẨN GDPT 2018:
+   - MÔN NGỮ VĂN:
+     + BẮT BUỘC sử dụng NGỮ LIỆU NGOÀI SÁCH GIÁO KHOA (văn bản truyện, thơ, ký, tản văn, nghị luận hoặc văn bản thông tin mới, giàu tính nhân văn, phù hợp lứa tuổi).
+     + Cấu trúc gồm 2 phần rõ rệt: ĐỌC HIỂU (các câu hỏi khai thác văn bản từ nhận biết thể loại, chi tiết, biện pháp tu từ đến thông hiểu chủ đề/thông điệp) và VIẾT (đoạn văn nghị luận xã hội / văn học hoặc bài văn hoàn chỉnh).
+     + Đáp án tự luận phải có bảng Rubric tiêu chí chấm: Hình thức, Nội dung, Sáng tạo, Chính tả & ngữ pháp.
+   - MÔN TIẾNG ANH:
+     + Toàn bộ đề thi, câu hỏi và phương án đều viết bằng TIẾNG ANH chuẩn quốc tế.
+     + Phải bao gồm các phần kiến thức cốt lõi: Ngữ âm (Pronunciation / Stress), Ngữ pháp & Từ vựng (Vocabulary & Grammar), Điền từ (Cloze Test), Đọc hiểu đoạn văn (Reading Comprehension), và Viết / Viết lại câu (Sentence Transformation / Writing).
+     + Câu hỏi tự luận thường là viết lại câu không đổi nghĩa, hoàn thành câu hoặc viết đoạn văn ngắn theo chủ đề.
+   - MÔN VẬT LÍ:
+     + Bám sát hiện tượng vật lí thực tiễn, thí nghiệm và mô hình khoa học (cơ, nhiệt, điện, từ, quang, hạt nhân).
+     + Câu hỏi trả lời ngắn (Phần III) thường yêu cầu tính toán ra một giá trị đại lượng vật lí cụ thể kèm đơn vị SI chuẩn.
+     + Câu hỏi tự luận giải bài toán vật lí nhiều bước có rubric tính điểm theo từng bước lập luận, viết công thức và thế số.
+   - MÔN HÓA HỌC:
+     + Bám sát thí nghiệm hóa học, hiện tượng phản ứng, tính toán hóa học gắn liền với sản xuất và đời sống.
+     + Công thức và phương trình hóa học bọc chuẩn $...$ với điều kiện nhiệt độ, xúc tác và trạng thái khí/kết tủa.
+   - MÔN SINH HỌC & KHTN:
+     + Bám sát quy luật di truyền, cấu tạo tế bào, sinh thái học, cơ thể người hoặc các chủ đề liên môn lý - hóa - sinh.
+   - MÔN LỊCH SỬ & ĐỊA LÍ:
+     + Bám sát tư liệu lịch sử, nhân vật, sự kiện hoặc bảng số liệu thống kê, biểu đồ địa lí, liên hệ thực tiễn Việt Nam và thế giới.
+10. ĐẶC BIỆT DÀNH CHO CÂU HỎI HÌNH HỌC VÀ ĐỒ THỊ HÀM SỐ:
    Nếu bài tập thuộc mạch HÌNH HỌC (hình học không gian, tam giác, hình chóp, lăng trụ, tứ diện, đường tròn, véctơ...) hoặc HÀM SỐ / VẼ ĐỒ THỊ (hàm bậc nhất, bậc hai, bậc ba, hàm nhất biến...):
    - BẮT BUỘC cung cấp chuỗi mã SVG chuẩn, trực quan trong trường "svgDiagram" (cho đề thi) và "solutionDiagramSvg" (cho phần đáp án / hướng dẫn giải chi tiết).
    - Mã SVG phải chứa thẻ <svg viewBox="0 0 400 300" ...>, màu sắc sắc nét, nét vẽ đứt đoạn cho nét khuất hình học (stroke-dasharray="4,4"), và các nhãn tên điểm / trục tọa độ ($A, B, C, D, S, H, Ox, Oy, O...$).`;
@@ -77,10 +97,65 @@ ${metadata.referenceContext.trim()}
 `;
     }
 
-    if (metadata.referenceImages && metadata.referenceImages.length > 0) {
-      referenceSection += `
-📸 TÀI LIỆU HÌNH ẢNH / TRANG SÁCH GIÁO KHOA / MỤC LỤC ĐÍNH KÈM:
-Đã gửi kèm ${metadata.referenceImages.length} ảnh trang sách giáo khoa / ảnh chụp bài học / mục lục. Hãy phân tích kỹ nội dung trong các bức ảnh này để trích xuất đúng phạm vi bài học và giới hạn câu hỏi chuẩn xác 100%.
+    let subjectSpecificSection = '';
+    const subCfg = metadata.subjectConfig || {};
+
+    if (subject === 'Ngữ văn') {
+      const pType = subCfg.readingPassageType || 'truyen';
+      const pTypeLabel = pType === 'truyen' ? 'Truyện / Tản văn / Ký' : pType === 'tho' ? 'Thơ' : pType === 'nghi_luan' ? 'Nghị luận xã hội' : pType === 'thong_tin' ? 'Văn bản thông tin' : 'Tự do';
+      const wGenre = subCfg.writingGenre || 'nghi_luan_xa_hoi';
+      const wGenreLabel = wGenre === 'nghi_luan_xa_hoi' ? 'Nghị luận xã hội (viết đoạn văn hoặc bài văn ngắn)' : wGenre === 'nghi_luan_van_hoc' ? 'Nghị luận văn học (cảm nhận, phân tích đoạn trích)' : wGenre === 'tu_su' ? 'Tự sự / Kể chuyện' : wGenre === 'thuyet_minh' ? 'Thuyết minh' : 'Biểu cảm';
+      subjectSpecificSection = `
+📖 HƯỚNG DẪN ĐẶC THÙ MÔN NGỮ VĂN (BẮT BUỘC TUÂN THỦ 100%):
+1. NGỮ LIỆU ĐỌC HIỂU:
+   - Thể loại ngữ liệu yêu cầu: ${pTypeLabel}.
+   - Ngữ liệu PHẢI LÀ văn bản/đoạn trích NGOÀI SÁCH GIÁO KHOA, có xuất xứ rõ ràng (Tác giả, tác phẩm, nhà xuất bản), giàu tính giáo dục và thẩm mỹ, phù hợp lứa tuổi ${grade}.
+   - Trình bày ngữ liệu rõ ràng ngay đầu phần Đọc hiểu.
+2. PHẦN TỰ LUẬN VIẾT:
+   - Thể loại viết: ${wGenreLabel}.
+   - Đề bài viết phải gắn với ngữ liệu đọc hiểu hoặc vấn đề tư tưởng, đạo lí, lối sống của giới trẻ hôm nay.
+   - Thang điểm và Rubric phải bao gồm 4 tiêu chí rõ ràng: Đảm bảo hình thức (bố cục), Xác định đúng vấn đề, Triển khai lập luận dẫn chứng, Sáng tạo & chính tả ngữ pháp.
+`;
+    } else if (subject === 'Tiếng Anh') {
+      const skills = (subCfg.englishSkills && subCfg.englishSkills.length > 0)
+        ? subCfg.englishSkills.join(', ')
+        : 'phonetics, grammar_vocab, reading, writing_transformation';
+      subjectSpecificSection = `
+🇬🇧 HƯỚNG DẪN ĐẶC THÙ MÔN TIẾNG ANH (BẮT BUỘC):
+1. Toàn bộ câu hỏi, phương án lựa chọn và lời giải đều viết bằng TIẾNG ANH chuẩn quốc tế.
+2. Trọng tâm kỹ năng: ${skills}.
+3. Phần I (Multiple Choice) kiểm tra: Phonetics (Phát âm / Trọng âm), Vocabulary, Grammar, Communicative exchanges.
+4. Đọc hiểu (Reading): Cung cấp 1 đoạn văn đọc hiểu (Reading passage) từ 150-250 từ chuẩn chủ đề bài học và các câu hỏi đọc hiểu thông tin chi tiết / ý chính.
+5. Phần IV Tự luận (Writing): Yêu cầu viết lại câu (Sentence transformation with given words) hoặc viết đoạn văn ngắn (Writing a paragraph 80-120 words) có Rubric tính điểm từng ý.
+`;
+    } else if (subject === 'Vật lí') {
+      const domain = subCfg.physicsDomain || 'tong_hop';
+      subjectSpecificSection = `
+⚡ HƯỚNG DẪN ĐẶC THÙ MÔN VẬT LÍ (BẮT BUỘC):
+1. Lĩnh vực kiến thức: ${domain}.
+2. Các câu hỏi phải gắn liền với hiện tượng vật lí tự nhiên, đời sống kỹ thuật và thí nghiệm.
+3. Phần III (Trả lời ngắn): Yêu cầu tính toán ra một giá trị vật lí cụ thể kèm đơn vị SI (ví dụ: "12 m/s", "4.5 J", "220 V", "0.5 A").
+4. Phần IV (Tự luận): Bài toán giải hiện tượng vật lí nhiều bước, Rubric tính điểm chi tiết cho từng bước: Viết công thức, Thay số, Tính toán ra kết quả và biện luận.
+`;
+    } else if (subject === 'Hóa học') {
+      const domain = subCfg.chemistryDomain || 'tong_hop';
+      subjectSpecificSection = `
+🧪 HƯỚNG DẪN ĐẶC THÙ MÔN HÓA HỌC (BẮT BUỘC):
+1. Lĩnh vực: ${domain}.
+2. Mọi công thức hóa học, phương trình phản ứng hóa học bắt buộc bọc trong dấu $...$ (VD: $CH_3COOH$, $C_2H_5OH$, $H_2SO_4$, $CO_2\\uparrow$).
+3. Bám sát câu hỏi thực nghiệm, phân biệt chất, hiệu suất phản ứng và ứng dụng đời sống sản xuất.
+`;
+    } else if (subject === 'Sinh học' || subject === 'KHTN') {
+      subjectSpecificSection = `
+🧬 HƯỚNG DẪN ĐẶC THÙ MÔN SINH HỌC / KHTN:
+1. Bám sát các quá trình sinh học, di truyền, biến dị, sinh thái hoặc các hiện tượng KHTN tích hợp liên môn.
+2. Khuyến khích đưa bảng số liệu thí nghiệm, sơ đồ phả hệ hoặc đồ thị sinh trưởng để rèn luyện năng lực phân tích cho học sinh.
+`;
+    } else if (subject === 'Lịch sử' || subject === 'Địa lí' || subject === 'Lịch sử và Địa lí') {
+      subjectSpecificSection = `
+🌍 HƯỚNG DẪN ĐẶC THÙ MÔN LỊCH SỬ & ĐỊA LÍ:
+1. Khai thác tư liệu lịch sử, nhân vật, bối cảnh thời đại hoặc bảng số liệu thống kê địa lí, biểu đồ, liên hệ thực tiễn Việt Nam.
+2. Đề cao câu hỏi đánh giá nguyên nhân, ý nghĩa, bài học kinh nghiệm và kỹ năng nhận xét số liệu.
 `;
     }
 
@@ -98,6 +173,7 @@ HÃY SINH MA TRẬN, BẢNG ĐẶC TẢ VÀ ĐỀ KIỂM TRA CHUẨN CÔNG VĂN 
 - Thời gian làm bài: ${durationMinutes} phút
 - Thang điểm tổng: ${totalPoints} điểm
 - Chế độ đề: ${modeDescription}
+${subjectSpecificSection}
 ${referenceSection}
 📊 CẤU TRÚC SỐ LƯỢNG CÂU HỎI THEO DẠNG VÀ THANG ĐIỂM CHI TIẾT:
 - Phần I (Trắc nghiệm 4 lựa chọn): ${questionCounts.part1_MCQSingle} câu (Mỗi câu ${questionCounts.part1_PointsPerQuestion ?? 0.25} điểm, Tổng = ${Math.round((questionCounts.part1_MCQSingle || 0) * (questionCounts.part1_PointsPerQuestion ?? 0.25) * 100) / 100}đ)

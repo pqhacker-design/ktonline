@@ -17,12 +17,12 @@ export async function callGeminiApi({
   responseMimeType,
   responseSchema,
   customApiKey,
-  model = 'gemini-2.5-flash',
+  model = 'gemini-3.8-flash',
   images = [],
   onStatusUpdate,
 }: GeminiApiOptions): Promise<string> {
   const apiKey = customApiKey?.trim() || '';
-  const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-2.5-flash';
+  const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-3.8-flash';
 
   // 1. Thử gọi qua Backend Server / Serverless Endpoint (/api/gemini/generate)
   try {

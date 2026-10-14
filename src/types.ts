@@ -7,7 +7,12 @@ export type SubjectType =
   | 'Toán'
   | 'Ngữ văn'
   | 'Tiếng Anh'
+  | 'Vật lí'
+  | 'Hóa học'
+  | 'Sinh học'
   | 'KHTN'
+  | 'Lịch sử'
+  | 'Địa lí'
   | 'Lịch sử và Địa lí'
   | 'GDCD / GDKT&PL'
   | 'Tin học'
@@ -17,10 +22,21 @@ export type SubjectType =
   | 'Giáo dục thể chất'
   | 'Khác';
 
+export interface SubjectConfig {
+  readingPassageType?: 'truyen' | 'tho' | 'nghi_luan' | 'thong_tin' | 'tu_do'; // Ngữ văn: Thể loại ngữ liệu Đọc hiểu
+  writingGenre?: 'nghi_luan_xa_hoi' | 'nghi_luan_van_hoc' | 'tu_su' | 'bieu_cam' | 'thuyet_minh'; // Ngữ văn: Thể loại Viết
+  englishSkills?: ('phonetics' | 'grammar_vocab' | 'reading' | 'writing_transformation' | 'cloze_test')[]; // Tiếng Anh: Kỹ năng trọng tâm
+  physicsDomain?: 'co_hoc' | 'nhiet_hoc' | 'dien_quang' | 'song_anh_sang' | 'hat_nhan' | 'tong_hop'; // Vật lí
+  chemistryDomain?: 'vo_co' | 'huu_co' | 'hoa_dai_cuong' | 'thi_nghiem' | 'tong_hop'; // Hóa học
+  biologyDomain?: 'di_truyen' | 'sinh_thai' | 'tien_hoa' | 'te_bao' | 'co_the' | 'tong_hop'; // Sinh học
+  hasContextData?: boolean; // Yêu cầu có ngữ liệu/bảng số liệu/thực tiễn
+}
+
 export type CurriculumType =
   | 'Kết nối tri thức với cuộc sống'
   | 'Chân trời sáng tạo'
   | 'Cánh Diều'
+  | 'Bộ SGK thống nhất 2026'
   | 'Chương trình GDPT 2018 khác';
 
 export type ExamMode = 'MCQ_ESSAY' | 'MCQ_ONLY' | 'ESSAY_ONLY';
@@ -159,6 +175,7 @@ export interface ExamMetadata {
   questionCounts: QuestionCounts;
   cognitiveRatio: CognitiveRatio;
   codeCount: number;         // Số mã đề (1, 2, 4, 6, 8, 10, 20, 50, 100)
+  subjectConfig?: SubjectConfig; // Cấu hình chi tiết đặc thù môn học
   referenceContext?: string; // Giới hạn kiến thức / Mô tả nội dung bài học chi tiết từ SGK
   referenceImages?: string[]; // Danh sách ảnh đính kèm (SGK, trang sách, ảnh mục lục, v.v...)
   onlineExamCode?: string;   // Mã đề thi trực tuyến (nếu đã xuất bản)

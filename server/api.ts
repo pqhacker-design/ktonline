@@ -231,9 +231,9 @@ export function registerExamRoutes(app: express.Express) {
         return res.status(400).json({ error: '[NO_API_KEY] Chưa cấu hình Gemini API Key. Vui lòng nhập API Key để tiếp tục.' });
       }
 
-      const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-2.5-flash';
+      const selectedModel = typeof model === 'string' && model.trim().length > 0 ? model.trim() : 'gemini-3.8-flash';
       const candidateModels = Array.from(
-        new Set([selectedModel, 'gemini-2.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'])
+        new Set([selectedModel, 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-3.1-pro-preview'])
       );
 
       let lastError: any = null;
@@ -1112,6 +1112,7 @@ export function registerExamRoutes(app: express.Express) {
                 id: r.id,
                 name: r.name,
                 grade: r.grade,
+                schoolYear: r.school_year || r.schoolYear || '',
                 school: r.school,
                 createdBy: r.created_by,
                 studentCount: r.student_count || 0,

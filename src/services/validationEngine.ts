@@ -229,7 +229,7 @@ export class ValidationEngine {
             const finalPts = Math.max(0.25, Math.round((targetP4Total - accumulated) * 100) / 100);
             q.points = finalPts;
           } else {
-            const isAdv = q.cognitiveLevel === 'ADVANCED' || q.cognitiveLevel === 'VDC';
+            const isAdv = q.cognitiveLevel === 'ADVANCED' || (q.cognitiveLevel as any) === 'VDC';
             const defaultPt = isAdv ? configuredAdvPoints : configuredApplyPoints;
             const assignedPt = Math.max(0.25, Math.round((defaultPt || (targetP4Total / part4List.length)) * 100) / 100);
             q.points = assignedPt;

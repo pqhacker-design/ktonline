@@ -29,6 +29,7 @@ import {
   ExamMode,
   QuestionCounts,
   SubjectType,
+  SubjectConfig,
   calculateExamScores,
 } from '../types';
 
@@ -63,6 +64,16 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
   const [durationMinutes, setDurationMinutes] = useState(45);
   const [totalPoints, setTotalPoints] = useState(10);
   const [curriculum, setCurriculum] = useState<CurriculumType>('Kết nối tri thức với cuộc sống');
+
+  // Cấu hình đặc thù môn học
+  const [subjectConfig, setSubjectConfig] = useState<SubjectConfig>({
+    readingPassageType: 'truyen',
+    writingGenre: 'nghi_luan_xa_hoi',
+    englishSkills: ['phonetics', 'grammar_vocab', 'reading', 'writing_transformation'],
+    physicsDomain: 'tong_hop',
+    chemistryDomain: 'tong_hop',
+    biologyDomain: 'tong_hop',
+  });
 
   // 1b. Nguồn tài liệu & Giới hạn kiến thức tham khảo (tùy chọn)
   const [referenceContext, setReferenceContext] = useState('');
@@ -372,6 +383,7 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
         questionCounts,
         cognitiveRatio,
         codeCount,
+        subjectConfig,
         referenceContext,
         referenceImages,
       });
@@ -419,6 +431,7 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
       questionCounts,
       cognitiveRatio,
       codeCount,
+      subjectConfig,
       referenceContext,
       referenceImages,
     };
@@ -526,14 +539,38 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
               </label>
               <select
                 value={subject}
-                onChange={(e) => setSubject(e.target.value as SubjectType)}
+                onChange={(e) => {
+                  const newSub = e.target.value as SubjectType;
+                  setSubject(newSub);
+                  // Tự động gợi ý tên chương / chủ đề theo môn học
+                  if (newSub === 'Ngữ văn') {
+                    setChapterTitle('Đọc hiểu văn bản truyện/thơ và Viết đoạn văn nghị luận xã hội');
+                  } else if (newSub === 'Tiếng Anh') {
+                    setChapterTitle('Unit 1 - Unit 3: Pronunciation, Grammar, Reading Comprehension & Writing');
+                  } else if (newSub === 'Vật lí') {
+                    setChapterTitle('Chương I: Động học & Động lực học chất điểm');
+                  } else if (newSub === 'Hóa học') {
+                    setChapterTitle('Chương I: Cấu tạo nguyên tử & Bảng tuần hoàn');
+                  } else if (newSub === 'Sinh học') {
+                    setChapterTitle('Chương I: Cơ sở di truyền học & Biến dị');
+                  } else if (newSub === 'Lịch sử') {
+                    setChapterTitle('Chủ đề: Lịch sử Việt Nam thời cận - hiện đại');
+                  } else if (newSub === 'Địa lí') {
+                    setChapterTitle('Địa lí tự nhiên & Dân cư Việt Nam');
+                  }
+                }}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none font-medium"
               >
                 <option value="Toán">Toán học</option>
                 <option value="Ngữ văn">Ngữ văn</option>
                 <option value="Tiếng Anh">Tiếng Anh</option>
-                <option value="KHTN">KHTN (Vật lí, Hóa học, Sinh học)</option>
-                <option value="Lịch sử và Địa lí">Lịch sử và Địa lí</option>
+                <option value="Vật lí">Vật lí</option>
+                <option value="Hóa học">Hóa học</option>
+                <option value="Sinh học">Sinh học</option>
+                <option value="KHTN">KHTN (Khoa học tự nhiên THCS)</option>
+                <option value="Lịch sử">Lịch sử</option>
+                <option value="Địa lí">Địa lí</option>
+                <option value="Lịch sử và Địa lí">Lịch sử và Địa lí (THCS)</option>
                 <option value="GDCD / GDKT&PL">GDCD / GD Kinh tế & Pháp luật</option>
                 <option value="Tin học">Tin học</option>
                 <option value="Công nghệ">Công nghệ</option>
@@ -573,6 +610,8 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-teal-500 outline-none font-medium text-teal-700 dark:text-teal-300"
               >
                 <option value="Kết nối tri thức với cuộc sống">Kết nối tri thức với cuộc sống</option>
+                <option value="Chân trời sáng tạo">Chân trời sáng tạo</option>
+                <option value="Cánh Diều">Cánh Diều</option>
                 <option value="Bộ SGK thống nhất 2026">Bộ SGK thống nhất 2026</option>
                 <option value="Chương trình GDPT 2018 khác">Chương trình GDPT 2018 khác</option>
               </select>
@@ -605,6 +644,209 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
                 required
               />
             </div>
+
+            {/* BẢNG CẤU HÌNH ĐẶC THÙ MÔN HỌC (THEO ĐỊNH HƯỚNG BỘ GD&ĐT GDPT 2018) */}
+            {subject === 'Ngữ văn' && (
+              <div className="md:col-span-2 lg:col-span-3 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center space-x-2 text-amber-800 dark:text-amber-300 font-bold text-xs uppercase tracking-wide">
+                  <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span>Cấu hình Đặc thù Môn Ngữ văn (Chuẩn GDPT 2018 - Ngữ liệu ngoài SGK)</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Thể loại ngữ liệu Đọc hiểu:
+                    </label>
+                    <select
+                      value={subjectConfig.readingPassageType || 'truyen'}
+                      onChange={(e) => setSubjectConfig((prev) => ({ ...prev, readingPassageType: e.target.value as any }))}
+                      className="w-full px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="truyen">Văn bản Truyện / Tản văn / Ký ngoài SGK</option>
+                      <option value="tho">Văn bản Thơ / Thơ tự do ngoài SGK</option>
+                      <option value="nghi_luan">Văn bản Nghị luận xã hội / Văn học ngoài SGK</option>
+                      <option value="thong_tin">Văn bản Thông tin / Báo chí khoa học</option>
+                      <option value="tu_do">Tự do do AI lựa chọn phù hợp lứa tuổi</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Dạng bài Viết (Phần Tự luận):
+                    </label>
+                    <select
+                      value={subjectConfig.writingGenre || 'nghi_luan_xa_hoi'}
+                      onChange={(e) => setSubjectConfig((prev) => ({ ...prev, writingGenre: e.target.value as any }))}
+                      className="w-full px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      <option value="nghi_luan_xa_hoi">Đoạn văn / Bài văn Nghị luận xã hội (200 chữ)</option>
+                      <option value="nghi_luan_van_hoc">Nghị luận văn học (Phân tích, cảm nhận đoạn trích)</option>
+                      <option value="thuyet_minh">Bài văn Thuyết minh về một hiện tượng / danh lam</option>
+                      <option value="tu_su">Bài văn Tự sự / Kể lại một trải nghiệm ý nghĩa</option>
+                      <option value="bieu_cam">Bài văn Biểu cảm về con người, cuộc sống</option>
+                    </select>
+                  </div>
+                </div>
+                <p className="text-[11px] text-amber-700 dark:text-amber-400 italic">
+                  * Hệ thống sẽ tự động chỉ đạo AI trích dẫn văn bản ngoài SGK kèm nguồn xuất bản và tạo Rubric chấm 4 tiêu chí (Hình thức, Nội dung, Lập luận, Sáng tạo & chính tả).
+                </p>
+              </div>
+            )}
+
+            {subject === 'Tiếng Anh' && (
+              <div className="md:col-span-2 lg:col-span-3 bg-sky-50/60 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center space-x-2 text-sky-800 dark:text-sky-300 font-bold text-xs uppercase tracking-wide">
+                  <GraduationCap className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                  <span>Cấu hình Đặc thù Môn Tiếng Anh (English Exam Blueprint)</span>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Kỹ năng & Mảng ngôn ngữ tích hợp trong đề:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-xs">
+                    {[
+                      { id: 'phonetics', label: 'Ngữ âm (Phonetics)' },
+                      { id: 'grammar_vocab', label: 'Từ vựng & Ngữ pháp' },
+                      { id: 'cloze_test', label: 'Điền từ (Cloze Test)' },
+                      { id: 'reading', label: 'Đọc hiểu (Reading)' },
+                      { id: 'writing_transformation', label: 'Viết lại câu / Viết' },
+                    ].map((skill) => {
+                      const isSelected = (subjectConfig.englishSkills || []).includes(skill.id as any);
+                      return (
+                        <label
+                          key={skill.id}
+                          className={`flex items-center space-x-2 p-2 rounded-xl border cursor-pointer transition-all ${
+                            isSelected
+                              ? 'bg-sky-500/10 border-sky-500 text-sky-900 dark:text-sky-200 font-semibold'
+                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const cur = subjectConfig.englishSkills || [];
+                              const updated = e.target.checked
+                                ? [...cur, skill.id as any]
+                                : cur.filter((s) => s !== skill.id);
+                              setSubjectConfig((prev) => ({ ...prev, englishSkills: updated }));
+                            }}
+                            className="rounded text-sky-600 focus:ring-sky-500"
+                          />
+                          <span className="text-[11px]">{skill.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="text-[11px] text-sky-700 dark:text-sky-400 italic">
+                  * Toàn bộ câu hỏi, phương án A/B/C/D và bài đọc sẽ được tạo 100% bằng tiếng Anh chuẩn theo lứa tuổi {grade}.
+                </p>
+              </div>
+            )}
+
+            {subject === 'Vật lí' && (
+              <div className="md:col-span-2 lg:col-span-3 bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center space-x-2 text-indigo-800 dark:text-indigo-300 font-bold text-xs uppercase tracking-wide">
+                  <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Cấu hình Đặc thù Môn Vật lí (Thực nghiệm & Hiện tượng khoa học)</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Mạch chuyên đề trọng tâm:
+                    </label>
+                    <select
+                      value={subjectConfig.physicsDomain || 'tong_hop'}
+                      onChange={(e) => setSubjectConfig((prev) => ({ ...prev, physicsDomain: e.target.value as any }))}
+                      className="w-full px-3 py-2 rounded-xl border border-indigo-300 dark:border-indigo-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="tong_hop">Tổng hợp kiến thức theo chương trình</option>
+                      <option value="co_hoc">Cơ học (Động học, Động lực học, Năng lượng, Cân bằng)</option>
+                      <option value="nhiet_hoc">Nhiệt học (Chất khí, Nhiệt động lực học, Sự chuyển thể)</option>
+                      <option value="dien_quang">Điện trường, Từ trường & Dòng điện xoay chiều</option>
+                      <option value="song_anh_sang">Sóng cơ, Sóng âm & Giao thoa ánh sáng</option>
+                      <option value="hat_nhan">Vật lí hạt nhân & Lượng tử ánh sáng</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center pt-5">
+                    <label className="flex items-center space-x-2 cursor-pointer text-xs font-medium text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={subjectConfig.hasContextData ?? true}
+                        onChange={(e) => setSubjectConfig((prev) => ({ ...prev, hasContextData: e.target.checked }))}
+                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>Ưu tiên bài toán có số liệu thí nghiệm / Đồ thị hiện tượng thực tiễn</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {subject === 'Hóa học' && (
+              <div className="md:col-span-2 lg:col-span-3 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center space-x-2 text-emerald-800 dark:text-emerald-300 font-bold text-xs uppercase tracking-wide">
+                  <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Cấu hình Đặc thù Môn Hóa học (Công thức chuẩn LaTeX & Thí nghiệm)</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Mạch kiến thức Hóa học:
+                    </label>
+                    <select
+                      value={subjectConfig.chemistryDomain || 'tong_hop'}
+                      onChange={(e) => setSubjectConfig((prev) => ({ ...prev, chemistryDomain: e.target.value as any }))}
+                      className="w-full px-3 py-2 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="tong_hop">Tổng hợp theo chủ đề bài học</option>
+                      <option value="vo_co">Hóa học Vô cơ (Kim loại, Phi kim, Axit, Muối)</option>
+                      <option value="huu_co">Hóa học Hữu cơ (Hydrocarbon, Dẫn xuất, Polymer)</option>
+                      <option value="hoa_dai_cuong">Hóa đại cương (Cấu tạo nguyên tử, Liên kết, Tốc độ phản ứng)</option>
+                      <option value="thi_nghiem">Hiện tượng thí nghiệm & Ứng dụng thực tế đời sống</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center pt-5">
+                    <span className="text-[11px] text-emerald-700 dark:text-emerald-400 italic">
+                      {`* Mọi công thức C2H5OH, CH3COOH, H2SO4 và phương trình phản ứng hóa học sẽ được tự động định dạng chuẩn công thức LaTeX.`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {subject === 'Sinh học' && (
+              <div className="md:col-span-2 lg:col-span-3 bg-teal-50/60 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-900/60 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center space-x-2 text-teal-800 dark:text-teal-300 font-bold text-xs uppercase tracking-wide">
+                  <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                  <span>Cấu hình Đặc thù Môn Sinh học (Di truyền, Tiến hóa & Sinh thái)</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Mạch kiến thức Sinh học:
+                    </label>
+                    <select
+                      value={subjectConfig.biologyDomain || 'tong_hop'}
+                      onChange={(e) => setSubjectConfig((prev) => ({ ...prev, biologyDomain: e.target.value as any }))}
+                      className="w-full px-3 py-2 rounded-xl border border-teal-300 dark:border-teal-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs font-medium outline-none focus:ring-2 focus:ring-teal-500"
+                    >
+                      <option value="tong_hop">Tổng hợp theo chủ đề bài học</option>
+                      <option value="di_truyen">Di truyền học (ADN, Nhiễm sắc thể, Phép lai Men-đen, Phả hệ)</option>
+                      <option value="sinh_thai">Sinh thái học & Môi trường sống</option>
+                      <option value="te_bao">Sinh học tế bào & Vi sinh vật</option>
+                      <option value="co_the">Sinh học cơ thể (Thực vật & Động vật, Con người)</option>
+                      <option value="tien_hoa">Tiến hóa và các học thuyết</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center pt-5">
+                    <span className="text-[11px] text-teal-700 dark:text-teal-400 italic">
+                      * Đề sẽ tập trung vào phân tích quy luật, biện luận phép lai, sơ đồ chuỗi thức ăn hoặc sơ đồ phả hệ.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Khối bổ sung Nguồn Tài Liệu Tham Khảo & Giới Hạn Kiến Thức */}
             <div
