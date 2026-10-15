@@ -169,17 +169,21 @@ ${metadata.referenceContext.trim()}
       matrixModeSection = `
 ⚡⚡⚡ YÊU CẦU TỐI QUAN TRỌNG: RA ĐỀ ĐỘC QUYỀN THEO MA TRẬN BỘ MÔN (BỎ QUA CẤU TRÚC VÀ TỈ LỆ MẶC ĐỊNH) ⚡⚡⚡
 Người dùng đã cung cấp khung Ma trận & Bản đặc tả bộ môn (dạng văn bản hoặc ảnh chụp đính kèm bên dưới).
-BẠN BẮT BUỘC TUÂN THỦ CÁC QUY TẮC SAU ĐÂY:
+BẠN BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT CÁC QUY TẮC SAU ĐÂY:
+
 1. ĐỌC KỸ TỪNG DÒNG, TỪNG CỘT CỦA MA TRẬN VÀ SỐ CÂU TƯƠNG ỨNG ĐỂ RA ĐỀ.
-2. BỎ QUA HOÀN TOÀN MỤC CẤU TRÚC SỐ CÂU VÀ TỶ LỆ MỨC ĐỘ NHẬN THỨC MẶC ĐỊNH. KHÔNG ĐƯỢC ÁP DỤNG CÁC CẤU HÌNH ĐÓ!
-3. XÁC ĐỊNH VÀ SINH ĐỦ 100% SỐ CÂU HỎI TRONG MA TRẬN:
-   - Hãy đếm số câu ở từng phần và từng mức độ trong ma trận:
-     + Phần I (Nhiều lựa chọn): Sinh đúng số câu trắc nghiệm 4 lựa chọn (partType: "PART1") theo các ô Nhiều lựa chọn trong ma trận.
-     + Phần II (Đúng - Sai): Sinh đúng số câu (partType: "PART2"), mỗi câu gồm đúng 4 ý a, b, c, d (với isCorrect: true hoặc false) theo ma trận.
-     + Phần III (Trả lời ngắn): Sinh đúng số câu (partType: "PART3") theo các ô Trả lời ngắn trong ma trận.
-     + Phần IV (Tự luận): Sinh đúng số câu (partType: "PART4") theo các ô Tự luận trong ma trận.
-   - MẢNG "questions" TRONG JSON KẾT QUẢ PHẢI CHỨA ĐỦ 100% TẤT CẢ CÁC CÂU HỎI THEO ĐÚNG MA TRẬN.
-   - TUYỆT ĐỐI KHÔNG ĐƯỢC THIẾU BẤT KỲ CÂU HỎI NÀO! TUYỆT ĐỐI KHÔNG DÙNG DẤU BA CHẤM (...), KHÔNG ĐƯỢC CHỈ TẠO CÂU HỎI MẪU!
+2. BỎ QUA HOÀN TOÀN MỤC CẤU TRÚC SỐ CÂU VÀ TỶ LỆ MỨC ĐỘ NHẬN THỨC MẶC ĐỊNH TRÊN HỆ THỐNG KHI ĐÃ CÓ MA TRẬN BỘ MÔN.
+3. QUY TẮC PHÂN BIỆT RÕ RÀNG GIỮA "SỐ CÂU LỚN" VÀ "SỐ Ý" (ĐẶC BIỆT QUAN TRỌNG VỚI MA TRẬN THCS / THPT):
+   - Nhiều ma trận (như môn Toán, KHTN cấp THCS/THPT) thường ghi chi tiết từng Ý con vào các ô đánh giá (Ví dụ: 13a, 13b, 13c, 13d; 14a, 14b, 14c, 14d; 15a, 15b, 15c, 15d; 16a, 16b; 18.1, 18.2):
+     + PHẦN I (Nhiều lựa chọn): Mỗi số thứ tự (ví dụ: 1, 2, 3... 12) là 1 câu trắc nghiệm 4 lựa chọn (partType: "PART1", điểm mỗi câu thường là 0.25 điểm).
+     + PHẦN II (Đúng - Sai): Các ý như 13a, 13b, 13c, 13d BẮT BUỘC ĐƯỢC GỘP CHUNG vào đúng 1 CÂU LỚN (Câu 13, partType: "PART2") chứa mảng "trueFalseStatements" gồm 4 ý a, b, c, d! Tương tự, 14a, 14b, 14c, 14d là Câu 14. Tổng cộng là 2 CÂU LỚN Đúng/Sai (2.0 điểm, mỗi câu 1.0đ chia cho 4 ý a, b, c, d). TUYỆT ĐỐI KHÔNG TÁCH các ý này thành từng câu riêng lẻ!
+     + PHẦN III (Trả lời ngắn): Nếu ma trận ghi 15a, 15b, 15c, 15d hoặc các ý ngắn, hãy tạo thành 4 câu trả lời ngắn độc lập (partType: "PART3", đánh số từ 1 đến 4 trong Phần III) bám sát các đơn vị kiến thức tương ứng, với điểm số là 0.5 điểm/câu (Tổng Phần III = 2.0 điểm).
+     + PHẦN IV (Tự luận): Nếu ma trận ghi 16a, 16b; 17; 18.1, 18.2, đây là 3 CÂU TỰ LUẬN LỚN (Câu 16, Câu 17, Câu 18, partType: "PART4") với tổng điểm là 3.0 điểm (mỗi câu khoảng 1.0đ):
+       * Câu 16 (1.0đ): Trong "content" chia rõ 2 ý a) (0.5đ, Thông hiểu) và b) (0.5đ, Vận dụng).
+       * Câu 17 (1.0đ): Vận dụng (1.0đ).
+       * Câu 18 (1.0đ): Trong "content" chia rõ 2 ý 1) (0.5đ, Thông hiểu) và 2) (0.5đ, Vận dụng).
+       * Kèm theo "essayAnswerGuide" giải chi tiết và mảng "rubric" chia điểm chính xác cho từng ý.
+   - BẮT BUỘC SINH ĐỦ 100% TẤT CẢ CÁC CÂU THEO MA TRẬN TRÊN, KHÔNG ĐƯỢC THIẾU BẤT KỲ CÂU NÀO, KHÔNG DÙNG DẤU BA CHẤM (...).
 4. ĐÁP ÁN ĐẦY ĐỦ CHO TẤT CẢ CÁC CÂU HỎI:
    - Phần I: Bắt buộc có "correctOption" (A, B, C hoặc D) và "explanation" giải thích chi tiết.
    - Phần II: Bắt buộc có "trueFalseStatements" gồm đúng 4 ý a, b, c, d với "content", "isCorrect": true/false và lời giải.
@@ -188,7 +192,7 @@ BẠN BẮT BUỘC TUÂN THỦ CÁC QUY TẮC SAU ĐÂY:
    - TUYỆT ĐỐI KHÔNG ĐỂ TRỐNG ĐÁP ÁN!
 5. BẢNG "matrix" VÀ "specification" TRONG JSON KẾT QUẢ:
    - Phản ánh đúng khung ma trận đã cung cấp theo chuẩn Công văn 7991/BGDĐT (gồm 4 dạng thức part1, part2, part3, part4 theo 3 mức độ remember, understand, apply).
-   - Tổng điểm toàn bộ đề thi phải bằng đúng 10.0 điểm.
+   - TỔNG ĐIỂM TOÀN BỘ ĐỀ THI PHẢI BẰNG ĐÚNG 10.0 ĐIỂM.
 ${metadata.customMatrixContext ? `
 --------------------- NỘI DUNG MA TRẬN BỘ MÔN CUNG CẤP ---------------------
 ${metadata.customMatrixContext.trim()}
