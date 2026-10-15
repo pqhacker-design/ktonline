@@ -61,23 +61,42 @@ export function setSupabaseConfig(config: SupabaseConfig | null): void {
 }
 
 /**
- * Tự động đồng bộ cấu hình Supabase từ Server API về trình duyệt
- * Đảm bảo khi cấu hình ở Google Chrome thì khi mở bằng Edge, Firefox, Safari hay tab ẩn danh,
- * ứng dụng đều tự động kết nối chung Supabase database!
+ * Tự động đồng bộ cấu hình Supabase hai chiều giữa Server API và trình duyệt
+ * 1. Nếu trình duyệt hiện tại (ví dụ Google Chrome) đã có cấu hình nhưng máy chủ chưa có,
+ *    tự động gửi lên máy chủ lưu vào data/supabase-config.json.
+ * 2. Khi mở bằng bất kỳ trình duyệt nào khác (Edge, Firefox, Safari, tab ẩn danh, máy khác),
+ *    trình duyệt đó tự động lấy cấu hình từ máy chủ về và kết nối chung Supabase database!
  */
 export async function syncSupabaseConfigFromServer(): Promise<boolean> {
   try {
+    const current = getSupabaseConfig();
+    const hasLocalConfig = Boolean(current.url && current.anonKey && current.url.startsWith('http'));
+
     const res = await fetch('/api/supabase/config');
     if (!res.ok) return false;
     const data = await res.json();
-    if (data && data.success && data.isConfigured && data.url && data.anonKey) {
-      const current = getSupabaseConfig();
-      if (current.url !== data.url || current.anonKey !== data.anonKey) {
-        setSupabaseConfig({ url: data.url, anonKey: data.anonKey });
+
+    if (data && data.success) {
+      if (data.isConfigured && data.url && data.anonKey) {
+        // Máy chủ đã có cấu hình -> Cập nhật xuống trình duyệt nếu khác
+        if (current.url !== data.url || current.anonKey !== data.anonKey) {
+          setSupabaseConfig({ url: data.url, anonKey: data.anonKey });
+          return true;
+        }
+        return true;
+      } else if (hasLocalConfig) {
+        // Trình duyệt có cấu hình nhưng máy chủ chưa lưu -> Đẩy cấu hình lên máy chủ
+        await fetch('/api/supabase/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: current.url, anonKey: current.anonKey }),
+        }).catch(() => {});
         return true;
       }
     }
-  } catch {}
+  } catch (err) {
+    console.warn('[Supabase Sync] Lỗi đồng bộ cấu hình:', err);
+  }
   return false;
 }
 

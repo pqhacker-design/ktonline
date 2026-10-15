@@ -306,6 +306,7 @@ export interface ExamAnswerKey {
 export interface ExamPackage {
   id: string;
   createdAt: string;
+  createdBy?: string;
   metadata: ExamMetadata;
   matrix: MatrixRow[];
   specification: SpecRow[];

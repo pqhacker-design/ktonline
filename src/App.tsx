@@ -70,17 +70,26 @@ export default function App() {
 
   // Tự động đồng bộ Supabase từ server API khi mở trên bất kỳ trình duyệt nào
   useEffect(() => {
+    const handleReloadFromSupabase = () => {
+      const targetId = currentUserId || 'guest';
+      UserDataSync.loadUserData(targetId).then((data) => {
+        if (data?.examHistory !== undefined) {
+          setExamHistory(data.examHistory);
+          StorageEngine.syncFromRemote(data.examHistory, data.questionBank, data.settings);
+        }
+      });
+    };
+
     syncSupabaseConfigFromServer().then((synced) => {
       if (synced) {
-        const targetId = currentUserId || 'guest';
-        UserDataSync.loadUserData(targetId).then((data) => {
-          if (data?.examHistory?.length) {
-            setExamHistory(data.examHistory);
-            StorageEngine.syncFromRemote(data.examHistory, data.questionBank, data.settings);
-          }
-        });
+        handleReloadFromSupabase();
       }
     });
+
+    window.addEventListener('supabase-config-changed', handleReloadFromSupabase);
+    return () => {
+      window.removeEventListener('supabase-config-changed', handleReloadFromSupabase);
+    };
   }, [currentUserId]);
 
   // Synchronize user data upon account change / login
@@ -242,9 +251,13 @@ export default function App() {
       );
 
       // Save to History
-      StorageEngine.saveExamPackage(generatedPackage);
+      const pkgWithCreator: ExamPackage = {
+        ...generatedPackage,
+        createdBy: currentUserId || 'guest',
+      };
+      StorageEngine.saveExamPackage(pkgWithCreator);
       setExamHistory(StorageEngine.getExamHistory());
-      setCurrentExamPackage(generatedPackage);
+      setCurrentExamPackage(pkgWithCreator);
 
       // Save new questions to bank
       if (generatedPackage.exams[0]?.questions) {

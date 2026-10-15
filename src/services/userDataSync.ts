@@ -12,6 +12,7 @@ export interface UserDataPayload {
   students?: any[];
   onlineExams?: any[];
   deletedExamCodes?: string[];
+  deletedExamPackageIds?: string[];
   deletedStudentSbds?: string[];
   classesWipedAt?: string;
   updatedAt?: string;
@@ -169,31 +170,68 @@ export class UserDataSync {
     if (SupabaseService.isEnabled()) {
       try {
         let spData = await SupabaseService.loadUserData(userId);
-        // Nếu tài khoản chưa có đề thi hoặc mới đăng nhập, kiểm tra dữ liệu từ 'guest' hoặc 'admin'
-        if ((!spData || !spData.examHistory || spData.examHistory.length === 0) && userId !== 'guest') {
-          const guestData = await SupabaseService.loadUserData('guest');
-          if (guestData && guestData.examHistory && guestData.examHistory.length > 0) {
-            spData = spData ? { ...spData, examHistory: guestData.examHistory } : guestData;
+
+        // Lấy danh sách ID / Mã đề đã bị xóa để lọc triệt để
+        const local = this.getLocalUserData(userId);
+        const deletedSet = new Set<string>();
+        (local.deletedExamCodes || []).forEach((c) => c && deletedSet.add(c.trim().toUpperCase()));
+        (spData?.deletedExamCodes || []).forEach((c) => c && deletedSet.add(c.trim().toUpperCase()));
+        (local.deletedExamPackageIds || []).forEach((id) => {
+          if (id) {
+            deletedSet.add(id);
+            deletedSet.add(id.trim().toUpperCase());
+            deletedSet.add('PKG:' + id);
+            deletedSet.add('PKG:' + id.trim().toUpperCase());
           }
-        }
-        // Kiểm tra thêm các đề thi đã phát hành trên Supabase published_exams
+        });
+        (spData?.deletedExamPackageIds || []).forEach((id) => {
+          if (id) {
+            deletedSet.add(id);
+            deletedSet.add(id.trim().toUpperCase());
+            deletedSet.add('PKG:' + id);
+            deletedSet.add('PKG:' + id.trim().toUpperCase());
+          }
+        });
+
+        // Kiểm tra thêm các đề thi do chính user này phát hành trên Supabase published_exams
+        // Chú ý: TUYỆT ĐỐI không lấy đề của user khác cho admin trên Dashboard! Mỗi user chỉ quản lý đề của chính mình.
         let recoveredPackages: ExamPackage[] = [];
         try {
-          const pubExams = await SupabaseService.getExams(userId === 'admin' ? undefined : userId);
+          const pubExams = await SupabaseService.getExams(userId);
           if (pubExams && pubExams.length > 0) {
             pubExams.forEach((pe) => {
               if (pe.examPackage && pe.examPackage.id) {
-                recoveredPackages.push(pe.examPackage);
+                const pkgId = pe.examPackage.id;
+                const onlineCode = (pe.code || pe.examPackage.metadata?.onlineExamCode || '').trim().toUpperCase();
+                // Không phục hồi nếu đề này đã bị xóa!
+                if (!deletedSet.has(pkgId) && !deletedSet.has(pkgId.toUpperCase()) && !deletedSet.has('PKG:' + pkgId) && (!onlineCode || !deletedSet.has(onlineCode))) {
+                  recoveredPackages.push(pe.examPackage);
+                }
               }
             });
           }
         } catch {}
 
-        const local = this.getLocalUserData(userId);
         const historyMap = new Map<string, ExamPackage>();
-        (spData?.examHistory || []).forEach((p: ExamPackage) => p && p.id && historyMap.set(p.id, p));
+        (spData?.examHistory || []).forEach((p: ExamPackage) => {
+          if (p && p.id && !p.id.includes('sample') && p.id !== 'pkg_sample_7791') {
+            const onlineCode = (p.metadata?.onlineExamCode || '').trim().toUpperCase();
+            if (!deletedSet.has(p.id) && !deletedSet.has(p.id.toUpperCase()) && !deletedSet.has('PKG:' + p.id) && (!onlineCode || !deletedSet.has(onlineCode))) {
+              historyMap.set(p.id, p);
+            }
+          }
+        });
         recoveredPackages.forEach((p) => p && p.id && !historyMap.has(p.id) && historyMap.set(p.id, p));
-        (local.examHistory || []).forEach((p: ExamPackage) => p && p.id && !historyMap.has(p.id) && historyMap.set(p.id, p));
+        (local.examHistory || []).forEach((p: ExamPackage) => {
+          if (p && p.id && !p.id.includes('sample') && p.id !== 'pkg_sample_7791') {
+            const onlineCode = (p.metadata?.onlineExamCode || '').trim().toUpperCase();
+            if (!deletedSet.has(p.id) && !deletedSet.has(p.id.toUpperCase()) && !deletedSet.has('PKG:' + p.id) && (!onlineCode || !deletedSet.has(onlineCode))) {
+              if (!historyMap.has(p.id)) {
+                historyMap.set(p.id, p);
+              }
+            }
+          }
+        });
 
         const mergedHistory = Array.from(historyMap.values());
 
@@ -205,6 +243,7 @@ export class UserDataSync {
           students: (spData?.students && spData.students.length > 0) ? spData.students : (local.students || []),
           onlineExams: (spData?.onlineExams && spData.onlineExams.length > 0) ? spData.onlineExams : (local.onlineExams || []),
           deletedExamCodes: spData?.deletedExamCodes || local.deletedExamCodes || [],
+          deletedExamPackageIds: Array.from(deletedSet).filter((s) => s.startsWith('pkg_')),
           deletedStudentSbds: spData?.deletedStudentSbds || local.deletedStudentSbds || [],
           classesWipedAt: spData?.classesWipedAt || local.classesWipedAt,
           updatedAt: spData?.updatedAt || new Date().toISOString(),
@@ -233,10 +272,26 @@ export class UserDataSync {
         // Merge with local storage
         const local = this.getLocalUserData(userId);
 
-        // Compute deleted exam codes set
+        // Compute deleted exam codes & package ids set
         const deletedSet = new Set<string>();
         (local.deletedExamCodes || []).forEach((c) => c && deletedSet.add(c.trim().toUpperCase()));
         (remoteData.deletedExamCodes || []).forEach((c) => c && deletedSet.add(c.trim().toUpperCase()));
+        (local.deletedExamPackageIds || []).forEach((id) => {
+          if (id) {
+            deletedSet.add(id);
+            deletedSet.add(id.trim().toUpperCase());
+            deletedSet.add('PKG:' + id);
+            deletedSet.add('PKG:' + id.trim().toUpperCase());
+          }
+        });
+        (remoteData.deletedExamPackageIds || []).forEach((id) => {
+          if (id) {
+            deletedSet.add(id);
+            deletedSet.add(id.trim().toUpperCase());
+            deletedSet.add('PKG:' + id);
+            deletedSet.add('PKG:' + id.trim().toUpperCase());
+          }
+        });
         const mergedDeletedExamCodes = Array.from(deletedSet);
 
         const remoteHistory = Array.isArray(remoteData.examHistory) ? remoteData.examHistory : [];
@@ -244,24 +299,35 @@ export class UserDataSync {
         const historyMap = new Map<string, ExamPackage>();
         [...localHistory, ...remoteHistory].forEach((item) => {
           if (item && item.id && !item.id.includes('sample') && item.id !== 'pkg_sample_7791') {
-            const cleanPkg = { ...item };
-            if (cleanPkg.metadata?.onlineExamCode && deletedSet.has(cleanPkg.metadata.onlineExamCode.trim().toUpperCase())) {
-              const meta = { ...cleanPkg.metadata };
-              delete meta.onlineExamCode;
-              cleanPkg.metadata = meta;
+            const onlineCode = (item.metadata?.onlineExamCode || '').trim().toUpperCase();
+            if (!deletedSet.has(item.id) && !deletedSet.has(item.id.toUpperCase()) && !deletedSet.has('PKG:' + item.id) && (!onlineCode || !deletedSet.has(onlineCode))) {
+              historyMap.set(item.id, item);
             }
-            historyMap.set(cleanPkg.id, cleanPkg);
           }
         });
 
         const rawOnlineExams = Array.isArray(remoteData.onlineExams) && remoteData.onlineExams.length > 0 ? remoteData.onlineExams : local.onlineExams || [];
         const onlineExams = rawOnlineExams
-          .filter((oe: any) => oe && (!oe.code || !deletedSet.has(oe.code.trim().toUpperCase())));
+          .filter((oe: any) => {
+            if (!oe) return false;
+            const codeUpper = (oe.code || '').trim().toUpperCase();
+            const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id;
+            if (codeUpper && deletedSet.has(codeUpper)) return false;
+            if (pkgId && (deletedSet.has(pkgId) || deletedSet.has('PKG:' + pkgId))) return false;
+            return true;
+          });
 
         // Recover any exam packages from onlineExams into examHistory if missing and not deleted
         onlineExams.forEach((oe: any) => {
           const codeUpper = (oe.code || '').trim().toUpperCase();
-          if (!deletedSet.has(codeUpper) && oe.examPackage && oe.examPackage.id && !historyMap.has(oe.examPackage.id)) {
+          const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id;
+          if (
+            (!codeUpper || !deletedSet.has(codeUpper)) &&
+            (!pkgId || (!deletedSet.has(pkgId) && !deletedSet.has('PKG:' + pkgId))) &&
+            oe.examPackage &&
+            oe.examPackage.id &&
+            !historyMap.has(oe.examPackage.id)
+          ) {
             const pkg = {
               ...oe.examPackage,
               metadata: {
@@ -650,6 +716,67 @@ export class UserDataSync {
         }
       }
     );
+  }
+
+  /**
+   * Xóa vĩnh viễn gói đề thi khỏi tài khoản và đồng bộ ngay lập tức lên Supabase, LocalStorage và Firestore
+   * Đảm bảo đề thi không bao giờ xuất hiện lại sau khi đăng xuất/đăng nhập lại!
+   */
+  static async deleteExamPackage(userId: string, packageId: string): Promise<void> {
+    if (!userId || !packageId) return;
+
+    // 1. Cập nhật danh sách ID gói đề thi đã bị xóa
+    const local = this.getLocalUserData(userId);
+    const deletedPkgSet = new Set<string>(local.deletedExamPackageIds || []);
+    deletedPkgSet.add(packageId);
+    deletedPkgSet.add('PKG:' + packageId);
+    const updatedDeletedPackageIds = Array.from(deletedPkgSet).filter((s) => s.startsWith('pkg_'));
+
+    // 2. Lấy mã đề thi trực tuyến (nếu có) để xóa sạch liên kết
+    const targetPkg = (local.examHistory || []).find((p) => p.id === packageId);
+    const onlineExamCode = (targetPkg?.metadata?.onlineExamCode || '').trim().toUpperCase();
+
+    const deletedCodeSet = new Set<string>(local.deletedExamCodes || []);
+    deletedCodeSet.add(packageId);
+    deletedCodeSet.add('PKG:' + packageId);
+    if (onlineExamCode) {
+      deletedCodeSet.add(onlineExamCode);
+    }
+    const updatedDeletedCodes = Array.from(deletedCodeSet);
+
+    // 3. Xóa gói đề khỏi examHistory của user
+    const updatedHistory = (local.examHistory || []).filter((p) => p.id !== packageId);
+
+    // 4. Xóa khỏi onlineExams nếu có
+    const updatedOnlineExams = (local.onlineExams || []).filter((oe: any) => {
+      const pId = oe.packageId || oe.examPackageId || oe.examPackage?.id;
+      const code = (oe.code || '').trim().toUpperCase();
+      if (pId === packageId) return false;
+      if (onlineExamCode && code === onlineExamCode) return false;
+      return true;
+    });
+
+    const updates: Partial<UserDataPayload> = {
+      examHistory: updatedHistory,
+      onlineExams: updatedOnlineExams,
+      deletedExamCodes: updatedDeletedCodes,
+      deletedExamPackageIds: updatedDeletedPackageIds,
+    };
+
+    // 5. Lưu cục bộ ngay tức thì
+    this.saveLocalUserData(userId, updates);
+
+    // 6. Xóa vĩnh viễn trên Supabase
+    if (SupabaseService.isEnabled()) {
+      SupabaseService.saveUserData(userId, updates).catch(() => {});
+      SupabaseService.deleteExamByPackageId(packageId, userId).catch(() => {});
+      if (onlineExamCode) {
+        SupabaseService.deleteExam(onlineExamCode).catch(() => {});
+      }
+    }
+
+    // 7. Đồng bộ lên Firestore
+    this.saveUserData(userId, updates).catch(() => {});
   }
 }
 

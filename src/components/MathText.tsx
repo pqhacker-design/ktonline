@@ -3,7 +3,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/mhchem.js';
 import { autoWrapUnwrappedLatex } from '../services/exportDocx';
-import { normalizeNewlines } from '../utils/textUtils';
+import { normalizeNewlines, cleanMathNewlines } from '../utils/textUtils';
 
 interface MathTextProps {
   content?: string;
@@ -12,7 +12,7 @@ interface MathTextProps {
 }
 
 function cleanMathForKaTeX(str: string): string {
-  let s = str.trim();
+  let s = cleanMathNewlines(str);
   s = s.replace(/\\$/, '');
   s = s.replace(/°/g, '^\\circ');
   return s;

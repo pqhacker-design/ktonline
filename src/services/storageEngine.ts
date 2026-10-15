@@ -57,36 +57,16 @@ export class StorageEngine {
     if (this.migrated) return;
     this.migrated = true;
     try {
-      // 1. Migrate exam history from user-scoped keys into shared key
+      // 1. Dọn dẹp các gói đề thi mẫu cũ
       const sharedHistoryRaw = localStorage.getItem(STORAGE_KEYS.EXAM_HISTORY);
-      let sharedHistory: ExamPackage[] = [];
       if (sharedHistoryRaw) {
-        try { sharedHistory = JSON.parse(sharedHistoryRaw) || []; } catch {}
-      }
-      const historyMap = new Map<string, ExamPackage>();
-      sharedHistory.forEach((p) => p && p.id && historyMap.set(p.id, p));
-
-      // Scan all localStorage keys for other user history
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('aitest_exam_history_v1_') && k !== STORAGE_KEYS.EXAM_HISTORY) {
-          try {
-            const raw = localStorage.getItem(k);
-            if (raw) {
-              const list: ExamPackage[] = JSON.parse(raw);
-              if (Array.isArray(list)) {
-                list.forEach((p) => {
-                  if (p && p.id && !p.id.includes('sample') && !historyMap.has(p.id)) {
-                    historyMap.set(p.id, p);
-                  }
-                });
-              }
-            }
-          } catch {}
-        }
-      }
-      if (historyMap.size > sharedHistory.length) {
-        localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(Array.from(historyMap.values())));
+        try {
+          const list: ExamPackage[] = JSON.parse(sharedHistoryRaw) || [];
+          const clean = list.filter((p) => p && p.id && !p.id.includes('sample') && p.id !== 'pkg_sample_7791');
+          if (clean.length !== list.length) {
+            localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(clean));
+          }
+        } catch {}
       }
 
       // 2. Migrate question bank
@@ -182,15 +162,6 @@ export class StorageEngine {
     try {
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       let data = localStorage.getItem(key);
-      if (!data || data === '[]') {
-        const sharedData = localStorage.getItem(STORAGE_KEYS.EXAM_HISTORY);
-        if (sharedData && sharedData !== '[]') {
-          data = sharedData;
-          try {
-            localStorage.setItem(key, sharedData);
-          } catch {}
-        }
-      }
       if (data !== null) {
         const parsed = JSON.parse(data);
         if (Array.isArray(parsed)) {
@@ -217,13 +188,13 @@ export class StorageEngine {
       const updated = [examPackage, ...history.filter((e) => e.id !== examPackage.id)];
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
-      localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(updated));
 
       const targetId = this.currentUserId || 'guest';
-      UserDataSync.saveUserData(targetId, { examHistory: updated }).catch(() => {});
-      if (targetId !== 'guest') {
-        UserDataSync.saveUserData('guest', { examHistory: updated }).catch(() => {});
+      if (targetId === 'guest') {
+        localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(updated));
       }
+
+      UserDataSync.saveUserData(targetId, { examHistory: updated }).catch(() => {});
 
       this.notifyListeners();
     } catch (e) {
@@ -233,17 +204,26 @@ export class StorageEngine {
 
   static deleteExamPackage(id: string): void {
     try {
+      const targetId = this.currentUserId || 'guest';
       const history = this.getExamHistory();
       const updated = history.filter((e) => e.id !== id);
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
-      localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(updated));
 
-      const targetId = this.currentUserId || 'guest';
-      UserDataSync.saveUserData(targetId, { examHistory: updated }).catch(() => {});
-      if (targetId !== 'guest') {
-        UserDataSync.saveUserData('guest', { examHistory: updated }).catch(() => {});
+      // Xóa triệt để khỏi khóa shared nếu có
+      const sharedRaw = localStorage.getItem(STORAGE_KEYS.EXAM_HISTORY);
+      if (sharedRaw) {
+        try {
+          const list: ExamPackage[] = JSON.parse(sharedRaw);
+          if (Array.isArray(list)) {
+            const filtered = list.filter((e) => e.id !== id);
+            localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(filtered));
+          }
+        } catch {}
       }
+
+      // Xóa đồng bộ vĩnh viễn trên Supabase và Firestore
+      UserDataSync.deleteExamPackage(targetId, id).catch(() => {});
 
       this.notifyListeners();
     } catch (e) {

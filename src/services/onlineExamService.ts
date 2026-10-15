@@ -2741,7 +2741,14 @@ export class OnlineExamService {
       });
       allStudents = Array.from(studentMap.values()).filter((s) => {
         if (!s || !s.id) return false;
-        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest') || userId === 'admin';
+        return (
+          ignoreUserIdFilter ||
+          userId === 'admin' ||
+          s.createdBy === userId ||
+          !s.createdBy ||
+          s.createdBy === 'guest' ||
+          s.createdBy === 'admin'
+        );
       });
       if (!classId) {
         this.saveLocalStudents(allStudents);
@@ -2750,7 +2757,14 @@ export class OnlineExamService {
       // Fallback: giữ nguyên danh sách cục bộ, không bao giờ ghi đè bằng mảng rỗng []!
       allStudents = localStudents.filter((s) => {
         if (!s || !s.id) return false;
-        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest') || userId === 'admin';
+        return (
+          ignoreUserIdFilter ||
+          userId === 'admin' ||
+          s.createdBy === userId ||
+          !s.createdBy ||
+          s.createdBy === 'guest' ||
+          s.createdBy === 'admin'
+        );
       });
       // Nếu Supabase đang bật mà bảng chưa có học sinh, tự động đồng bộ học sinh hiện có lên Supabase
       if (allStudents.length > 0 && SupabaseService.isEnabled()) {
@@ -2824,21 +2838,31 @@ export class OnlineExamService {
     const updated = sortStudentsDefault(Array.from(existingMap.values()));
     this.saveLocalStudents(updated);
 
-    // 4. Immediately update UserDataSync
+    // 4. Update UserDataSync
     const targetUserId = (userId && userId !== 'guest') ? userId : 'guest';
-    UserDataSync.saveUserData(targetUserId, { students: updated }).catch(() => {});
-    if (targetUserId !== 'guest') {
-      UserDataSync.saveUserData('guest', { students: updated }).catch(() => {});
-    }
+    const syncPromises: Promise<any>[] = [
+      UserDataSync.saveUserData(targetUserId, { students: updated }).catch(() => {}),
+    ];
 
     // 5. ĐỒNG BỘ TRỰC TIẾP LÊN SUPABASE (system_students)
     if (SupabaseService.isEnabled()) {
-      SupabaseService.saveStudents(savedList).catch((sbErr) => {
-        console.warn('Lỗi lưu student lên Supabase:', sbErr);
-      });
+      syncPromises.push(
+        SupabaseService.saveStudents(savedList).catch((sbErr) => {
+          console.warn('Lỗi lưu student lên Supabase:', sbErr);
+        })
+      );
     }
 
-    // 6. Batch sync to Firestore + API in background
+    // 6. Batch sync to Server API & Firestore in background
+    syncPromises.push(
+      this.request<{ success: boolean; students: any[] }>('/api/students', {
+        method: 'POST',
+        body: JSON.stringify(savedList),
+      }).catch(() => {})
+    );
+
+    await Promise.allSettled(syncPromises);
+
     const backgroundSync = async () => {
       if (UserDataSync.getIsQuotaExceeded()) return;
       try {
@@ -2864,15 +2888,6 @@ export class OnlineExamService {
           console.warn('Lỗi batch sync student lên Firestore:', err);
         }
       }
-
-      try {
-        await this.request<{ success: boolean; students: any[] }>('/api/students', {
-          method: 'POST',
-          body: JSON.stringify(savedList),
-        });
-      } catch {
-        // ignore
-      }
     };
 
     backgroundSync().catch(() => {});
@@ -2897,17 +2912,13 @@ export class OnlineExamService {
 
     // 2. Immediately update UserDataSync
     const targetUserId = (userId && userId !== 'guest') ? userId : 'guest';
-    UserDataSync.saveUserData(targetUserId, { students }).catch(() => {});
-    if (targetUserId !== 'guest') {
-      UserDataSync.saveUserData('guest', { students }).catch(() => {});
-    }
-
-    // 3. Remote delete in parallel
     const deleteRemoteTasks: Promise<any>[] = [
+      UserDataSync.saveUserData(targetUserId, { students }).catch(() => {}),
       this.request<{ success: boolean }>(`/api/students/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }).catch(() => {}),
     ];
+
     if (SupabaseService.isEnabled()) {
       deleteRemoteTasks.push(
         SupabaseService.deleteStudent(id).catch(() => {})
@@ -2920,7 +2931,7 @@ export class OnlineExamService {
         })
       );
     }
-    Promise.allSettled(deleteRemoteTasks).catch(() => {});
+    await Promise.allSettled(deleteRemoteTasks);
 
     return { success: true };
   }

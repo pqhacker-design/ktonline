@@ -533,6 +533,22 @@ export class SupabaseService {
     }
   }
 
+  static async deleteExamByPackageId(packageId: string, userId?: string): Promise<boolean> {
+    const client = getSupabaseClient();
+    if (!client || !packageId) return false;
+
+    try {
+      let q = client.from('published_exams').delete().eq('package_id', packageId);
+      if (userId && userId !== 'admin') {
+        q = q.eq('created_by', userId);
+      }
+      await q;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // ==========================================
   // 5. KẾT QUẢ HỌC SINH (student_results)
   // ==========================================
@@ -642,6 +658,21 @@ export class SupabaseService {
         .maybeSingle();
 
       if (error || !data) return null;
+      const rawCodes = Array.isArray(data.deleted_exam_codes) ? data.deleted_exam_codes : [];
+      const deletedExamPackageIds: string[] = [];
+      const deletedExamCodes: string[] = [];
+      rawCodes.forEach((c: string) => {
+        if (typeof c === 'string') {
+          if (c.startsWith('PKG:')) {
+            deletedExamPackageIds.push(c.slice(4));
+          } else if (c.startsWith('pkg_')) {
+            deletedExamPackageIds.push(c);
+          } else {
+            deletedExamCodes.push(c);
+          }
+        }
+      });
+
       return {
         settings: data.settings || {},
         examHistory: data.exam_history || [],
@@ -649,7 +680,8 @@ export class SupabaseService {
         classes: data.classes || [],
         students: data.students || [],
         onlineExams: data.online_exams || [],
-        deletedExamCodes: data.deleted_exam_codes || [],
+        deletedExamCodes,
+        deletedExamPackageIds,
         deletedStudentSbds: data.deleted_student_sbds || [],
         classesWipedAt: data.classes_wiped_at,
         updatedAt: data.updated_at,
@@ -677,6 +709,18 @@ export class SupabaseService {
         }
       } catch {}
 
+      let mergedDeletedExamCodes = payload.deletedExamCodes !== undefined ? payload.deletedExamCodes : (currentData.deleted_exam_codes || []);
+      if (Array.isArray(payload.deletedExamPackageIds)) {
+        const set = new Set(mergedDeletedExamCodes);
+        payload.deletedExamPackageIds.forEach((id: string) => {
+          if (id) {
+            set.add(id);
+            set.add('PKG:' + id);
+          }
+        });
+        mergedDeletedExamCodes = Array.from(set);
+      }
+
       const rowToUpsert: any = {
         user_id: userId,
         settings: payload.settings !== undefined ? payload.settings : (currentData.settings || {}),
@@ -685,7 +729,7 @@ export class SupabaseService {
         classes: payload.classes !== undefined ? payload.classes : (currentData.classes || []),
         students: payload.students !== undefined ? payload.students : (currentData.students || []),
         online_exams: payload.onlineExams !== undefined ? payload.onlineExams : (currentData.online_exams || []),
-        deleted_exam_codes: payload.deletedExamCodes !== undefined ? payload.deletedExamCodes : (currentData.deleted_exam_codes || []),
+        deleted_exam_codes: mergedDeletedExamCodes,
         deleted_student_sbds: payload.deletedStudentSbds !== undefined ? payload.deletedStudentSbds : (currentData.deleted_student_sbds || []),
         classes_wiped_at: payload.classesWipedAt !== undefined ? payload.classesWipedAt : currentData.classes_wiped_at,
         updated_at: new Date().toISOString(),
