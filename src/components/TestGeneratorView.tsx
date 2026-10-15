@@ -1491,7 +1491,7 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
                     className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs transition-all flex items-center space-x-1 cursor-pointer active:scale-95"
                   >
                     <CheckCircle className="w-3.5 h-3.5" />
-                    <span>📐 Chèn cấu trúc 18 câu - 29 ý (Toán 6, 7, 8, 9)</span>
+                    <span>📐 Chèn cấu trúc Ít câu - Nhiều ý</span>
                   </button>
                   <button
                     type="button"
