@@ -12,24 +12,31 @@ export class ExportExcel {
 
     // --- SHEET 1: MA TRẬN ĐỀ KIỂM TRA ---
     const matrixData = matrix.map((row) => {
-      const getNum = (part: any, field: string): number => (part && part[field]) ? Number(part[field]) : 0;
+      const getStr = (part: any, field: string): string => {
+        if (!part) return '-';
+        const v = part[field];
+        return v !== undefined && v !== null && v !== '' && v !== 0 ? String(v) : '-';
+      };
 
       return {
         STT: row.stt,
         'Chủ đề / Mạch nội dung': cleanLatexForDocx(row.topic),
         'Đơn vị kiến thức': cleanLatexForDocx(row.subTopic),
-        'Nhận biết (TN)': getNum(row.part1, 'remember') + getNum(row.part2, 'remember') + getNum(row.part3, 'remember'),
-        'Nhận biết (TL)': getNum(row.part4, 'remember'),
-        'Thông hiểu (TN)': getNum(row.part1, 'understand') + getNum(row.part2, 'understand') + getNum(row.part3, 'understand'),
-        'Thông hiểu (TL)': getNum(row.part4, 'understand'),
-        'Vận dụng (TN)': getNum(row.part1, 'apply') + getNum(row.part2, 'apply') + getNum(row.part3, 'apply'),
-        'Vận dụng (TL)': getNum(row.part4, 'apply'),
-        'Vận dụng cao (TN)': getNum(row.part1, 'advanced') + getNum(row.part2, 'advanced') + getNum(row.part3, 'advanced'),
-        'Vận dụng cao (TL)': getNum(row.part4, 'advanced'),
-        'Phần I (4 lựa chọn)': Object.values(row.part1).reduce((a, b) => a + Number(b || 0), 0),
-        'Phần II (Đúng/Sai)': Object.values(row.part2).reduce((a, b) => a + Number(b || 0), 0),
-        'Phần III (Trả lời ngắn)': Object.values(row.part3).reduce((a, b) => a + Number(b || 0), 0),
-        'Phần IV (Tự luận)': Object.values(row.part4).reduce((a, b) => a + Number(b || 0), 0),
+        'Phần I (Nhiều lựa chọn) - Biết': getStr(row.part1, 'remember'),
+        'Phần I (Nhiều lựa chọn) - Hiểu': getStr(row.part1, 'understand'),
+        'Phần I (Nhiều lựa chọn) - Vận dụng': getStr(row.part1, 'apply'),
+        'Phần II (Đúng/Sai) - Biết': getStr(row.part2, 'remember'),
+        'Phần II (Đúng/Sai) - Hiểu': getStr(row.part2, 'understand'),
+        'Phần II (Đúng/Sai) - Vận dụng': getStr(row.part2, 'apply'),
+        'Phần III (Trả lời ngắn) - Biết': getStr(row.part3, 'remember'),
+        'Phần III (Trả lời ngắn) - Hiểu': getStr(row.part3, 'understand'),
+        'Phần III (Trả lời ngắn) - Vận dụng': getStr(row.part3, 'apply'),
+        'Phần IV (Tự luận) - Biết': getStr(row.part4, 'remember'),
+        'Phần IV (Tự luận) - Hiểu': getStr(row.part4, 'understand'),
+        'Phần IV (Tự luận) - Vận dụng': getStr(row.part4, 'apply'),
+        'Tổng Biết': row.totalRemember ?? 0,
+        'Tổng Hiểu': row.totalUnderstand ?? 0,
+        'Tổng Vận dụng': row.totalApply ?? 0,
         'Tổng số câu': row.totalQuestions,
         'Tổng điểm': row.totalPoints,
         'Tỷ lệ %': `${row.percentage}%`,

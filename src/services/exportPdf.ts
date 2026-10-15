@@ -1,5 +1,6 @@
 import { ExamPackage, getCognitiveTag } from '../types';
 import { autoWrapUnwrappedLatex } from './exportDocx';
+import { normalizeNewlines } from '../utils/textUtils';
 
 export class ExportPdf {
   /**
@@ -385,7 +386,7 @@ export class ExportPdf {
           htmlContent += `
             <div class="essay-box">
               <div class="essay-title">Câu ${ans.questionNumber} (${ans.points} điểm)</div>
-              <div class="essay-guide"><b>Hướng dẫn giải:</b><br>${autoWrapUnwrappedLatex(ans.essayAnswerGuide)}</div>
+              <div class="essay-guide"><b>Hướng dẫn giải:</b><br>${autoWrapUnwrappedLatex(normalizeNewlines(ans.essayAnswerGuide)).replace(/\n/g, '<br/>')}</div>
           `;
 
           if (ans.rubric && ans.rubric.length > 0) {

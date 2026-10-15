@@ -264,7 +264,7 @@ export class SupabaseService {
         query = query.eq('class_id', classId);
       }
       if (userId && userId !== 'admin' && userId !== 'ALL') {
-        query = query.eq('created_by', userId);
+        query = query.or(`created_by.eq.${userId},created_by.eq.guest,created_by.is.null`);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -295,13 +295,13 @@ export class SupabaseService {
     try {
       const rows = students.map((s) => ({
         id: s.id,
-        class_id: s.classId,
-        class_name: s.className,
+        class_id: s.classId || s.class_id || '',
+        class_name: s.className || s.class_name || '',
         sbd: s.sbd ? s.sbd.trim().toUpperCase() : '',
         name: s.name,
-        gender: s.gender,
-        dob: s.dob,
-        notes: s.notes,
+        gender: s.gender || 'Nam',
+        dob: s.dob || '',
+        notes: s.notes || '',
         created_by: s.createdBy || 'guest',
         updated_at: new Date().toISOString(),
       }));
@@ -661,26 +661,37 @@ export class SupabaseService {
 
   static async saveUserData(userId: string, payload: any): Promise<boolean> {
     const client = getSupabaseClient();
-    if (!client) return false;
+    if (!client || !userId) return false;
 
     try {
-      const { error } = await client.from('user_data').upsert(
-        {
-          user_id: userId,
-          settings: payload.settings || {},
-          exam_history: payload.examHistory || [],
-          question_bank: payload.questionBank || [],
-          classes: payload.classes || [],
-          students: payload.students || [],
-          online_exams: payload.onlineExams || [],
-          deleted_exam_codes: payload.deletedExamCodes || [],
-          deleted_student_sbds: payload.deletedStudentSbds || [],
-          classes_wiped_at: payload.classesWipedAt || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      );
+      // 1. Fetch current record from Supabase first so partial updates NEVER overwrite existing data!
+      let currentData: any = {};
+      try {
+        const { data } = await client
+          .from('user_data')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (data) {
+          currentData = data;
+        }
+      } catch {}
 
+      const rowToUpsert: any = {
+        user_id: userId,
+        settings: payload.settings !== undefined ? payload.settings : (currentData.settings || {}),
+        exam_history: payload.examHistory !== undefined ? payload.examHistory : (currentData.exam_history || []),
+        question_bank: payload.questionBank !== undefined ? payload.questionBank : (currentData.question_bank || []),
+        classes: payload.classes !== undefined ? payload.classes : (currentData.classes || []),
+        students: payload.students !== undefined ? payload.students : (currentData.students || []),
+        online_exams: payload.onlineExams !== undefined ? payload.onlineExams : (currentData.online_exams || []),
+        deleted_exam_codes: payload.deletedExamCodes !== undefined ? payload.deletedExamCodes : (currentData.deleted_exam_codes || []),
+        deleted_student_sbds: payload.deletedStudentSbds !== undefined ? payload.deletedStudentSbds : (currentData.deleted_student_sbds || []),
+        classes_wiped_at: payload.classesWipedAt !== undefined ? payload.classesWipedAt : currentData.classes_wiped_at,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await client.from('user_data').upsert(rowToUpsert, { onConflict: 'user_id' });
       if (error) throw error;
       return true;
     } catch (err) {

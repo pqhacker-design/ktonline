@@ -104,6 +104,21 @@ export const UserManagement: React.FC = () => {
     }));
   };
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefreshUsers = async () => {
+    setRefreshing(true);
+    try {
+      const freshList = await userService.getAllUsers();
+      setUsers(freshList);
+    } catch (e) {
+      console.warn('Lỗi tải lại danh sách users:', e);
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
+    }
+  };
+
   // Subscribe to real-time users list
   useEffect(() => {
     setLoading(true);
@@ -111,7 +126,16 @@ export const UserManagement: React.FC = () => {
       setUsers(data);
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    // Safety timeout: ensure loading spinner disappears after at most 3 seconds
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3000);
+
+    return () => {
+      clearTimeout(safetyTimer);
+      unsubscribe();
+    };
   }, []);
 
   // Filter & Search logic
@@ -377,6 +401,16 @@ export const UserManagement: React.FC = () => {
           >
             <Database className="w-4 h-4 text-emerald-400" />
             <span>Cấu Hình Supabase (PostgreSQL)</span>
+          </button>
+
+          <button
+            onClick={handleRefreshUsers}
+            disabled={refreshing}
+            className="px-4 py-3 bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded-2xl shadow-lg transition-all flex items-center space-x-2 cursor-pointer active:scale-95 shrink-0"
+            title="Tải lại danh sách tài khoản từ cơ sở dữ liệu"
+          >
+            <RefreshCw className={`w-4 h-4 text-cyan-400 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>{refreshing ? 'Đang tải...' : 'Làm Mới Danh Sách'}</span>
           </button>
 
           <button

@@ -1673,6 +1673,7 @@ export function registerExamRoutes(app: express.Express) {
         success: true,
         isConfigured,
         url: config.url || '',
+        anonKey: config.anonKey || '',
         anonKeyMasked: config.anonKey
           ? `${config.anonKey.substring(0, 8)}...${config.anonKey.slice(-6)}`
           : '',

@@ -159,22 +159,48 @@ ${metadata.referenceContext.trim()}
 `;
     }
 
-    return `
-HÃY SINH MA TRẬN, BẢNG ĐẶC TẢ VÀ ĐỀ KIỂM TRA CHUẨN CÔNG VĂN 7991/BGDĐT CHO THÔNG TIN SAU:
+    const hasCustomMatrix = Boolean(
+      (metadata.customMatrixContext && metadata.customMatrixContext.trim()) ||
+      (metadata.customMatrixImages && metadata.customMatrixImages.length > 0)
+    );
 
-📌 THÔNG TIN CHUNG:
-- Trường: ${schoolName || 'Trường THPT'}
-- Môn học: ${subject}
-- Khối lớp: ${grade}
-- Học kỳ: ${semester} | Năm học: ${schoolYear}
-- Tên kỳ thi / Bài kiểm tra: ${examTitle}
-- Tên bài / Chương / Chủ đề: ${chapterTitle}
-- Bộ sách giáo khoa: ${curriculum}
-- Thời gian làm bài: ${durationMinutes} phút
-- Thang điểm tổng: ${totalPoints} điểm
-- Chế độ đề: ${modeDescription}
-${subjectSpecificSection}
-${referenceSection}
+    let matrixModeSection = '';
+    if (hasCustomMatrix) {
+      matrixModeSection = `
+⚡⚡⚡ YÊU CẦU TỐI QUAN TRỌNG: RA ĐỀ ĐỘC QUYỀN THEO MA TRẬN BỘ MÔN (BỎ QUA CẤU TRÚC VÀ TỈ LỆ MẶC ĐỊNH) ⚡⚡⚡
+Người dùng đã cung cấp khung Ma trận & Bản đặc tả bộ môn (dạng văn bản hoặc ảnh chụp đính kèm bên dưới).
+BẠN BẮT BUỘC TUÂN THỦ CÁC QUY TẮC SAU ĐÂY:
+1. ĐỌC KỸ TỪNG DÒNG, TỪNG CỘT CỦA MA TRẬN VÀ SỐ CÂU TƯƠNG ỨNG ĐỂ RA ĐỀ.
+2. BỎ QUA HOÀN TOÀN MỤC CẤU TRÚC SỐ CÂU VÀ TỶ LỆ MỨC ĐỘ NHẬN THỨC MẶC ĐỊNH. KHÔNG ĐƯỢC ÁP DỤNG CÁC CẤU HÌNH ĐÓ!
+3. XÁC ĐỊNH VÀ SINH ĐỦ 100% SỐ CÂU HỎI TRONG MA TRẬN:
+   - Hãy đếm số câu ở từng phần và từng mức độ trong ma trận:
+     + Phần I (Nhiều lựa chọn): Sinh đúng số câu trắc nghiệm 4 lựa chọn (partType: "PART1") theo các ô Nhiều lựa chọn trong ma trận.
+     + Phần II (Đúng - Sai): Sinh đúng số câu (partType: "PART2"), mỗi câu gồm đúng 4 ý a, b, c, d (với isCorrect: true hoặc false) theo ma trận.
+     + Phần III (Trả lời ngắn): Sinh đúng số câu (partType: "PART3") theo các ô Trả lời ngắn trong ma trận.
+     + Phần IV (Tự luận): Sinh đúng số câu (partType: "PART4") theo các ô Tự luận trong ma trận.
+   - MẢNG "questions" TRONG JSON KẾT QUẢ PHẢI CHỨA ĐỦ 100% TẤT CẢ CÁC CÂU HỎI THEO ĐÚNG MA TRẬN.
+   - TUYỆT ĐỐI KHÔNG ĐƯỢC THIẾU BẤT KỲ CÂU HỎI NÀO! TUYỆT ĐỐI KHÔNG DÙNG DẤU BA CHẤM (...), KHÔNG ĐƯỢC CHỈ TẠO CÂU HỎI MẪU!
+4. ĐÁP ÁN ĐẦY ĐỦ CHO TẤT CẢ CÁC CÂU HỎI:
+   - Phần I: Bắt buộc có "correctOption" (A, B, C hoặc D) và "explanation" giải thích chi tiết.
+   - Phần II: Bắt buộc có "trueFalseStatements" gồm đúng 4 ý a, b, c, d với "content", "isCorrect": true/false và lời giải.
+   - Phần III: Bắt buộc có "shortAnswer" là một đáp số cụ thể (ví dụ: "$15$", "$x = 3$", "24 cm") và lời giải.
+   - Phần IV: Bắt buộc có "essayAnswerGuide" giải chi tiết từng bước và mảng "rubric" chia điểm cụ thể từng bước.
+   - TUYỆT ĐỐI KHÔNG ĐỂ TRỐNG ĐÁP ÁN!
+5. BẢNG "matrix" VÀ "specification" TRONG JSON KẾT QUẢ:
+   - Phản ánh đúng khung ma trận đã cung cấp theo chuẩn Công văn 7991/BGDĐT (gồm 4 dạng thức part1, part2, part3, part4 theo 3 mức độ remember, understand, apply).
+   - Tổng điểm toàn bộ đề thi phải bằng đúng 10.0 điểm.
+${metadata.customMatrixContext ? `
+--------------------- NỘI DUNG MA TRẬN BỘ MÔN CUNG CẤP ---------------------
+${metadata.customMatrixContext.trim()}
+--------------------- KẾT THÚC MA TRẬN BỘ MÔN ---------------------
+` : ''}
+${metadata.customMatrixImages && metadata.customMatrixImages.length > 0 ? `
+📸 ĐÃ ĐÍNH KÈM ${metadata.customMatrixImages.length} ẢNH CHỤP KHUNG MA TRẬN BỘ MÔN:
+Hãy phân tích kỹ từng hàng, từng cột, các ô phân bổ số thứ tự câu hỏi và 3 mức độ đánh giá (Biết, Hiểu, Vận dụng) trong ảnh chụp ma trận để sinh đề bám sát 100%!
+` : ''}
+`;
+    } else {
+      matrixModeSection = `
 📊 CẤU TRÚC SỐ LƯỢNG CÂU HỎI THEO DẠNG VÀ THANG ĐIỂM CHI TIẾT:
 - Phần I (Trắc nghiệm 4 lựa chọn): ${questionCounts.part1_MCQSingle} câu (Mỗi câu ${questionCounts.part1_PointsPerQuestion ?? 0.25} điểm, Tổng = ${Math.round((questionCounts.part1_MCQSingle || 0) * (questionCounts.part1_PointsPerQuestion ?? 0.25) * 100) / 100}đ)
 - Phần II (Trắc nghiệm Đúng/Sai): ${questionCounts.part2_MCQTrueFalse} câu (Mỗi câu ${questionCounts.part2_PointsPerQuestion ?? 1.0} điểm, gồm chính xác ${questionCounts.part2_TFStatementsPerQuestion ?? 4} ý Đúng/Sai, điểm chia đều: ${((questionCounts.part2_PointsPerQuestion ?? 1.0) / (questionCounts.part2_TFStatementsPerQuestion ?? 4)).toFixed(2)}đ/ý, Tổng = ${Math.round((questionCounts.part2_MCQTrueFalse || 0) * (questionCounts.part2_PointsPerQuestion ?? 1.0) * 100) / 100}đ)
@@ -204,107 +230,143 @@ ${referenceSection}
 - Thông hiểu (UNDERSTAND): ${cognitiveRatio.understand}%
 - Vận dụng (APPLY): ${cognitiveRatio.apply}%
 - Vận dụng cao (ADVANCED): ${cognitiveRatio.advanced}%
+`;
+    }
+
+    return `
+HÃY SINH MA TRẬN, BẢNG ĐẶC TẢ VÀ ĐỀ KIỂM TRA CHUẨN CÔNG VĂN 7991/BGDĐT CHO THÔNG TIN SAU:
+
+📌 THÔNG TIN CHUNG:
+- Trường: ${schoolName || 'Trường THPT'}
+- Môn học: ${subject}
+- Khối lớp: ${grade}
+- Học kỳ: ${semester} | Năm học: ${schoolYear}
+- Tên kỳ thi / Bài kiểm tra: ${examTitle}
+- Tên bài / Chương / Chủ đề: ${chapterTitle}
+- Bộ sách giáo khoa: ${curriculum}
+- Thời gian làm bài: ${durationMinutes} phút
+- Thang điểm tổng: ${totalPoints} điểm
+- Chế độ đề: ${hasCustomMatrix ? '100% Theo Ma trận bộ môn (Bỏ qua cấu trúc và tỉ lệ mặc định)' : modeDescription}
+${subjectSpecificSection}
+${referenceSection}
+${matrixModeSection}
+
+🛑 CẢNH BÁO TỐI QUAN TRỌNG VỀ NỘI DUNG CÂU HỎI & PHƯƠNG ÁN LỰA CHỌN:
+1. TUYỆT ĐỐI KHÔNG ĐƯỢC để placeholder như "Phương án A", "Phương án B", "Phương án C", "Phương án D"!
+   - Mỗi phương án A, B, C, D BẮT BUỘC là nội dung câu trả lời thật, công thức thật, giá trị thật.
+2. Mọi câu hỏi trắc nghiệm Phần I BẮT BUỘC có "correctOption" là một trong 4 chữ cái "A", "B", "C", "D" và "explanation" giải thích chi tiết.
+3. Phần II (Đúng/Sai) BẮT BUỘC gồm đúng 4 ý a, b, c, d với "content", "isCorrect": true/false và lời giải.
+4. Phần III (Trả lời ngắn) BẮT BUỘC có "shortAnswer" là một đáp số cụ thể (ví dụ: "$15$", "$x = 3$", "24 cm").
+5. Phần IV (Tự luận) BẮT BUỘC có "essayAnswerGuide" giải chi tiết và mảng "rubric" chia điểm cụ thể từng bước.
 
 YÊU CẦU ĐẦU RA JSON CHÍNH XÁC THEO SCHEMA SAU:
 {
   "matrix": [
     {
       "stt": 1,
-      "topic": "Tên mạch nội dung/chủ đề",
-      "subTopic": "Tên đơn vị kiến thức",
-      "part1": { "remember": 2, "understand": 1, "apply": 0, "advanced": 0 },
-      "part2": { "remember": 0, "understand": 1, "apply": 0, "advanced": 0 },
-      "part3": { "remember": 0, "understand": 0, "apply": 1, "advanced": 0 },
-      "part4": { "remember": 0, "understand": 0, "apply": 0, "advanced": 1 },
-      "totalQuestions": 5,
-      "totalPoints": 3.5,
-      "percentage": 35
+      "topic": "Chương I: Số tự nhiên",
+      "subTopic": "Tập hợp, ghi số tự nhiên, thứ tự trong N",
+      "part1": { "remember": "1, 2", "understand": "", "apply": "" },
+      "part2": { "remember": "", "understand": "", "apply": "" },
+      "part3": { "remember": "15a", "understand": "", "apply": "" },
+      "part4": { "remember": "", "understand": "", "apply": "" },
+      "totalRemember": 3,
+      "totalUnderstand": 0,
+      "totalApply": 0,
+      "totalQuestions": 3,
+      "totalPoints": 1.0,
+      "percentage": 10.0
     }
   ],
   "specification": [
     {
       "stt": 1,
-      "topic": "Tên mạch nội dung/chủ đề",
-      "subTopic": "Tên đơn vị kiến thức",
-      "requirements": "Yêu cầu cần đạt chi tiết...",
-      "part1": { "remember": 2, "understand": 1, "apply": 0, "advanced": 0 },
-      "part2": { "remember": 0, "understand": 1, "apply": 0, "advanced": 0 },
-      "part3": { "remember": 0, "understand": 0, "apply": 1, "advanced": 0 },
-      "part4": { "remember": 0, "understand": 0, "apply": 0, "advanced": 1 },
-      "totalPoints": 3.5
+      "topic": "Chương I: Số tự nhiên",
+      "subTopic": "Tập hợp, ghi số tự nhiên, thứ tự trong N",
+      "requirements": "Nhận biết: Nhận biết được tập hợp, các phần tử của tập hợp, thứ tự trong N...",
+      "part1": { "remember": "1, 2", "understand": "", "apply": "" },
+      "part2": { "remember": "", "understand": "", "apply": "" },
+      "part3": { "remember": "15a", "understand": "", "apply": "" },
+      "part4": { "remember": "", "understand": "", "apply": "" },
+      "totalPoints": 1.0
     }
   ],
   "questions": [
-    // Với PHẦN I (Nhiều lựa chọn):
+    // Ví dụ câu hỏi PHẦN I (Nhiều lựa chọn):
     {
       "id": "q-1",
       "partType": "PART1",
       "partTitle": "PHẦN I. Câu hỏi trắc nghiệm nhiều phương án lựa chọn",
       "number": 1,
-      "content": "Nội dung câu hỏi...",
+      "content": "Cho tập hợp $A = \\{x \\in \\mathbb{N} \\mid 8 < x \\le 14\\}$. Số phần tử của tập hợp $A$ là:",
       "cognitiveLevel": "REMEMBER",
       "points": 0.25,
-      "topic": "Tên chủ đề",
+      "topic": "Tập hợp và phần tử",
       "options": [
-        { "key": "A", "content": "Phương án A" },
-        { "key": "B", "content": "Phương án B" },
-        { "key": "C", "content": "Phương án C" },
-        { "key": "D", "content": "Phương án D" }
+        { "key": "A", "content": "$6$" },
+        { "key": "B", "content": "$7$" },
+        { "key": "C", "content": "$5$" },
+        { "key": "D", "content": "$8$" }
       ],
       "correctOption": "A",
-      "explanation": "Giải thích câu 1..."
+      "explanation": "Tập hợp $A = \\{9; 10; 11; 12; 13; 14\\}$ gồm $14 - 9 + 1 = 6$ phần tử. Chọn A."
     },
-    // Với PHẦN II (Đúng/Sai):
+    // Ví dụ câu hỏi PHẦN II (Đúng/Sai):
     {
-      "id": "q-2",
+      "id": "q-13",
       "partType": "PART2",
       "partTitle": "PHẦN II. Câu hỏi trắc nghiệm Đúng/Sai",
       "number": 1,
-      "content": "Lệnh hỏi chính cho tất cả các ý...",
+      "content": "Cho số tự nhiên $n$. Xét tính đúng sai của các mệnh đề sau:",
       "cognitiveLevel": "UNDERSTAND",
       "points": 1.0,
-      "topic": "Tên chủ đề",
+      "topic": "Quan hệ chia hết",
       "trueFalseStatements": [
-        // BẮT BUỘC tạo đúng ${questionCounts.part2_TFStatementsPerQuestion ?? 4} ý (ký hiệu a, b, c, d, e...)
-        { "key": "a", "content": "Ý a...", "isCorrect": true },
-        { "key": "b", "content": "Ý b...", "isCorrect": false }
+        { "key": "a", "content": "Nếu tổng hai số chia hết cho 5 thì mỗi số đều chia hết cho 5", "isCorrect": false },
+        { "key": "b", "content": "Số 135 có chữ số tận cùng là 5 nên chia hết cho 5", "isCorrect": true },
+        { "key": "c", "content": "Số có tổng các chữ số chia hết cho 9 thì chia hết cho 9", "isCorrect": true },
+        { "key": "d", "content": "Số chia hết cho 2 luôn là số nguyên tố", "isCorrect": false }
       ],
-      "explanation": "Giải thích chi tiết các ý..."
+      "explanation": "Ý a sai (ví dụ 2 + 3 = 5). Ý b đúng theo dấu hiệu chia hết cho 5. Ý c đúng theo tính chất chia hết cho 9. Ý d sai vì 4, 6, 8 là hợp số."
     },
-    // Với PHẦN III (Trả lời ngắn):
+    // Ví dụ câu hỏi PHẦN III (Trả lời ngắn):
     {
-      "id": "q-3",
+      "id": "q-15",
       "partType": "PART3",
       "partTitle": "PHẦN III. Câu hỏi trắc nghiệm trả lời ngắn",
       "number": 1,
-      "content": "Nội dung câu hỏi yêu cầu tính ra số/kết quả ngắn...",
+      "content": "Tìm số tự nhiên $x$ biết $2 \\cdot (x + 10) = 40$.",
       "cognitiveLevel": "APPLY",
-      "points": 0.25,
-      "topic": "Tên chủ đề",
-      "shortAnswer": "Đáp án ngắn (VD: 15 hoặc x = 3)",
-      "explanation": "Các bước tính ra kết quả..."
+      "points": 0.5,
+      "topic": "Thứ tự thực hiện phép tính",
+      "shortAnswer": "10",
+      "explanation": "$x + 10 = 40 : 2 = 20 \\Rightarrow x = 20 - 10 = 10$."
     },
-    // Với PHẦN IV (Tự luận):
+    // Ví dụ câu hỏi PHẦN IV (Tự luận):
     {
-      "id": "q-4",
+      "id": "q-16",
       "partType": "PART4",
       "partTitle": "PHẦN IV. Tự luận",
       "number": 1,
-      "content": "Nội dung bài tập tự luận...",
-      "cognitiveLevel": "ADVANCED",
+      "content": "Một mảnh vườn hình chữ nhật có chiều dài 25 m, chiều rộng 18 m. Người ta dùng một phần đất để trồng hoa hình thoi có độ dài hai đường chéo lần lượt là 12 m và 8 m. Tính diện tích phần đất còn lại của mảnh vườn.",
+      "cognitiveLevel": "APPLY",
       "points": 1.5,
-      "topic": "Tên chủ đề",
-      "essayAnswerGuide": "Hướng dẫn giải chi tiết...",
+      "topic": "Hình phẳng trong thực tiễn",
+      "essayAnswerGuide": "Diện tích mảnh vườn: $25 \\times 18 = 450 \\text{ m}^2$. Diện tích phần đất trồng hoa: $\\frac{1}{2} \\times 12 \\times 8 = 48 \\text{ m}^2$. Diện tích còn lại: $450 - 48 = 402 \\text{ m}^2$.",
       "rubric": [
-        { "criteria": "Ý 1 / Bước 1", "points": 0.5, "description": "Mô tả bước giải..." },
-        { "criteria": "Ý 2 / Bước 2", "points": 1.0, "description": "Mô tả bước giải..." }
+        { "criteria": "Tính diện tích hình chữ nhật", "points": 0.5, "description": "Viết công thức và tính ra $450 \\text{ m}^2$" },
+        { "criteria": "Tính diện tích hình thoi", "points": 0.5, "description": "Viết công thức và tính ra $48 \\text{ m}^2$" },
+        { "criteria": "Tính diện tích phần còn lại", "points": 0.5, "description": "Lấy hiệu hai diện tích ra $402 \\text{ m}^2$" }
       ],
-      "explanation": "Lưu ý khi chấm bài..."
+      "explanation": "Đảm bảo học sinh ghi rõ đơn vị đo $\\text{m}^2$."
     }
   ]
 }
 
-Chú ý: Hãy đảm bảo số lượng câu hỏi trong danh sách "questions" khớp CHÍNH XÁC với số lượng khai báo ở trên!
+🛑 QUY TẮC BẮT BUỘC VỀ SỐ LƯỢNG VÀ ĐÁP ÁN TRONG MẢNG "questions":
+1. Mảng "questions" PHẢI CHỨA ĐỦ 100% TẤT CẢ CÁC CÂU HỎI THEO ĐÚNG MA TRẬN ĐÃ XÁC ĐỊNH (tuyệt đối không được thiếu câu, không cắt bớt, không bỏ dở).
+2. TẤT CẢ các câu hỏi trong mảng "questions" đều BẮT BUỘC có đáp án, biểu điểm và lời giải chi tiết (Phần I có "correctOption", Phần II có đủ 4 ý Đúng/Sai, Phần III có "shortAnswer", Phần IV có "essayAnswerGuide" và mảng "rubric" chi tiết).
+3. Đánh số lại thứ tự câu (number) bắt đầu từ 1 cho từng phần: Phần I câu 1..N, Phần II câu 1..M, Phần III câu 1..K, Phần IV câu 1..P.
 
 📐 QUY TẮC BẮT BUỘC VỀ TRÌNH BÀY CÔNG THỨC TOÁN VÀ LATEX:
 1. BẮT BUỘC BỌC TẤT CẢ công thức toán học, tập hợp, biến số, phép tính trong cặp dấu $...$ (ví dụ: $x$, $y$, $A$, $B = \\{x \\in \\mathbb{N} \\mid 15 \\le x < 28\\}$, $x \\vdots 12$, $4^2 \\cdot 5$, $S = 25 \\cdot 74 + 25 \\cdot 26 - 500$). TUYỆT ĐỐI KHÔNG để bất kỳ lệnh LaTeX hay biểu thức toán nào đứng ngoài cặp dấu $.
@@ -313,3 +375,4 @@ Chú ý: Hãy đảm bảo số lượng câu hỏi trong danh sách "questions"
 `;
   }
 }
+

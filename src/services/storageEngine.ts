@@ -181,7 +181,16 @@ export class StorageEngine {
   static getExamHistory(): ExamPackage[] {
     try {
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
-      const data = localStorage.getItem(key);
+      let data = localStorage.getItem(key);
+      if (!data || data === '[]') {
+        const sharedData = localStorage.getItem(STORAGE_KEYS.EXAM_HISTORY);
+        if (sharedData && sharedData !== '[]') {
+          data = sharedData;
+          try {
+            localStorage.setItem(key, sharedData);
+          } catch {}
+        }
+      }
       if (data !== null) {
         const parsed = JSON.parse(data);
         if (Array.isArray(parsed)) {
@@ -208,9 +217,14 @@ export class StorageEngine {
       const updated = [examPackage, ...history.filter((e) => e.id !== examPackage.id)];
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
+      localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(updated));
 
       const targetId = this.currentUserId || 'guest';
-      UserDataSync.saveUserData(targetId, { examHistory: updated });
+      UserDataSync.saveUserData(targetId, { examHistory: updated }).catch(() => {});
+      if (targetId !== 'guest') {
+        UserDataSync.saveUserData('guest', { examHistory: updated }).catch(() => {});
+      }
+
       this.notifyListeners();
     } catch (e) {
       console.error('Lỗi lưu gói đề thi:', e);
@@ -223,13 +237,48 @@ export class StorageEngine {
       const updated = history.filter((e) => e.id !== id);
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       localStorage.setItem(key, JSON.stringify(updated));
+      localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(updated));
 
       const targetId = this.currentUserId || 'guest';
-      UserDataSync.saveUserData(targetId, { examHistory: updated });
+      UserDataSync.saveUserData(targetId, { examHistory: updated }).catch(() => {});
+      if (targetId !== 'guest') {
+        UserDataSync.saveUserData('guest', { examHistory: updated }).catch(() => {});
+      }
+
       this.notifyListeners();
     } catch (e) {
       console.error('Lỗi xóa gói đề thi:', e);
     }
+  }
+
+  static syncFromRemote(examHistory?: ExamPackage[], questionBank?: QuestionBankItem[], settings?: AppSettings): void {
+    try {
+      if (Array.isArray(examHistory) && examHistory.length > 0) {
+        const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
+        const current = this.getExamHistory();
+        const map = new Map<string, ExamPackage>();
+        examHistory.forEach((p) => p && p.id && map.set(p.id, p));
+        current.forEach((p) => p && p.id && !map.has(p.id) && map.set(p.id, p));
+        const merged = Array.from(map.values());
+        localStorage.setItem(key, JSON.stringify(merged));
+        localStorage.setItem(STORAGE_KEYS.EXAM_HISTORY, JSON.stringify(merged));
+      }
+      if (Array.isArray(questionBank) && questionBank.length > 0) {
+        const key = this.getKey(STORAGE_KEYS.QUESTION_BANK);
+        const current = this.getQuestionBank();
+        const map = new Map<string, QuestionBankItem>();
+        questionBank.forEach((q) => q && q.id && map.set(q.id, q));
+        current.forEach((q) => q && q.id && !map.has(q.id) && map.set(q.id, q));
+        const merged = Array.from(map.values());
+        localStorage.setItem(key, JSON.stringify(merged));
+        localStorage.setItem(STORAGE_KEYS.QUESTION_BANK, JSON.stringify(merged));
+      }
+      if (settings) {
+        const key = this.getKey(STORAGE_KEYS.SETTINGS);
+        localStorage.setItem(key, JSON.stringify(settings));
+      }
+      this.notifyListeners();
+    } catch {}
   }
 
   static removeOnlineExamCode(onlineCode: string): void {

@@ -319,20 +319,67 @@ export const userService = {
     }
   },
 
+  LOCAL_CACHE_KEY: 'aitest_users_cache_v1',
+
+  getLocalCachedUsers(): AppUser[] {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = localStorage.getItem(this.LOCAL_CACHE_KEY);
+        if (raw) {
+          const list = JSON.parse(raw);
+          if (Array.isArray(list)) return list;
+        }
+      }
+    } catch {}
+    return [];
+  },
+
+  saveLocalCachedUsers(users: AppUser[]): void {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(this.LOCAL_CACHE_KEY, JSON.stringify(users));
+      }
+    } catch {}
+  },
+
   /**
-   * Listen to real-time users collection updates for Admin
+   * Listen to real-time users collection updates for Admin with multi-level resilient fallback
    */
   subscribeUsers(callback: (users: AppUser[]) => void) {
+    // 0. Phục hồi ngay từ bộ nhớ cache cục bộ để giao diện không bao giờ bị trắng/trống
+    const cached = this.getLocalCachedUsers();
+    if (cached.length > 0) {
+      callback(cached);
+    }
+
     if (SupabaseService.isEnabled()) {
       SupabaseService.getUsers().then((list) => {
-        if (list && list.length > 0) callback(list);
+        if (list && list.length > 0) {
+          this.saveLocalCachedUsers(list);
+          callback(list);
+        }
       }).catch(() => {});
     }
+
+    let hasReceivedSnapshot = false;
+
+    // Timeout dự phòng: nếu sau 4 giây onSnapshot chưa phản hồi (do nghẽn mạng/quota), chủ động gọi getDocs
+    const fallbackTimer = setTimeout(() => {
+      if (!hasReceivedSnapshot) {
+        this.getAllUsers().then((fallbackList) => {
+          if (fallbackList && fallbackList.length > 0) {
+            callback(fallbackList);
+          }
+        }).catch(() => {});
+      }
+    }, 4000);
 
     const colRef = collection(db, USERS_COLLECTION);
     return onSnapshot(
       colRef,
       (snapshot) => {
+        hasReceivedSnapshot = true;
+        clearTimeout(fallbackTimer);
         const list: AppUser[] = snapshot.docs.map((d) => {
           const data = d.data() as AppUser;
           return {
@@ -344,10 +391,18 @@ export const userService = {
         });
         // Sort by createdAt descending
         list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        this.saveLocalCachedUsers(list);
         callback(list);
       },
       (error) => {
-        console.error('Error fetching users:', error);
+        console.error('Error in onSnapshot users, falling back to getAllUsers:', error);
+        clearTimeout(fallbackTimer);
+        this.getAllUsers().then((fallbackList) => {
+          callback(fallbackList);
+        }).catch(() => {
+          const fallbackCached = this.getLocalCachedUsers();
+          if (fallbackCached.length > 0) callback(fallbackCached);
+        });
       }
     );
   },
@@ -359,18 +414,39 @@ export const userService = {
     if (SupabaseService.isEnabled()) {
       try {
         const sp = await SupabaseService.getUsers();
-        if (sp && sp.length > 0) return sp;
+        if (sp && sp.length > 0) {
+          this.saveLocalCachedUsers(sp);
+          return sp;
+        }
       } catch {}
     }
     const defaultAdmin = await this.ensureDefaultAdmin();
     try {
       const colRef = collection(db, USERS_COLLECTION);
-      const snapshot = await fetchWithTimeout(getDocs(colRef), 5000);
+      const snapshot = await fetchWithTimeout(getDocs(colRef), 6000);
       if (snapshot && !snapshot.empty) {
-        const list: AppUser[] = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as AppUser) }));
+        const list: AppUser[] = snapshot.docs.map((d) => {
+          const data = d.data() as AppUser;
+          return {
+            id: d.id,
+            ...data,
+            username: data.username || data.email || d.id,
+            email: data.email || data.username || d.id,
+          };
+        });
+        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        this.saveLocalCachedUsers(list);
         return list;
       }
-    } catch {}
+    } catch (err) {
+      console.warn('Lỗi getDocs users:', err);
+    }
+
+    const localCached = this.getLocalCachedUsers();
+    if (localCached.length > 0) {
+      return localCached;
+    }
+
     return [defaultAdmin];
   },
 

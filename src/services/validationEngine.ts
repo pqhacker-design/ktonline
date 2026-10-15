@@ -1,5 +1,6 @@
 import { ExamMetadata, MatrixRow, Question, SpecRow, calculateExamScores } from '../types';
 import { safeJsonParse } from './jsonRepair';
+import { normalizeNewlines } from '../utils/textUtils';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -12,7 +13,7 @@ export interface ValidationResult {
 
 export function cleanQuestionText(text: string): string {
   if (!text) return text;
-  let str = text;
+  let str = normalizeNewlines(text);
 
   // 1. Loại bỏ các nhãn mã mức độ thừa như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [NB],...
   str = str.replace(/\s*\[(NB|TH|VD|VDC|REMEMBER|UNDERSTAND|APPLY|ADVANCED)(_(TL|TN|TF|SA))?\]\s*/gi, ' ');

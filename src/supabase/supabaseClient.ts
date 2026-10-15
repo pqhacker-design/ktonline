@@ -61,6 +61,32 @@ export function setSupabaseConfig(config: SupabaseConfig | null): void {
 }
 
 /**
+ * Tự động đồng bộ cấu hình Supabase từ Server API về trình duyệt
+ * Đảm bảo khi cấu hình ở Google Chrome thì khi mở bằng Edge, Firefox, Safari hay tab ẩn danh,
+ * ứng dụng đều tự động kết nối chung Supabase database!
+ */
+export async function syncSupabaseConfigFromServer(): Promise<boolean> {
+  try {
+    const res = await fetch('/api/supabase/config');
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (data && data.success && data.isConfigured && data.url && data.anonKey) {
+      const current = getSupabaseConfig();
+      if (current.url !== data.url || current.anonKey !== data.anonKey) {
+        setSupabaseConfig({ url: data.url, anonKey: data.anonKey });
+        return true;
+      }
+    }
+  } catch {}
+  return false;
+}
+
+// Tự động kích hoạt đồng bộ khi nạp module trên client
+if (typeof window !== 'undefined') {
+  syncSupabaseConfigFromServer().catch(() => {});
+}
+
+/**
  * Check if valid Supabase configuration is present
  */
 export function isSupabaseConfigured(): boolean {

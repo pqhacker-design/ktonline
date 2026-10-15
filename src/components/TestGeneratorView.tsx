@@ -2,23 +2,28 @@ import React, { useState } from 'react';
 import {
   AlertCircle,
   BookOpen,
+  Check,
   CheckCircle,
   Clock,
   Copy,
+  FileSpreadsheet,
   FileText,
   GraduationCap,
   HelpCircle,
   Image as ImageIcon,
+  Info,
+  Key,
+  Layers,
   Minus,
   Paperclip,
   Plus,
   RefreshCw,
   Sliders,
   Sparkles,
+  Table,
   Trash2,
   UploadCloud,
   X,
-  Key,
 } from 'lucide-react';
 import { ApiKeyInputModal, QuotaExceededModal } from './ApiModals';
 import {
@@ -155,6 +160,200 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
 
   const handleRemoveImage = (index: number) => {
     setReferenceImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // 1c. Khung Ma trận bộ môn có sẵn (Tùy chọn nâng cao)
+  const [matrixInputMode, setMatrixInputMode] = useState<'auto' | 'custom'>('auto');
+  const [customMatrixContext, setCustomMatrixContext] = useState('');
+  const [customMatrixImages, setCustomMatrixImages] = useState<string[]>([]);
+  const [showMatrixHelp, setShowMatrixHelp] = useState(false);
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('');
+
+  const MATRIX_TEMPLATES: Record<
+    string,
+    { label: string; text: string; defaultP1?: number; defaultP2?: number; defaultP3?: number; defaultP4?: number }
+  > = {
+    toan: {
+      label: '📐 Toán (Chuẩn 7991)',
+      text: `### MA TRẬN ĐỀ KIỂM TRA MÔN TOÁN (CHUẨN BGD&ĐT)
+| TT | Mạch kiến thức / Chủ đề | Phần I (TN 4 lựa chọn) | Phần II (TN Đúng/Sai - 4 ý) | Phần III (TN Trả lời ngắn) | Phần IV (Tự luận) | Tổng số câu | Điểm |
+|---|---|---|---|---|---|---|---|
+| 1 | Mạch Số & Đại số (Đơn thức, đa thức, phương trình) | 6 câu (4 NB, 2 TH) | 1 câu (2 NB, 1 TH, 1 VD) | 2 câu (1 TH, 1 VD) | 1 câu (VD: 2.0đ) | 10 câu | 5.0đ |
+| 2 | Mạch Hình học & Đo lường (Tam giác, tứ giác, khối hình) | 4 câu (2 NB, 2 TH) | 1 câu (1 NB, 2 TH, 1 VD) | 1 câu (VD: 1.0đ) | 1 câu (VDC: 2.0đ) | 7 câu | 3.5đ |
+| 3 | Mạch Thống kê & Xác suất thực nghiệm | 2 câu (1 NB, 1 TH) | 0 | 1 câu (TH: 1.0đ) | 0 | 3 câu | 1.5đ |
+| **CỘNG** | | **12 câu (3.0đ)** | **2 câu (2.0đ)** | **4 câu (1.0đ)** | **2 câu (4.0đ)** | **20 câu** | **10.0đ** |
+* Tỷ lệ nhận thức: Nhận biết 40% (4.0đ) - Thông hiểu 30% (3.0đ) - Vận dụng 20% (2.0đ) - Vận dụng cao 10% (1.0đ).`,
+      defaultP1: 12,
+      defaultP2: 2,
+      defaultP3: 4,
+      defaultP4: 2,
+    },
+    van: {
+      label: '📖 Ngữ văn (Đọc hiểu & Viết)',
+      text: `### MA TRẬN ĐỀ KIỂM TRA MÔN NGỮ VĂN
+| TT | Kỹ năng / Đơn vị kiến thức | Nhận biết (NB) | Thông hiểu (TH) | Vận dụng (VD) | Vận dụng cao (VDC) | Tổng điểm / Tỷ lệ |
+|---|---|---|---|---|---|---|
+| 1 | **I. ĐỌC HIỂU** (Ngữ liệu văn bản truyện / thơ ngoài SGK) | 4 câu TN (1.0đ) | 4 câu TN (1.0đ) | 2 câu TN/TL ngắn (1.0đ) | 1 câu TL ngắn (1.0đ) | **4.0 điểm** (40%) |
+| 2 | **II. VIẾT** (Tạo lập văn bản) | - | - | 1 bài Nghị luận XH/Đoạn văn (2.0đ) | 1 bài Nghị luận VH/Bài viết (4.0đ) | **6.0 điểm** (60%) |
+| **TỔNG CỘNG** | | **1.0đ (10%)** | **1.0đ (10%)** | **3.0đ (30%)** | **5.0đ (50%)** | **10.0 điểm (100%)** |
+* Bảng đặc tả: Phần Đọc hiểu kiểm tra nhận diện thể loại, phương thức biểu đạt, phân tích chi tiết, thông điệp tư tưởng. Phần Viết yêu cầu lập dàn ý, luận điểm chặt chẽ, dẫn chứng xác thực, cảm xúc chân thực.`,
+      defaultP1: 8,
+      defaultP2: 0,
+      defaultP3: 2,
+      defaultP4: 2,
+    },
+    anh: {
+      label: '🇬🇧 Tiếng Anh (Kỹ năng)',
+      text: `### MATRIX SPECIFICATION FOR ENGLISH EXAMINATION
+| TT | Language Component / Skill | Remember (NB) | Understand (TH) | Apply (VD) | Advanced (VDC) | Total Qs / Points |
+|---|---|---|---|---|---|---|
+| 1 | Phonetics (Pronunciation & Stress) | 4 MCQs (1.0 pt) | - | - | - | 4 Qs (1.0 pt) |
+| 2 | Language Focus (Grammar & Vocabulary) | 6 MCQs (1.5 pts) | 4 MCQs (1.0 pt) | - | - | 10 Qs (2.5 pts) |
+| 3 | Reading Comprehension (Passage reading) | 2 MCQs (0.5 pt) | 4 MCQs (1.0 pt) | 2 MCQs (0.5 pt) | - | 8 Qs (2.0 pts) |
+| 4 | Writing (Sentence transformation & Paragraph) | - | 2 Qs (1.0 pt) | 2 Qs (1.5 pts) | 1 Q (2.0 pts) | 5 Qs (4.5 pts) |
+| **TOTAL** | | **3.0 pts (30%)** | **3.0 pts (30%)** | **2.0 pts (20%)** | **2.0 pts (20%)** | **27 Qs (10.0 pts)** |`,
+      defaultP1: 18,
+      defaultP2: 2,
+      defaultP3: 2,
+      defaultP4: 2,
+    },
+    khtn: {
+      label: '🔬 KHTN / Vật lí / Hóa học',
+      text: `### MA TRẬN ĐỀ KIỂM TRA KHOA HỌC TỰ NHIÊN / VẬT LÍ / HÓA HỌC
+| TT | Mạch nội dung kiến thức | Phần I (TN 4 lựa chọn) | Phần II (TN Đúng/Sai - 4 ý) | Phần III (TN Trả lời ngắn) | Phần IV (Tự luận bài toán) | Tổng điểm |
+|---|---|---|---|---|---|---|
+| 1 | Chủ đề 1: Khái niệm & Nguyên lí cốt lõi | 6 câu (4 NB, 2 TH) | 1 câu (2 NB, 2 TH) | 1 câu (TH: 1) | 1 câu (VD: 1.5đ) | 4.0 điểm |
+| 2 | Chủ đề 2: Tính toán & Phương trình hiện tượng | 4 câu (2 NB, 2 TH) | 1 câu (1 TH, 2 VD, 1 VDC) | 2 câu (1 TH, 1 VD) | 1 câu (VDC: 1.5đ) | 4.0 điểm |
+| 3 | Chủ đề 3: Thực nghiệm & Ứng dụng công nghệ | 2 câu (1 NB, 1 TH) | 0 | 1 câu (VD: 1) | 0 | 2.0 điểm |
+| **CỘNG** | | **12 câu (3.0đ)** | **2 câu (2.0đ)** | **4 câu (1.0đ)** | **2 câu (4.0đ)** | **10.0 điểm** |
+* Mức độ nhận thức: Nhận biết 40% (4.0đ) - Thông hiểu 30% (3.0đ) - Vận dụng 20% (2.0đ) - Vận dụng cao 10% (1.0đ).`,
+      defaultP1: 12,
+      defaultP2: 2,
+      defaultP3: 4,
+      defaultP4: 2,
+    },
+    suDia: {
+      label: '🌏 Lịch sử - Địa lí / GDCD',
+      text: `### MA TRẬN ĐỀ KIỂM TRA LỊCH SỬ - ĐỊA LÍ / XÃ HỘI
+| TT | Mạch chuyên đề | Phần I (TN Nhiều lựa chọn) | Phần II (TN Đúng/Sai) | Phần III (Trả lời ngắn) | Phần IV (Tự luận phân tích) | Tổng điểm |
+|---|---|---|---|---|---|---|
+| 1 | Chủ đề trọng tâm 1 | 6 câu (4 NB, 2 TH) | 1 câu (2 NB, 2 TH) | 2 câu (1 TH, 1 VD) | 1 câu (VD: 2.0đ) | 5.0 điểm |
+| 2 | Chủ đề trọng tâm 2 | 6 câu (2 NB, 4 TH) | 1 câu (1 TH, 2 VD, 1 VDC) | 2 câu (1 TH, 1 VD) | 1 câu (VDC: 2.0đ) | 5.0 điểm |
+| **CỘNG** | | **12 câu (3.0đ)** | **2 câu (2.0đ)** | **4 câu (1.0đ)** | **2 câu (4.0đ)** | **10.0 điểm** |`,
+      defaultP1: 12,
+      defaultP2: 2,
+      defaultP3: 4,
+      defaultP4: 2,
+    },
+  };
+
+  const handleApplyTemplate = (key: string) => {
+    const tpl = MATRIX_TEMPLATES[key];
+    if (!tpl) return;
+    setCustomMatrixContext(tpl.text);
+    setMatrixInputMode('custom');
+    setSelectedTemplateKey(key);
+    if (
+      tpl.defaultP1 !== undefined &&
+      tpl.defaultP2 !== undefined &&
+      tpl.defaultP3 !== undefined &&
+      tpl.defaultP4 !== undefined
+    ) {
+      setQuestionCounts((prev) => ({
+        ...prev,
+        part1_MCQSingle: tpl.defaultP1!,
+        part2_MCQTrueFalse: tpl.defaultP2!,
+        part3_MCQShort: tpl.defaultP3!,
+        part4_Essay: tpl.defaultP4!,
+      }));
+    }
+  };
+
+  const handleClearMatrix = () => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ nội dung ma trận và ảnh đính kèm không?')) {
+      setCustomMatrixContext('');
+      setCustomMatrixImages([]);
+      setSelectedTemplateKey('');
+    }
+  };
+
+  const isCustomMatrixActive =
+    matrixInputMode === 'custom' &&
+    (Boolean(customMatrixContext.trim()) || customMatrixImages.length > 0);
+
+  // Xử lý tải ảnh / file khung ma trận có sẵn
+  const processMatrixFiles = (files: FileList | File[]) => {
+    setMatrixInputMode('custom');
+    Array.from(files).forEach((file: File) => {
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          if (result) {
+            setCustomMatrixImages((prev) => [...prev, result]);
+          }
+        };
+        reader.readAsDataURL(file);
+      } else if (
+        file.type === 'text/plain' ||
+        file.name.endsWith('.txt') ||
+        file.name.endsWith('.md') ||
+        file.name.endsWith('.csv')
+      ) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const text = event.target?.result as string;
+          if (text) {
+            setCustomMatrixContext((prev) => (prev ? prev + '\n\n' + text : text));
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        alert(
+          'Vui lòng chọn các file định dạng hình ảnh (PNG, JPG, WEBP) hoặc file văn bản (.txt, .csv) để tải lên.'
+        );
+      }
+    });
+  };
+
+  const handleMatrixFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    processMatrixFiles(files);
+    e.target.value = '';
+  };
+
+  const handleMatrixPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const imageFiles: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const blob = item.getAsFile();
+        if (blob) {
+          imageFiles.push(blob);
+        }
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      processMatrixFiles(imageFiles);
+    }
+  };
+
+  const handleMatrixDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processMatrixFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleRemoveMatrixImage = (index: number) => {
+    setCustomMatrixImages((prev) => prev.filter((_, i) => i !== index));
   };
 
   // 2. Chế độ đề (3 lựa chọn)
@@ -386,32 +585,40 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
         subjectConfig,
         referenceContext,
         referenceImages,
+        customMatrixContext: customMatrixContext.trim() || undefined,
+        customMatrixImages: customMatrixImages.length > 0 ? customMatrixImages : undefined,
       });
       setShowApiKeyModal(true);
       return;
     }
 
-    if (totalPercentage !== 100) {
-      setErrorMsg('Tổng tỷ lệ mức độ nhận thức phải bằng đúng 100% (Hiện tại: ' + totalPercentage + '%).');
-      return;
-    }
+    const hasCustomMatrix = Boolean(
+      customMatrixContext.trim() || customMatrixImages.length > 0
+    );
 
-    const totalQuestionsSum =
-      questionCounts.part1_MCQSingle +
-      questionCounts.part2_MCQTrueFalse +
-      questionCounts.part3_MCQShort +
-      questionCounts.part4_Essay;
+    if (!hasCustomMatrix) {
+      if (totalPercentage !== 100) {
+        setErrorMsg('Tổng tỷ lệ mức độ nhận thức phải bằng đúng 100% (Hiện tại: ' + totalPercentage + '%).');
+        return;
+      }
 
-    if (totalQuestionsSum <= 0) {
-      setErrorMsg('Tổng số câu hỏi phải lớn hơn 0.');
-      return;
-    }
+      const totalQuestionsSum =
+        questionCounts.part1_MCQSingle +
+        questionCounts.part2_MCQTrueFalse +
+        questionCounts.part3_MCQShort +
+        questionCounts.part4_Essay;
 
-    if (Math.abs(currentScores.totalScore - 10.0) > 0.01) {
-      setErrorMsg(
-        `Tổng điểm các phần hiện tại là ${currentScores.totalScore} điểm. Yêu cầu cấu hình các phần sao cho tổng điểm phải đúng 10.0 điểm! (Vui lòng bấm nút "Tự động cân bằng 10 điểm" để tự điều chỉnh).`
-      );
-      return;
+      if (totalQuestionsSum <= 0) {
+        setErrorMsg('Tổng số câu hỏi phải lớn hơn 0.');
+        return;
+      }
+
+      if (Math.abs(currentScores.totalScore - 10.0) > 0.01) {
+        setErrorMsg(
+          `Tổng điểm các phần hiện tại là ${currentScores.totalScore} điểm. Yêu cầu cấu hình các phần sao cho tổng điểm phải đúng 10.0 điểm! (Vui lòng bấm nút "Tự động cân bằng 10 điểm" để tự điều chỉnh).`
+        );
+        return;
+      }
     }
 
     const metadata: ExamMetadata = {
@@ -434,6 +641,8 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
       subjectConfig,
       referenceContext,
       referenceImages,
+      customMatrixContext: customMatrixContext.trim() || undefined,
+      customMatrixImages: customMatrixImages.length > 0 ? customMatrixImages : undefined,
     };
 
     try {
@@ -1031,13 +1240,258 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
           </div>
         </div>
 
-        {/* 2. Chọn loại đề */}
+        {/* 2. Khung Ma Trận & Bản Đặc Tả Bộ Môn Có Sẵn */}
+        <div
+          className={`rounded-2xl p-6 shadow-xs border transition-all space-y-4 ${
+            customMatrixContext.trim() || customMatrixImages.length > 0
+              ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-500/20'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <Table className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                    2. Ra Đề Dựa Trên Ma Trận Bộ Môn Có Sẵn (Tùy Chọn)
+                  </h3>
+                  {(customMatrixContext.trim() || customMatrixImages.length > 0) && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-300 flex items-center space-x-1 animate-fade-in">
+                      <CheckCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Đã nạp Ma trận ({customMatrixContext.trim() ? 'Văn bản' : ''}{customMatrixContext.trim() && customMatrixImages.length ? ' + ' : ''}{customMatrixImages.length ? `${customMatrixImages.length} ảnh chụp` : ''})</span>
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Khi tổ chuyên môn đã có Ma trận &amp; Bản đặc tả được duyệt, nhập hoặc dán vào đây để AI sinh đề bám sát tuyệt đối từng dòng mạch kiến thức.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowMatrixHelp(!showMatrixHelp)}
+                className="text-xs text-slate-600 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 font-medium flex items-center space-x-1 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <HelpCircle className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span>{showMatrixHelp ? 'Ẩn hướng dẫn' : 'Cách nhập ma trận'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Lựa chọn chế độ ma trận */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setMatrixInputMode('auto');
+              }}
+              className={`p-3.5 rounded-xl border-2 text-left transition-all ${
+                matrixInputMode === 'auto' && !customMatrixContext.trim() && customMatrixImages.length === 0
+                  ? 'border-teal-600 bg-teal-50/60 dark:bg-teal-950/40 text-teal-950 dark:text-teal-100 shadow-xs'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs flex items-center space-x-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>A. AI Tự Động Xây Dựng Ma Trận (Mặc định)</span>
+                </span>
+                {matrixInputMode === 'auto' && !customMatrixContext.trim() && customMatrixImages.length === 0 && (
+                  <Check className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                AI phân tích chủ đề, chương bài và tự phân bổ số câu, mức độ nhận thức (NB, TH, VD, VDC) chuẩn Công văn 7991.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMatrixInputMode('custom');
+              }}
+              className={`p-3.5 rounded-xl border-2 text-left transition-all ${
+                matrixInputMode === 'custom' || customMatrixContext.trim() || customMatrixImages.length > 0
+                  ? 'border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100 shadow-xs'
+                  : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs flex items-center space-x-1.5">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>B. Ra Đề Bám Sát Khung Ma Trận Bộ Môn Có Sẵn</span>
+                </span>
+                {(matrixInputMode === 'custom' || customMatrixContext.trim() || customMatrixImages.length > 0) && (
+                  <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                Dán bảng ma trận Word/Excel hoặc tải ảnh chụp ma trận đã duyệt. AI sẽ đọc từng dòng và bám sát 100%.
+              </p>
+            </button>
+          </div>
+
+          {/* Hướng dẫn chi tiết */}
+          {showMatrixHelp && (
+            <div className="text-xs text-slate-700 dark:text-slate-300 bg-teal-50/80 dark:bg-slate-800/90 p-4 rounded-xl border border-teal-200 dark:border-teal-800 space-y-2 leading-relaxed animate-fade-in">
+              <p className="font-bold text-teal-800 dark:text-teal-300 flex items-center space-x-1.5">
+                <Info className="w-4 h-4 text-teal-600 shrink-0" />
+                <span>Cách thức hoạt động &amp; Lợi ích khi ra đề theo ma trận bộ môn:</span>
+              </p>
+              <ul className="list-disc list-inside space-y-1 pl-1 text-[12px]">
+                <li><b>Sao chép từ Word / Excel:</b> Bạn có thể chọn toàn bộ bảng ma trận trong Word hoặc Excel, nhấn <b>Ctrl+C</b> rồi <b>Ctrl+V</b> vào ô văn bản dưới đây. AI sẽ tự động hiểu các cột mức độ (Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao) và số câu từng phần.</li>
+                <li><b>Chụp ảnh màn hình:</b> Nếu bạn có file PDF hoặc ảnh chụp ma trận do nhà trường ban hành, chỉ cần chụp màn hình rồi nhấn <b>Ctrl+V</b> để dán ảnh trực tiếp vào đây hoặc bấm <b>"Tải ảnh ma trận lên"</b>.</li>
+                <li><b>Bảo toàn chuẩn 10 điểm:</b> AI sẽ tạo ra đề thi có câu hỏi khớp chính xác với từng dòng ma trận của bạn, đồng thời xuất bảng Ma trận và Bản đặc tả tương ứng.</li>
+              </ul>
+            </div>
+          )}
+
+          {/* Vùng làm việc Nhập ma trận (Hiển thị khi chọn B hoặc đã có dữ liệu) */}
+          {(matrixInputMode === 'custom' || customMatrixContext.trim() || customMatrixImages.length > 0) && (
+            <div className="space-y-3 pt-1 animate-fade-in">
+              {/* Presets nạp mẫu nhanh */}
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/70 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1 mr-1">
+                    <Layers className="w-3.5 h-3.5 text-teal-600" />
+                    <span>Nạp mẫu ma trận gợi ý:</span>
+                  </span>
+                  {Object.entries(MATRIX_TEMPLATES).map(([key, tpl]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => handleApplyTemplate(key)}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
+                        selectedTemplateKey === key && customMatrixContext.includes(tpl.label.slice(2, 6))
+                          ? 'bg-teal-600 text-white shadow-xs font-bold'
+                          : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:border-teal-500 hover:text-teal-600 dark:hover:text-teal-300'
+                      }`}
+                    >
+                      {tpl.label}
+                    </button>
+                  ))}
+                </div>
+
+                {(customMatrixContext.trim() || customMatrixImages.length > 0) && (
+                  <button
+                    type="button"
+                    onClick={handleClearMatrix}
+                    className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 font-semibold flex items-center space-x-1 px-2.5 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors ml-auto"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Xóa ma trận</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Textarea nhập / dán ma trận */}
+              <div
+                onPaste={handleMatrixPaste}
+                onDragOver={handleMatrixDrop}
+                className="relative"
+              >
+                <textarea
+                  rows={6}
+                  value={customMatrixContext}
+                  onChange={(e) => {
+                    setCustomMatrixContext(e.target.value);
+                    if (e.target.value.trim() && matrixInputMode !== 'custom') {
+                      setMatrixInputMode('custom');
+                    }
+                  }}
+                  placeholder="Dán (Ctrl+V) bảng ma trận sao chép từ Word, Excel hoặc nhập văn bản mô tả ma trận bộ môn vào đây (Có thể chụp ảnh màn hình và nhấn Ctrl+V để dán trực tiếp)..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono focus:ring-2 focus:ring-teal-500 outline-none leading-relaxed"
+                />
+                <div className="absolute bottom-3 right-3 flex items-center space-x-2 text-[11px] text-slate-600 dark:text-slate-300 bg-white/95 dark:bg-slate-900/95 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 pointer-events-none">
+                  <span>Dán bảng Word/Excel hoặc nhấn <b>Ctrl+V</b> để dán ảnh</span>
+                </div>
+              </div>
+
+              {/* Nút tải ảnh / tệp ma trận */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center space-x-2">
+                  <label className="cursor-pointer inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-xs transition-all active:scale-95">
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Tải ảnh / file ma trận lên</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.txt,.md,.csv"
+                      onChange={handleMatrixFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <span className="text-[11px] text-slate-600 dark:text-slate-300">
+                    (Hỗ trợ ảnh chụp .png, .jpg hoặc tệp văn bản .txt, .csv)
+                  </span>
+                </div>
+
+                {customMatrixImages.length > 0 && (
+                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 flex items-center space-x-1">
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Đã đính kèm {customMatrixImages.length} ảnh ma trận</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Danh sách ảnh ma trận đã tải lên */}
+              {customMatrixImages.length > 0 && (
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1">
+                      <ImageIcon className="w-3.5 h-3.5 text-teal-600" />
+                      <span>Ảnh chụp khung ma trận bộ môn ({customMatrixImages.length} ảnh):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCustomMatrixImages([])}
+                      className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center space-x-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Xóa hết ảnh</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+                    {customMatrixImages.map((imgSrc, idx) => (
+                      <div
+                        key={idx}
+                        className="relative group rounded-xl overflow-hidden border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-slate-900 aspect-square shadow-xs"
+                      >
+                        <img
+                          src={imgSrc}
+                          alt={`Ma trận ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMatrixImage(idx)}
+                            className="p-1.5 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-md transition-transform hover:scale-110 cursor-pointer"
+                            title="Xóa ảnh này"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 3. Chọn loại đề */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-xs border border-slate-200 dark:border-slate-800 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center space-x-2">
               <Sliders className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                2. Chọn Chế Độ Đề Kiểm Tra (3 Loại)
+                3. Chọn Chế Độ Đề Kiểm Tra (3 Loại)
               </h3>
             </div>
           </div>
@@ -1099,13 +1553,13 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
           </div>
         </div>
 
-        {/* 3. Cấu trúc số lượng câu hỏi & Tùy chọn điểm số */}
+        {/* 4. Cấu trúc số lượng câu hỏi & Tùy chọn điểm số */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-xs border border-slate-200 dark:border-slate-800 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center space-x-2">
               <BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                3. Cấu Trúc / Số Lượng Câu Hỏi & Thang Điểm (Yêu cầu đúng 10 điểm)
+                4. Cấu Trúc / Số Lượng Câu Hỏi & Thang Điểm (Yêu cầu đúng 10 điểm)
               </h3>
             </div>
             <div className="flex items-center space-x-2">
@@ -1126,8 +1580,23 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
             </div>
           </div>
 
+          {/* Banner thông báo Bỏ qua mục này nếu đang ra đề theo Ma trận */}
+          {isCustomMatrixActive && (
+            <div className="p-3.5 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-300 dark:border-teal-800 flex items-start space-x-2.5 text-xs text-teal-900 dark:text-teal-200">
+              <CheckCircle className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-bold text-teal-950 dark:text-teal-100">
+                  ⚡ Đang ở chế độ Ra đề theo Ma trận bộ môn:
+                </p>
+                <p className="text-teal-800 dark:text-teal-300 leading-relaxed">
+                  AI sẽ <strong>BỎ QUA</strong> cấu trúc số câu ở mục này và chỉ dựa duy nhất vào nội dung Ma trận (Mục 2) của bạn để ra đúng và đủ số lượng câu hỏi theo từng phần.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Banner thông báo nếu chưa đủ hoặc vượt quá 10 điểm + Nút Tự động cân bằng */}
-          {Math.abs(currentScores.totalScore - 10.0) >= 0.01 && (
+          {!isCustomMatrixActive && Math.abs(currentScores.totalScore - 10.0) >= 0.01 && (
             <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900 dark:text-amber-200">
               <div className="flex items-center space-x-2">
                 <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -1500,13 +1969,13 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
           </div>
         </div>
 
-        {/* 4. Mức độ nhận thức (Thanh kéo %) */}
+        {/* 5. Mức độ nhận thức (Thanh kéo %) */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-xs border border-slate-200 dark:border-slate-800 space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
             <div className="flex items-center space-x-2">
               <Sliders className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                4. Tỷ Lệ Mức Độ Nhận Thức (Thanh Kéo / Số %)
+                5. Tỷ Lệ Mức Độ Nhận Thức (Thanh Kéo / Số %)
               </h3>
             </div>
             <span
@@ -1519,6 +1988,21 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
               Tổng: {totalPercentage}% {totalPercentage === 100 ? '✓ Khớp' : '!= 100%'}
             </span>
           </div>
+
+          {/* Banner thông báo Bỏ qua mục này nếu đang ra đề theo Ma trận */}
+          {isCustomMatrixActive && (
+            <div className="p-3.5 rounded-xl bg-teal-50 dark:bg-teal-950/40 border border-teal-300 dark:border-teal-800 flex items-start space-x-2.5 text-xs text-teal-900 dark:text-teal-200">
+              <CheckCircle className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <p className="font-bold text-teal-950 dark:text-teal-100">
+                  ⚡ Đang ở chế độ Ra đề theo Ma trận bộ môn:
+                </p>
+                <p className="text-teal-800 dark:text-teal-300 leading-relaxed">
+                  AI sẽ <strong>BỎ QUA</strong> thanh kéo tỷ lệ % ở mục này. Tỷ lệ nhận thức (Nhận biết, Thông hiểu, Vận dụng) sẽ được AI tính toán tự động dựa trên số câu thực tế trong khung ma trận của bạn.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Nhận biết */}
@@ -1591,12 +2075,12 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
           </div>
         </div>
 
-        {/* 5. Chọn số mã đề */}
+        {/* 6. Chọn số mã đề */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-xs border border-slate-200 dark:border-slate-800 space-y-4">
           <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3">
             <Copy className="w-5 h-5 text-teal-600 dark:text-teal-400" />
             <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              5. Số Lượng Mã Đề Cần Sinh (Đảo Câu Hỏi & Đáp Án)
+              6. Số Lượng Mã Đề Cần Sinh (Đảo Câu Hỏi & Đáp Án)
             </h3>
           </div>
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Copy, Download, FileSpreadsheet, Eye, Printer, CheckCircle2, Lightbulb } from 'lucide-react';
 import { ExamPackage } from '../types';
 import { QuestionDetailCard } from './QuestionDetailCard';
+import { MathText } from './MathText';
 
 interface MultiCodeViewProps {
   examPackage: ExamPackage | null;
@@ -232,8 +233,8 @@ export const MultiCodeView: React.FC<MultiCodeViewProps> = ({
                       className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-between"
                     >
                       <span className="font-bold">Câu {ans.questionNumber}:</span>
-                      <span className="font-bold text-emerald-700 dark:text-teal-300 font-mono">
-                        {ans.shortAnswer}
+                      <span className="font-bold text-emerald-700 dark:text-teal-300">
+                        <MathText content={ans.shortAnswer} />
                       </span>
                     </div>
                   ))}

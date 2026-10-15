@@ -31,6 +31,7 @@ import { ExportDocx } from './services/exportDocx';
 import { ExportExcel } from './services/exportExcel';
 import { ExportPdf } from './services/exportPdf';
 import { OnlineExamService } from './services/onlineExamService';
+import { syncSupabaseConfigFromServer } from './supabase/supabaseClient';
 
 export default function App() {
   const { user, role, isAdmin } = useAuth();
@@ -67,6 +68,21 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // Tự động đồng bộ Supabase từ server API khi mở trên bất kỳ trình duyệt nào
+  useEffect(() => {
+    syncSupabaseConfigFromServer().then((synced) => {
+      if (synced) {
+        const targetId = currentUserId || 'guest';
+        UserDataSync.loadUserData(targetId).then((data) => {
+          if (data?.examHistory?.length) {
+            setExamHistory(data.examHistory);
+            StorageEngine.syncFromRemote(data.examHistory, data.questionBank, data.settings);
+          }
+        });
+      }
+    });
+  }, [currentUserId]);
+
   // Synchronize user data upon account change / login
   useEffect(() => {
     StorageEngine.setCurrentUserId(currentUserId);
@@ -90,6 +106,7 @@ export default function App() {
         setSettings(data.settings);
         setExamHistory(data.examHistory);
         setQuestionBank(data.questionBank);
+        StorageEngine.syncFromRemote(data.examHistory, data.questionBank, data.settings);
         const pkg = (data.examHistory && data.examHistory.length > 0)
           ? data.examHistory[0]
           : null;

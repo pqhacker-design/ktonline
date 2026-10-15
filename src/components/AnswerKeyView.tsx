@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckSquare, Download, FileText, Printer, CheckCircle, HelpCircle, AlignLeft, BookOpen } from 'lucide-react';
+import { CheckSquare, Download, FileText, Printer, CheckCircle, HelpCircle, AlignLeft, BookOpen, Lightbulb, Check } from 'lucide-react';
 import { ExamPackage, getCognitiveTag, getCognitiveLabel } from '../types';
 import { MathText } from './MathText';
 
@@ -30,6 +30,7 @@ export const AnswerKeyView: React.FC<AnswerKeyViewProps> = ({
 
   const { metadata, answerKeys, exams } = examPackage;
   const [selectedCodeIndex, setSelectedCodeIndex] = useState(0);
+  const [showDetailedSolutions, setShowDetailedSolutions] = useState(true);
   const currentAK = answerKeys[selectedCodeIndex] || answerKeys[0];
   const currentExam = exams.find((e) => e.code === currentAK.code) || exams[selectedCodeIndex] || exams[0];
 
@@ -78,6 +79,20 @@ export const AnswerKeyView: React.FC<AnswerKeyViewProps> = ({
           )}
 
           <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => setShowDetailedSolutions(!showDetailedSolutions)}
+              className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors border cursor-pointer ${
+                showDetailedSolutions
+                  ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+              }`}
+              title="Bật/Tắt hiển thị lời giải chi tiết của các câu hỏi"
+            >
+              <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>{showDetailedSolutions ? 'Ẩn Lời Giải Chi Tiết' : 'Hiện Lời Giải Chi Tiết'}</span>
+            </button>
+
             {onExportWord && (
               <button
                 onClick={() => onExportWord('answers')}
@@ -166,6 +181,71 @@ export const AnswerKeyView: React.FC<AnswerKeyViewProps> = ({
                 </tbody>
               </table>
             </div>
+
+            {showDetailedSolutions && (
+              <div className="mt-4 pt-4 border-t border-teal-200 dark:border-slate-700 space-y-3">
+                <div className="font-extrabold text-xs text-teal-800 dark:text-teal-300 uppercase tracking-wide flex items-center space-x-1.5">
+                  <Lightbulb className="w-4 h-4 text-amber-500" />
+                  <span>Hướng dẫn giải chi tiết Phần I:</span>
+                </div>
+                <div className="space-y-3">
+                  {currentAK.part1Answers.map((ans) => {
+                    const q = findQuestion(ans.questionNumber);
+                    if (!q) return null;
+                    const tag = getCognitiveTag(q.cognitiveLevel, q.partType);
+                    return (
+                      <div key={ans.questionNumber} className="p-3.5 rounded-xl border border-teal-200 dark:border-slate-700 bg-white dark:bg-slate-900 space-y-2 text-xs">
+                        <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white">
+                          <span>
+                            Câu {ans.questionNumber} {tag && <span className="text-amber-600 dark:text-amber-400 mr-1">{tag}</span>}:
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-extrabold flex items-center space-x-1">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Đáp án: {ans.correctOption}</span>
+                          </span>
+                        </div>
+                        <div className="text-slate-800 dark:text-slate-200 font-medium">
+                          <MathText content={q.content} />
+                        </div>
+                        {q.options && q.options.length > 0 && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                            {q.options.map((opt) => (
+                              <div
+                                key={opt.key}
+                                className={`p-2 rounded-lg border text-xs flex items-start space-x-1.5 ${
+                                  opt.key === ans.correctOption
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-400 text-emerald-950 dark:text-emerald-200 font-bold ring-1 ring-emerald-400/40'
+                                    : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                                }`}
+                              >
+                                <span className={`font-black shrink-0 w-5 h-5 rounded flex items-center justify-center text-[11px] ${
+                                  opt.key === ans.correctOption ? 'bg-emerald-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                                }`}>
+                                  {opt.key}
+                                </span>
+                                <div className="flex-1">
+                                  <MathText content={opt.content} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {q.explanation && (
+                          <div className="p-2.5 rounded-lg bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-slate-800 dark:text-slate-200 space-y-1">
+                            <div className="font-bold text-amber-900 dark:text-amber-300 text-[11px]">
+                              Lời giải chi tiết:
+                            </div>
+                            <div className="leading-relaxed font-normal">
+                              <MathText content={q.explanation} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -217,6 +297,61 @@ export const AnswerKeyView: React.FC<AnswerKeyViewProps> = ({
                 );
               })}
             </div>
+
+            {showDetailedSolutions && (
+              <div className="mt-4 pt-4 border-t border-indigo-200 dark:border-slate-700 space-y-3">
+                <div className="font-extrabold text-xs text-indigo-800 dark:text-indigo-300 uppercase tracking-wide flex items-center space-x-1.5">
+                  <Lightbulb className="w-4 h-4 text-amber-500" />
+                  <span>Hướng dẫn giải chi tiết Phần II:</span>
+                </div>
+                <div className="space-y-3">
+                  {currentAK.part2Answers.map((ans) => {
+                    const q = findQuestion(ans.questionNumber);
+                    if (!q) return null;
+                    const tag = getCognitiveTag(q.cognitiveLevel, q.partType);
+                    return (
+                      <div key={ans.questionNumber} className="p-3.5 rounded-xl border border-indigo-200 dark:border-slate-700 bg-white dark:bg-slate-900 space-y-2 text-xs">
+                        <div className="font-bold text-slate-900 dark:text-white">
+                          Câu {ans.questionNumber} {tag && <span className="text-amber-600 dark:text-amber-400 mr-1">{tag}</span>} ({ans.points} điểm):
+                        </div>
+                        <div className="text-slate-800 dark:text-slate-200 font-medium">
+                          <MathText content={q.content} />
+                        </div>
+                        {q.trueFalseStatements && q.trueFalseStatements.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            {q.trueFalseStatements.map((st: any) => {
+                              const stAns = ans.statements.find((s) => s.key === st.key);
+                              const isCorrect = stAns ? stAns.isCorrect : st.isCorrect;
+                              return (
+                                <div key={st.key} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex items-start justify-between gap-2">
+                                  <div className="flex items-start space-x-1.5 flex-1">
+                                    <span className="font-bold uppercase shrink-0">{st.key})</span>
+                                    <div className="flex-1"><MathText content={st.content} /></div>
+                                  </div>
+                                  <span className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-black ${
+                                    isCorrect
+                                      ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
+                                      : 'bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300'
+                                  }`}>
+                                    {isCorrect ? 'ĐÚNG' : 'SAI'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {q.explanation && (
+                          <div className="p-2.5 rounded-lg bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-slate-800 dark:text-slate-200 space-y-1">
+                            <div className="font-bold text-amber-900 dark:text-amber-300 text-[11px]">Lời giải chi tiết:</div>
+                            <div className="leading-relaxed font-normal"><MathText content={q.explanation} /></div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -253,6 +388,43 @@ export const AnswerKeyView: React.FC<AnswerKeyViewProps> = ({
                 );
               })}
             </div>
+
+            {showDetailedSolutions && (
+              <div className="mt-4 pt-4 border-t border-amber-200 dark:border-slate-700 space-y-3">
+                <div className="font-extrabold text-xs text-amber-800 dark:text-amber-300 uppercase tracking-wide flex items-center space-x-1.5">
+                  <Lightbulb className="w-4 h-4 text-amber-500" />
+                  <span>Hướng dẫn giải chi tiết Phần III:</span>
+                </div>
+                <div className="space-y-3">
+                  {currentAK.part3Answers.map((ans) => {
+                    const q = findQuestion(ans.questionNumber);
+                    if (!q) return null;
+                    const tag = getCognitiveTag(q.cognitiveLevel, q.partType);
+                    return (
+                      <div key={ans.questionNumber} className="p-3.5 rounded-xl border border-amber-200 dark:border-slate-700 bg-white dark:bg-slate-900 space-y-2 text-xs">
+                        <div className="flex items-center justify-between font-bold text-slate-900 dark:text-white">
+                          <span>
+                            Câu {ans.questionNumber} {tag && <span className="text-amber-600 dark:text-amber-400 mr-1">{tag}</span>}:
+                          </span>
+                          <span className="font-black text-xs text-teal-700 dark:text-teal-300 bg-teal-50 dark:bg-teal-950 px-2 py-0.5 rounded border border-teal-200 dark:border-teal-800">
+                            Đáp số: <MathText content={ans.shortAnswer} />
+                          </span>
+                        </div>
+                        <div className="text-slate-800 dark:text-slate-200 font-medium">
+                          <MathText content={q.content} />
+                        </div>
+                        {q.explanation && (
+                          <div className="p-2.5 rounded-lg bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-slate-800 dark:text-slate-200 space-y-1">
+                            <div className="font-bold text-amber-900 dark:text-amber-300 text-[11px]">Lời giải chi tiết:</div>
+                            <div className="leading-relaxed font-normal"><MathText content={q.explanation} /></div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

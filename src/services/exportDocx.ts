@@ -27,6 +27,7 @@ import {
 } from 'docx';
 import { ExamMetadata, ExamPackage, MatrixRow, Question, getCognitiveTag, getSpecRowQuestionDetails } from '../types';
 import { DiagramEngine } from './diagramEngine';
+import { normalizeNewlines } from '../utils/textUtils';
 
 /**
  * Sinh khối tiêu đề bài thi / đáp án chuẩn bộ mẫu hành chính cho Word (.docx)
@@ -862,17 +863,17 @@ export function cleanTexVietnameseAccents(text: string): string {
 export function unwrapVietnameseFromMathBlocks(text: string): string {
   if (!text) return text;
 
-  // Pattern nhận diện các từ Tiếng Việt thường gặp
-  const vnWordRegex = /[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]|\\b(tam gi[aá]c|cho|bi[êế]t|t[ií]nh|v[ơớ]i|c[oó]|v[aà]|vu[oô]ng|đ[oộ] d[aà]i|đư[ơờ]ng cao|h[iì]nh chi[êế]u|chu vi|di[êệ]n t[ií]ch|t[iỉ] s[oố]|đ[oồ]ng d[aạ]ng|tr[eê]n|c[aạ]nh|g[oó]c|c[uù]ng l[uú]c đ[oó]|m[oộ]t|c[oộ]t|c[oọ]c|m[aạ]t đ[aấ]t|b[oó]ng|trư[ơờ]ng h[ơợ]p|đư[ơợ]c|sao cho|như|th[iì])\\b/i;
+  // Pattern nhận diện các từ Tiếng Việt thường gặp (sử dụng word boundary thực sự, không dùng \\b literal)
+  const vnWordRegex = /[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]|\b(tam giác|cho|biết|tính|với|có|và|vuông|độ dài|đường cao|hình chiếu|chu vi|diện tích|tỉ số|đồng dạng|trên|cạnh|góc|cùng lúc|một|cột|cọc|mặt đất|bóng|trường hợp|được|sao cho|như|thì)\b/i;
 
-  return text.replace(/\$([^\$]+)\$/g, (fullMatch, mathContent) => {
+  // Chỉ xử lý các khối $...$ (không đụng vào khối $$...$$ hoặc môi trường \begin)
+  return text.replace(/(^|[^\$])\$([^\$]+)\$(?!\$)/g, (fullMatch, prefix, mathContent) => {
     // Nếu khối $...$ chứa dấu xuống dòng hoặc là môi trường nhiều dòng thì giữ nguyên
     if (mathContent.includes('\n') || mathContent.includes('\\begin')) {
       return fullMatch;
     }
 
     // Tạm thời che (mask) tất cả các khối \text{...}, \mathrm{...}, \mathbf{...}, \mathit{...}, \ce{...}
-    // để kiểm tra xem bên NGOÀI các khối \text{...} đó có từ tiếng Việt nào không.
     const textGroupRegex = /\\(text|mathrm|mathbf|mathit|ce)\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g;
     const maskedContent = mathContent.replace(textGroupRegex, '___TEXT_PLACEHOLDER___');
 
@@ -881,9 +882,8 @@ export function unwrapVietnameseFromMathBlocks(text: string): string {
       return fullMatch;
     }
 
-    // Nếu bên ngoài thực sự chứa từ tiếng Việt (ví dụ: "$Cho tam giác ABC vuông tại A có AB = 3\text{ cm}$"):
-    // Tiến hành tách rời các biểu thức toán con và đặt tiếng Việt ra ngoài $...$
-    const mathTokenRegex = /(\\d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\sqrt\{[^{}]*\}|\\widehat\{[^{}]+\}|\\mathbb\{[^{}]+\}|\\vec\{[^{}]+\}|\\xrightleftharpoons(?:\[[^{}]*\])?(?:\{[^{}]*\})*|\\xrightarrow(?:\[[^{}]*\])?(?:\{[^{}]*\})*|\\xleftarrow(?:\[[^{}]*\])?(?:\{[^{}]*\})*|\\text\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\Delta\s*[A-Z0-9_\']+|[A-Z0-9_\'\.]+\s*[\=\<\>\+\-\*\/]\s*(?:[A-Za-z0-9_\'\.\^\+\-\*\/\{\}\\\text\^\circ]|\\text\{[^{}]*\}|\\mathrm\{[^{}]*\})+|\b\d+(?:\,\d+)?\s*\\text\{[^{}]*\}|[0-9]+\^\s*\\?circ|[0-9]+\\circ\b|[A-Z][A-Z]|\b[a-z]\s*=\s*\d+(?:\/\d+)?)/g;
+    // Nếu bên ngoài thực sự chứa từ tiếng Việt: tách rời các biểu thức toán con và đặt tiếng Việt ra ngoài $...$
+    const mathTokenRegex = /(\\d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\sqrt(?:\[[^\]]*\])?\{[^{}]*\}|\\widehat\{[^{}]+\}|\\mathbb\{[^{}]+\}|\\vec\{[^{}]+\}|\\xrightleftharpoons(?:\[[^{}]*\])?(?:\{[^{}]*\})*|\\xrightarrow(?:\[[^{}]*\])?(?:\{[^{}]*\})*|\\xleftarrow(?:\[[^{}]*\])?(?:\{[^{}]*\})*|\\text\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\Delta\s*[A-Z0-9_\']+|[A-Z0-9_\'\.]+\s*[\=\<\>\+\-\*\/]\s*(?:[A-Za-z0-9_\'\.\^\+\-\*\/\{\}\\\text\^\circ]|\\text\{[^{}]*\}|\\mathrm\{[^{}]*\})+|\b\d+(?:\,\d+)?\s*\\text\{[^{}]*\}|[0-9]+\^\s*\\?circ|[0-9]+\\circ\b|[A-Z][A-Z]|\b[a-z]\s*=\s*\d+(?:\/\d+)?)/g;
 
     let lastIdx = 0;
     let match: RegExpExecArray | null;
@@ -904,10 +904,10 @@ export function unwrapVietnameseFromMathBlocks(text: string): string {
     }
 
     if (tokens.length > 0) {
-      return tokens.join('');
+      return prefix + tokens.join('');
     }
 
-    return mathContent;
+    return fullMatch;
   });
 }
 
@@ -935,18 +935,18 @@ function processPlainPart(plain: string): string {
   str = str.replace(/(\d+)\s*\\text\{\s*cm\s*\}/g, '$1 cm');
   str = str.replace(/\\text\{\s*cm\s*\}/g, 'cm');
 
-  // 6. Tách từ tiếng Việt dính vào biến số toán học (BiếtAB -> Biết AB, và8 -> và 8, cmvà -> cm và)
-  str = str.replace(/([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])([A-Z]{1,4}\b)/g, '$1 $2');
-  str = str.replace(/([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])(\d+)/g, '$1 $2');
-  str = str.replace(/(\d+)\s*cm([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])/g, '$1 cm $2');
+  // 6. Tách từ tiếng Việt dính vào biến số toán học (sử dụng a-z chuẩn ASCII, không dùng a-à vì a-à chứa cả dấu ngoặc {})
+  str = str.replace(/([a-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])([A-Z]{1,4}\b)/g, '$1 $2');
+  str = str.replace(/([a-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])(\d+)/g, '$1 $2');
+  str = str.replace(/(\d+)\s*cm([a-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])/g, '$1 cm $2');
 
   // 7. Chuẩn hóa góc 60\circ, 50\circ -> 50^\circ
   str = str.replace(/(\d+)\s*\\\^?\{?circ\}?/g, '$1^\\circ');
 
   // 8. Tự động bọc $...$ cho các phương trình hóa học, công thức và biểu thức toán/hóa học chưa bọc $...$
-  // 8a. Phương trình hóa học chứa mũi tên phản ứng (\xrightleftharpoons, \xrightarrow, \xleftarrow, \rightarrow,...)
+  // 8a. Phương trình hóa học chứa mũi tên phản ứng
   str = str.replace(
-    /(?:[A-Za-z0-9_\{\}\(\)\+\-\*\/\=\,\.\:\s\%\^\circ\\]|\\text\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\mathrm\{[^{}]*\})*\s*\\(xrightleftharpoons|xrightarrow|xleftarrow|rightarrow|Rightarrow|leftrightarrow|rightleftharpoons)(?:\[[^{}]*\])?(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})*\s*(?:[A-Za-z0-9_\{\}\(\)\+\-\*\/\=\,\.\:\s\%\^\circ\\]|\\text\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\mathrm\{[^{}]*\}|\\uparrow|\\downarrow)*/g,
+    /(?:[A-Za-z0-9_\{\}\(\)\+\-\*\/\=\,\.\:\%\^\circ\s]|\\text\{[^{}]*\}|\\mathrm\{[^{}]*\})*\s*\\(xrightleftharpoons|xrightarrow|xleftarrow|rightarrow|Rightarrow|leftrightarrow|rightleftharpoons)(?:\[[^{}]*\])?(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})*\s*(?:[A-Za-z0-9_\{\}\(\)\+\-\*\/\=\,\.\:\%\^\circ\s\\uparrow\\downarrow]|\\text\{[^{}]*\}|\\mathrm\{[^{}]*\})*/g,
     (match) => {
       const trimmed = match.trim();
       if (!trimmed || trimmed.startsWith('$')) return match;
@@ -954,26 +954,26 @@ function processPlainPart(plain: string): string {
     }
   );
 
-  // 8b. Các công thức toán/hóa & đại lượng nguyên vẹn có chỉ số/mũ/phân số/lệnh KaTeX:
-  // Ví dụ: n_{\text{ester lý thuyết}} = 0,1\text{ mol}, m_{\text{ester lý thuyết}} = 0,1 \cdot 88 = 8,8\text{ g}, H = \frac{...}{...} \cdot 100\% = 60\%
-  const fullEquationRegex = /(?:[A-Za-z0-9_\'\.\(\)]|\\text\{[^{}]*\}|\\mathrm\{[^{}]*\})*(?:_\{[^{}]+\}|_\d+|\^\{[^{}]+\}|\^\d+|\\d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\sqrt\{[^{}]*\}|\\uparrow|\\downarrow)(?:[A-Za-z0-9_\'\.\=\+\-\*\/\,\:\s\%\^\circ\\]|\\text\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\mathrm\{[^{}]*\}|\\cdot|\\times|\\pm|\\div|\\d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\uparrow|\\downarrow)*/g;
+  // 8b. Nhận diện và bọc $...$ cho các công thức chứa lệnh LaTeX: \frac, \sqrt, \vec, \Delta, \alpha, v.v.
+  const cmdRegex = /(?:(?<=\s|^|[([{:;])([a-zA-Z](?:'|\d+|\([a-zA-Z0-9]+\))?\s*[\=\<\>\le\ge\neq\approx\in]\s*))?(\\(?:d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|sqrt(?:\[[^\]]*\])?\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|(?:vec|overrightarrow|widehat|overline|mathbb|mathbf|mathrm|text|ce)\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|[a-zA-Z]+))((?:\s*[\+\-\*\/\=\<\>\le\ge\neq\approx]\s*(?:\\(?:d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|sqrt(?:\[[^\]]*\])?\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|[a-zA-Z]+(?:\{[^{}]*\})*)|[a-zA-Z0-9_\'\.\^]+|\d+(?:\,\d+)?))*)/g;
 
-  str = str.replace(fullEquationRegex, (match) => {
-    const trimmed = match.trim();
-    if (!trimmed || trimmed.startsWith('$')) return match;
-    return ` $${trimmed}$ `;
+  str = str.replace(cmdRegex, (match, lhs, cmd, rhs) => {
+    if (/^\\(begin|end|n|t|r)$/.test(cmd)) return match;
+    let formula = (lhs || '') + cmd + (rhs || '');
+    let trimmed = formula.trim();
+    if (trimmed.startsWith('$')) return match;
+
+    let trailingPunct = '';
+    const mPunct = trimmed.match(/([.,;?!]+)$/);
+    if (mPunct) {
+      trailingPunct = mPunct[1];
+      trimmed = trimmed.slice(0, -trailingPunct.length).trim();
+    }
+
+    return ` $${trimmed}$ ` + trailingPunct;
   });
 
-  // 8c. Bọc độc lập các biểu thức/lệnh LaTeX còn sót lại chưa được bọc $...$
-  const discreteLatexRegex = /(\\d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\sqrt\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|\\widehat\{[^{}]+\}|\\vec\{[^{}]+\}|\\mathbb\{[^{}]+\}|\\Delta\s*[A-Z0-9_\']+|\\(alpha|beta|gamma|delta|epsilon|theta|lambda|pi|sigma|phi|omega|Omega|angle|triangle|sim|perp|parallel|cong|equiv|le|geq|leq|ge|neq|approx|degree|cdot|times|pm|div|xrightleftharpoons|xrightarrow|xleftarrow|rightleftharpoons|uparrow|downarrow|Rightarrow|Leftarrow|Leftrightarrow)\b)/g;
-
-  str = str.replace(discreteLatexRegex, (match) => {
-    const trimmed = match.trim();
-    if (!trimmed || trimmed.startsWith('$')) return match;
-    return ` $${trimmed}$ `;
-  });
-
-  // 8d. Tự động bọc $...$ cho các lệnh \ce{...} chưa bọc $
+  // 8c. Tự động bọc $...$ cho các lệnh \ce{...} chưa bọc $
   str = str.replace(/(^|[^\$])\\ce\{([^{}]+)\}([^\$]|$)/g, '$1 $\\ce{$2}$ $3');
 
   return str;
@@ -1038,27 +1038,16 @@ export function fixCasesLatex(rawText: string): string {
     return m;
   });
 
-  // 2. Xử lý chuẩn hóa môi trường \begin{cases} ... \end{cases}
+  // 2. Chuẩn hóa môi trường \begin{cases} ... \end{cases}
   str = str.replace(/\\begin\{cases\}([\s\S]*?)\\end\{cases\}/g, (match, inner) => {
     let cleanedInner = inner.trim();
-    cleanedInner = cleanedInner.replace(/\\\s+(?=[0-9a-zA-Z\-\+\(\)\{])/g, ' \\\\ ');
-
     if (!cleanedInner.includes('\\\\')) {
-      if (/;|,/.test(cleanedInner)) {
-        cleanedInner = cleanedInner.replace(/[;,]\s*/g, ' \\\\ ');
+      if (/;/.test(cleanedInner)) {
+        cleanedInner = cleanedInner.replace(/;\s*/g, ' \\\\ ');
       }
     }
-
-    if (!cleanedInner.includes('\\\\')) {
-      cleanedInner = cleanedInner.replace(
-        /(=|>|<|\\le|\\ge|\\neq)\s*([\-\+]?\s*[a-zA-Z0-9\(\)\{\}\^\.\/]+(?:\s*[\+\-\*\/]\s*[a-zA-Z0-9\(\)\{\}\^\.\/]+)*)\s+((?:[\-\+]?\s*)?[0-9a-zA-Z\(\)\{\}\\\|\vec]+(?:\s*[\+\-\*\/]\s*[0-9a-zA-Z]+)*\s*(?:=|\\le|\\ge|<|>|\\neq))/g,
-        '$1 $2 \\\\ $3'
-      );
-    }
-
-    cleanedInner = cleanedInner.split(/\\\\/).map((s) => s.trim()).filter(Boolean).join(' \\\\ ');
-
-    return `\\begin{cases} ${cleanedInner} \\end{cases}`;
+    const lines = cleanedInner.split(/\\\\/).map((s) => s.trim()).filter(Boolean);
+    return `\\begin{cases} ${lines.join(' \\\\ ')} \\end{cases}`;
   });
 
   return str;
@@ -1070,19 +1059,52 @@ export function autoWrapUnwrappedLatex(text: string): string {
   // 0. Phục hồi và làm sạch các ký tự điều khiển ASCII, TeX accents và backslash bị thiếu
   let cleanedText = sanitizeLatexControlChars(text);
 
+  // 0.1 Chuẩn hóa \[ ... \] thành $$ ... $$ và \( ... \) thành $ ... $
+  cleanedText = cleanedText.replace(/\\\[([\s\S]*?)\\\]/g, (_, inner) => `$$${inner.trim()}$$`);
+  cleanedText = cleanedText.replace(/\\\(([\s\S]*?)\\\)/g, (_, inner) => `$${inner.trim()}$`);
+
   // 1. Tự động sửa và chuẩn hóa cú pháp hệ phương trình
   cleanedText = fixCasesLatex(cleanedText);
 
   // 2. Tự động bọc $$...$$ cho các môi trường LaTeX nhiều dòng như \begin{cases} ... \end{cases} chưa bọc $ hoặc $$
   cleanedText = cleanedText.replace(
     /(^|[^\$])(\\begin\{(cases|aligned|array|matrix|pmatrix|bmatrix)\}[\s\S]*?\\end\{\3\})([^\$]|$)/g,
-    (m, p1, p2, p3, p4) => `${p1} $$${p2}$$ ${p4}`
+    (_, p1, p2, p3, p4) => `${p1} $$${p2}$$ ${p4}`
   );
 
-  // 3. Tách bóc các từ tiếng Việt ra khỏi những khối $...$ bị bọc nhầm
+  // 3. Nếu toàn bộ chuỗi là một công thức toán thuần (ví dụ đáp án ngắn "\frac{1}{2}", "x = 2", "\sqrt{3}", "S = [2; 3]") chưa bọc $
+  const trimmed = cleanedText.trim();
+  if (!trimmed.startsWith('$') && !trimmed.startsWith('$$')) {
+    // Nếu chuỗi bắt đầu bằng tiền tố phương án A. B. C. D.
+    const optPrefixMatch = trimmed.match(/^([A-D]\.\s*)(.*)$/);
+    if (optPrefixMatch) {
+      const optLabel = optPrefixMatch[1];
+      const optContent = optPrefixMatch[2].trim();
+      const isContentMath =
+        /^(\\d?frac|\\sqrt|\\vec|\\widehat|\\mathbb|\\ce|\\Delta|\\alpha|\\beta|\\gamma|\\pi|\\lim|\\int)\b/.test(optContent) ||
+        (/^[a-zA-Z0-9_\'\^\+\-\*\/\=\(\)\{\}\\\s\.\,\;\:\<\>\le\ge\neq\approx\sqrt\frac\[\]\(\)\|\-]+$/.test(optContent) &&
+          /[\=\<\>\+\-\*\/\\_\^]/.test(optContent) &&
+          !/[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(optContent));
+      if (isContentMath && !optContent.startsWith('$')) {
+        return `${optLabel}$${optContent}$`;
+      }
+    } else {
+      const isStandaloneLatex =
+        /^(\\d?frac|\\sqrt|\\vec|\\widehat|\\mathbb|\\ce|\\Delta|\\alpha|\\beta|\\gamma|\\pi|\\lim|\\int)\b/.test(trimmed) ||
+        (/^[a-zA-Z0-9_\'\^\+\-\*\/\=\(\)\{\}\\\s\.\,\;\:\<\>\le\ge\neq\approx\sqrt\frac\[\]\(\)\|\-]+$/.test(trimmed) &&
+          /[\=\<\>\+\-\*\/\\_\^]/.test(trimmed) &&
+          !/[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(trimmed));
+
+      if (isStandaloneLatex) {
+        return `$${trimmed}$`;
+      }
+    }
+  }
+
+  // 4. Tách bóc các từ tiếng Việt ra khỏi những khối $...$ bị bọc nhầm
   cleanedText = unwrapVietnameseFromMathBlocks(cleanedText);
 
-  // 4. Tách text thành các khối đã bọc sẵn ($...$, $$...$$, \(...\), \[...\]) và phần text thường
+  // 5. Tách text thành các khối đã bọc sẵn ($...$, $$...$$, \(...\), \[...\]) và phần text thường
   const mathBlockRegex = /(\$\$.*?\$\$|\$.*?\$|\\\[.*?\\\]|\\\([^\)]*\\\))/gs;
   const parts: string[] = [];
   let lastIdx = 0;
@@ -1099,13 +1121,7 @@ export function autoWrapUnwrappedLatex(text: string): string {
     parts.push(processPlainPart(cleanedText.substring(lastIdx)));
   }
 
-  let result = parts.join('');
-
-  // Làm sạch các vỡ vụn dán ghép $: ví dụ "$x$ $ \vdots $ $12$" -> "$x \vdots 12$"
-  result = result.replace(/\$\s*\$/g, '');
-  result = result.replace(/\$\s+\$/g, ' ');
-
-  return result;
+  return parts.join('');
 }
 
 /**
@@ -1162,8 +1178,8 @@ export function createDocxTextRunsWithMarkdown(plainText: string, baseOptions: a
 export function createDocxInlineRuns(text: string, baseOptions: any = {}): (TextRun | DocxMath)[] {
   if (!text) return [new TextRun({ text: '', font: 'Times New Roman', ...baseOptions })];
 
-  // Tiền xử lý: dọn dẹp các dòng xuống dòng không hợp lệ trong khối math $...$ hoặc $$...$$
-  let cleanInput = text;
+  // Tiền xử lý: chuẩn hóa xuống dòng \n và dọn dẹp các dòng xuống dòng không hợp lệ trong khối math $...$ hoặc $$...$$
+  let cleanInput = normalizeNewlines(text);
   cleanInput = cleanInput.replace(/\$([^$]+)\$/g, (m, p1) => '$' + p1.replace(/[\r\n]+/g, ' ').trim() + '$');
   cleanInput = cleanInput.replace(/\$\$([^$]+)\$\$/g, (m, p1) => '$$' + p1.replace(/[\r\n]+/g, ' ').trim() + '$$');
 
@@ -1419,7 +1435,7 @@ async function buildContentParagraphs(
   svgDiagramStr?: string | null
 ): Promise<Paragraph[]> {
   const paragraphs: Paragraph[] = [];
-  const cleanText = stripSvgCode(text || '');
+  const cleanText = normalizeNewlines(stripSvgCode(text || ''));
   const lines = cleanText.split('\n');
 
   for (let idx = 0; idx < lines.length; idx++) {
@@ -1476,224 +1492,385 @@ async function buildContentParagraphs(
 }
 
 /**
- * Tạo Bảng Ma Trận Đề Kiểm Tra chuẩn định dạng Công văn 7991 (14 cột: T, Chủ đề, Đơn vị kiến thức, 8 cột Mức độ nhận thức TN/TL, Tổng câu, Tổng điểm, Tỷ lệ %)
+ * Tạo Bảng Ma Trận Đề Kiểm Tra chuẩn định dạng Công văn 7991/BGDĐT
+ * (19 cột: TT, Chủ đề, Đơn vị kiến thức, 12 cột cho 4 dạng thức Nhiều lựa chọn / Đúng-Sai / Trả lời ngắn / Tự luận theo 3 mức độ Biết-Hiểu-Vận dụng, 3 cột Tổng Biết-Hiểu-VD, Tỷ lệ %)
  */
-export function buildMatrixDocxTable(matrix: MatrixRow[]): Table {
-  const getNum = (part: any, field: string): number => (part && part[field] ? Number(part[field]) : 0);
+export function buildMatrixDocxTable(matrix: MatrixRow[], metadata?: ExamMetadata): Table {
+  const getCellDisplay = (part: any, field: string): string => {
+    if (!part) return '-';
+    const val = part[field];
+    if (val === undefined || val === null || val === '' || val === 0) return '-';
+    return String(val);
+  };
+
+  const countQuestionsInCell = (val: string): number => {
+    if (!val || val === '-') return 0;
+    if (!isNaN(Number(val))) return Number(val);
+    const items = val.split(',').map((s) => s.trim()).filter(Boolean);
+    return items.length;
+  };
+
+  const headerFontSize = 15;
+  const contentFontSize = 15;
+  const headerFont = 'Times New Roman';
 
   // Hàng Tiêu Đề 1
   const headerRow1 = new TableRow({
     tableHeader: true,
     children: [
       new TableCell({
-        rowSpan: 3,
+        rowSpan: 4,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'T', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+        shading: { fill: 'EBF4F6' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'TT', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
       }),
       new TableCell({
-        rowSpan: 3,
+        rowSpan: 4,
         verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'EBF4F6' },
         children: [
-          new Paragraph({ children: [new TextRun({ text: 'Chủ đề /', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER }),
-          new Paragraph({ children: [new TextRun({ text: 'Mạch nội dung', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER }),
+          new Paragraph({ children: [new TextRun({ text: 'Chủ đề /', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER }),
+          new Paragraph({ children: [new TextRun({ text: 'Mạch nội dung', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER }),
         ],
       }),
       new TableCell({
-        rowSpan: 3,
+        rowSpan: 4,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Đơn vị kiến thức', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-      }),
-      new TableCell({
-        columnSpan: 8,
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Mức độ nhận thức (Số câu hỏi)', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-      }),
-      new TableCell({
-        rowSpan: 3,
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Tổng câu', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-      }),
-      new TableCell({
-        rowSpan: 3,
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Tổng điểm', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-      }),
-      new TableCell({
-        rowSpan: 3,
-        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'EBF4F6' },
         children: [
-          new Paragraph({ children: [new TextRun({ text: 'Tỷ lệ', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER }),
-          new Paragraph({ children: [new TextRun({ text: '%', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER }),
+          new Paragraph({ children: [new TextRun({ text: 'Nội dung /', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER }),
+          new Paragraph({ children: [new TextRun({ text: 'Đơn vị kiến thức', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER }),
+        ],
+      }),
+      new TableCell({
+        columnSpan: 12,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'E0EFEF' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Mức độ đánh giá', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
+      }),
+      new TableCell({
+        columnSpan: 3,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'EBF4F6' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Tổng số câu', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
+      }),
+      new TableCell({
+        rowSpan: 4,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'EBF4F6' },
+        children: [
+          new Paragraph({ children: [new TextRun({ text: 'Tỉ lệ', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER }),
+          new Paragraph({ children: [new TextRun({ text: '% điểm', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER }),
         ],
       }),
     ],
   });
 
-  // Hàng Tiêu Đề 2
+  // Hàng Tiêu Đề 2: Trắc nghiệm khách quan vs Tự luận
   const headerRow2 = new TableRow({
     tableHeader: true,
     children: [
       new TableCell({
-        columnSpan: 2,
+        columnSpan: 9,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Nhận biết', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+        shading: { fill: 'D8EEEE' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Trắc nghiệm khách quan', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
       }),
       new TableCell({
-        columnSpan: 2,
+        columnSpan: 3,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Thông hiểu', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+        shading: { fill: 'E6F4EA' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Tự luận', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
       }),
       new TableCell({
-        columnSpan: 2,
+        rowSpan: 3,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Vận dụng', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+        shading: { fill: 'F0F4F8' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Biết', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
       }),
       new TableCell({
-        columnSpan: 2,
+        rowSpan: 3,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'Vận dụng cao', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+        shading: { fill: 'F0F4F8' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Hiểu', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
+      }),
+      new TableCell({
+        rowSpan: 3,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'F0F4F8' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Vận dụng', bold: true, size: headerFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
       }),
     ],
   });
 
-  // Hàng Tiêu Đề 3
+  // Hàng Tiêu Đề 3: 4 Dạng bài (Nhiều lựa chọn, Đúng-Sai, Trả lời ngắn, Tự luận)
   const headerRow3 = new TableRow({
     tableHeader: true,
     children: [
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TN', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TL', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TN', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TL', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TN', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TL', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TN', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'TL', bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
+      new TableCell({
+        columnSpan: 3,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'E6F7F7' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Nhiều lựa chọn', bold: true, size: 14, font: headerFont })], alignment: AlignmentType.CENTER })],
+      }),
+      new TableCell({
+        columnSpan: 3,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'E6F7F7' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Đúng – Sai', bold: true, size: 14, font: headerFont })], alignment: AlignmentType.CENTER })],
+      }),
+      new TableCell({
+        columnSpan: 3,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'E6F7F7' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Trả lời ngắn', bold: true, size: 14, font: headerFont })], alignment: AlignmentType.CENTER })],
+      }),
+      new TableCell({
+        columnSpan: 3,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: 'F0F9F4' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Tự luận', bold: true, size: 14, font: headerFont })], alignment: AlignmentType.CENTER })],
+      }),
+    ],
+  });
+
+  // Hàng Tiêu Đề 4: Biết - Hiểu - Vận dụng
+  const makeSubHeaderCell = (text: string, fill: string = 'F7FAFA') =>
+    new TableCell({
+      verticalAlign: VerticalAlign.CENTER,
+      shading: { fill },
+      children: [new Paragraph({ children: [new TextRun({ text, bold: true, size: 13, font: headerFont })], alignment: AlignmentType.CENTER })],
+    });
+
+  const headerRow4 = new TableRow({
+    tableHeader: true,
+    children: [
+      // Nhiều lựa chọn
+      makeSubHeaderCell('Biết'),
+      makeSubHeaderCell('Hiểu'),
+      makeSubHeaderCell('VD'),
+      // Đúng - Sai
+      makeSubHeaderCell('Biết'),
+      makeSubHeaderCell('Hiểu'),
+      makeSubHeaderCell('VD'),
+      // Trả lời ngắn
+      makeSubHeaderCell('Biết'),
+      makeSubHeaderCell('Hiểu'),
+      makeSubHeaderCell('VD'),
+      // Tự luận
+      makeSubHeaderCell('Biết', 'F4FAF6'),
+      makeSubHeaderCell('Hiểu', 'F4FAF6'),
+      makeSubHeaderCell('VD', 'F4FAF6'),
     ],
   });
 
   // Tích lũy tổng
-  let totalQuestionsSum = 0;
-  let totalPointsSum = 0;
+  let sum_p1_rem = 0, sum_p1_und = 0, sum_p1_app = 0;
+  let sum_p2_rem = 0, sum_p2_und = 0, sum_p2_app = 0;
+  let sum_p3_rem = 0, sum_p3_und = 0, sum_p3_app = 0;
+  let sum_p4_rem = 0, sum_p4_und = 0, sum_p4_app = 0;
+
+  let sum_total_rem = 0, sum_total_und = 0, sum_total_app = 0;
   let totalPercentageSum = 0;
 
-  let sum_rem_TN = 0, sum_rem_TL = 0;
-  let sum_und_TN = 0, sum_und_TL = 0;
-  let sum_app_TN = 0, sum_app_TL = 0;
-  let sum_adv_TN = 0, sum_adv_TL = 0;
-
   const dataRows = matrix.map((row) => {
-    const rem_TN = getNum(row.part1, 'remember') + getNum(row.part2, 'remember') + getNum(row.part3, 'remember');
-    const rem_TL = getNum(row.part4, 'remember');
+    const p1_rem = getCellDisplay(row.part1, 'remember');
+    const p1_und = getCellDisplay(row.part1, 'understand');
+    const p1_app = getCellDisplay(row.part1, 'apply') !== '-' ? getCellDisplay(row.part1, 'apply') : getCellDisplay(row.part1, 'advanced');
 
-    const und_TN = getNum(row.part1, 'understand') + getNum(row.part2, 'understand') + getNum(row.part3, 'understand');
-    const und_TL = getNum(row.part4, 'understand');
+    const p2_rem = getCellDisplay(row.part2, 'remember');
+    const p2_und = getCellDisplay(row.part2, 'understand');
+    const p2_app = getCellDisplay(row.part2, 'apply') !== '-' ? getCellDisplay(row.part2, 'apply') : getCellDisplay(row.part2, 'advanced');
 
-    const app_TN = getNum(row.part1, 'apply') + getNum(row.part2, 'apply') + getNum(row.part3, 'apply');
-    const app_TL = getNum(row.part4, 'apply');
+    const p3_rem = getCellDisplay(row.part3, 'remember');
+    const p3_und = getCellDisplay(row.part3, 'understand');
+    const p3_app = getCellDisplay(row.part3, 'apply') !== '-' ? getCellDisplay(row.part3, 'apply') : getCellDisplay(row.part3, 'advanced');
 
-    const adv_TN = getNum(row.part1, 'advanced') + getNum(row.part2, 'advanced') + getNum(row.part3, 'advanced');
-    const adv_TL = getNum(row.part4, 'advanced');
+    const p4_rem = getCellDisplay(row.part4, 'remember');
+    const p4_und = getCellDisplay(row.part4, 'understand');
+    const p4_app = getCellDisplay(row.part4, 'apply') !== '-' ? getCellDisplay(row.part4, 'apply') : getCellDisplay(row.part4, 'advanced');
 
-    sum_rem_TN += rem_TN;
-    sum_rem_TL += rem_TL;
-    sum_und_TN += und_TN;
-    sum_und_TL += und_TL;
-    sum_app_TN += app_TN;
-    sum_app_TL += app_TL;
-    sum_adv_TN += adv_TN;
-    sum_adv_TL += adv_TL;
+    sum_p1_rem += countQuestionsInCell(p1_rem);
+    sum_p1_und += countQuestionsInCell(p1_und);
+    sum_p1_app += countQuestionsInCell(p1_app);
 
-    totalQuestionsSum += Number(row.totalQuestions || 0);
-    totalPointsSum += Number(row.totalPoints || 0);
+    sum_p2_rem += countQuestionsInCell(p2_rem);
+    sum_p2_und += countQuestionsInCell(p2_und);
+    sum_p2_app += countQuestionsInCell(p2_app);
+
+    sum_p3_rem += countQuestionsInCell(p3_rem);
+    sum_p3_und += countQuestionsInCell(p3_und);
+    sum_p3_app += countQuestionsInCell(p3_app);
+
+    sum_p4_rem += countQuestionsInCell(p4_rem);
+    sum_p4_und += countQuestionsInCell(p4_und);
+    sum_p4_app += countQuestionsInCell(p4_app);
+
+    const row_rem =
+      row.totalRemember !== undefined
+        ? row.totalRemember
+        : countQuestionsInCell(p1_rem) + countQuestionsInCell(p2_rem) + countQuestionsInCell(p3_rem) + countQuestionsInCell(p4_rem);
+
+    const row_und =
+      row.totalUnderstand !== undefined
+        ? row.totalUnderstand
+        : countQuestionsInCell(p1_und) + countQuestionsInCell(p2_und) + countQuestionsInCell(p3_und) + countQuestionsInCell(p4_und);
+
+    const row_app =
+      row.totalApply !== undefined
+        ? row.totalApply
+        : countQuestionsInCell(p1_app) + countQuestionsInCell(p2_app) + countQuestionsInCell(p3_app) + countQuestionsInCell(p4_app);
+
+    sum_total_rem += row_rem;
+    sum_total_und += row_und;
+    sum_total_app += row_app;
     totalPercentageSum += Number(row.percentage || 0);
 
-    const fmtVal = (val: number) =>
-      val > 0
-        ? [new TextRun({ text: val.toString(), bold: true, size: 18, font: 'Times New Roman' })]
-        : [new TextRun({ text: '-', size: 18, font: 'Times New Roman' })];
+    const makeValCell = (valStr: string, isTotal: boolean = false) => {
+      const isDash = !valStr || valStr === '-';
+      return new TableCell({
+        verticalAlign: VerticalAlign.CENTER,
+        shading: isTotal ? { fill: 'F9FAFB' } : undefined,
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: valStr || '-',
+                bold: !isDash,
+                size: contentFontSize,
+                font: headerFont,
+                color: isDash ? '9CA3AF' : '111827',
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+          }),
+        ],
+      });
+    };
 
     return new TableRow({
       children: [
-        // T (STT)
+        // TT
         new TableCell({
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: row.stt.toString(), bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+          children: [new Paragraph({ children: [new TextRun({ text: row.stt.toString(), bold: true, size: contentFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
         }),
         // Chủ đề / Mạch nội dung
         new TableCell({
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: createDocxInlineRuns(row.topic, { size: 18, font: 'Times New Roman' }) })],
+          children: [new Paragraph({ children: createDocxInlineRuns(row.topic, { size: contentFontSize, font: headerFont }) })],
         }),
-        // Đơn vị kiến thức
+        // Nội dung / Đơn vị kiến thức
         new TableCell({
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: createDocxInlineRuns(row.subTopic, { size: 18, font: 'Times New Roman' }) })],
+          children: [new Paragraph({ children: createDocxInlineRuns(row.subTopic, { size: contentFontSize, font: headerFont }) })],
         }),
-        // Nhận biết TN / TL
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(rem_TN), alignment: AlignmentType.CENTER })] }),
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(rem_TL), alignment: AlignmentType.CENTER })] }),
-        // Thông hiểu TN / TL
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(und_TN), alignment: AlignmentType.CENTER })] }),
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(und_TL), alignment: AlignmentType.CENTER })] }),
-        // Vận dụng TN / TL
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(app_TN), alignment: AlignmentType.CENTER })] }),
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(app_TL), alignment: AlignmentType.CENTER })] }),
-        // Vận dụng cao TN / TL
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(adv_TN), alignment: AlignmentType.CENTER })] }),
-        new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: fmtVal(adv_TL), alignment: AlignmentType.CENTER })] }),
-        // Tổng câu
+        // Phần I (Nhiều lựa chọn): Biết, Hiểu, Vận dụng
+        makeValCell(p1_rem),
+        makeValCell(p1_und),
+        makeValCell(p1_app),
+        // Phần II (Đúng - Sai): Biết, Hiểu, Vận dụng
+        makeValCell(p2_rem),
+        makeValCell(p2_und),
+        makeValCell(p2_app),
+        // Phần III (Trả lời ngắn): Biết, Hiểu, Vận dụng
+        makeValCell(p3_rem),
+        makeValCell(p3_und),
+        makeValCell(p3_app),
+        // Phần IV (Tự luận): Biết, Hiểu, Vận dụng
+        makeValCell(p4_rem),
+        makeValCell(p4_und),
+        makeValCell(p4_app),
+        // Tổng: Biết, Hiểu, Vận dụng
+        makeValCell(row_rem > 0 ? row_rem.toString() : '-', true),
+        makeValCell(row_und > 0 ? row_und.toString() : '-', true),
+        makeValCell(row_app > 0 ? row_app.toString() : '-', true),
+        // Tỷ lệ % điểm
         new TableCell({
           verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: `${row.totalQuestions}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-        }),
-        // Tổng điểm
-        new TableCell({
-          verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: `${row.totalPoints}đ`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-        }),
-        // Tỷ lệ %
-        new TableCell({
-          verticalAlign: VerticalAlign.CENTER,
-          children: [new Paragraph({ children: [new TextRun({ text: `${row.percentage}%`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+          children: [new Paragraph({ children: [new TextRun({ text: `${row.percentage || 0}%`, bold: true, size: contentFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
         }),
       ],
     });
   });
 
-  // Hàng Tổng Cộng
-  const footerRow = new TableRow({
+  const totalQuestionsAll = sum_total_rem + sum_total_und + sum_total_app;
+  const makeFooterCell = (text: string, bold: boolean = true) =>
+    new TableCell({
+      verticalAlign: VerticalAlign.CENTER,
+      shading: { fill: 'F3F4F6' },
+      children: [new Paragraph({ children: [new TextRun({ text, bold, size: contentFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
+    });
+
+  // Hàng Tổng 1: Tổng số câu
+  const footerRow1 = new TableRow({
     children: [
       new TableCell({
         columnSpan: 3,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: 'TỔNG CỘNG:', bold: true, size: 18, font: 'Times New Roman' })] })],
+        shading: { fill: 'EBF4F6' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Tổng số câu', bold: true, size: contentFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
       }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_rem_TN}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_rem_TL}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_und_TN}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_und_TL}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_app_TN}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_app_TL}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_adv_TN}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
-      new TableCell({ verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ children: [new TextRun({ text: `${sum_adv_TL}`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })] }),
+      // P1
+      makeFooterCell(sum_p1_rem > 0 ? sum_p1_rem.toString() : '-'),
+      makeFooterCell(sum_p1_und > 0 ? sum_p1_und.toString() : '-'),
+      makeFooterCell(sum_p1_app > 0 ? sum_p1_app.toString() : '-'),
+      // P2
+      makeFooterCell(sum_p2_rem > 0 ? sum_p2_rem.toString() : '-'),
+      makeFooterCell(sum_p2_und > 0 ? sum_p2_und.toString() : '-'),
+      makeFooterCell(sum_p2_app > 0 ? sum_p2_app.toString() : '-'),
+      // P3
+      makeFooterCell(sum_p3_rem > 0 ? sum_p3_rem.toString() : '-'),
+      makeFooterCell(sum_p3_und > 0 ? sum_p3_und.toString() : '-'),
+      makeFooterCell(sum_p3_app > 0 ? sum_p3_app.toString() : '-'),
+      // P4
+      makeFooterCell(sum_p4_rem > 0 ? sum_p4_rem.toString() : '-'),
+      makeFooterCell(sum_p4_und > 0 ? sum_p4_und.toString() : '-'),
+      makeFooterCell(sum_p4_app > 0 ? sum_p4_app.toString() : '-'),
+      // Tổng Biết, Hiểu, Vận dụng
+      makeFooterCell(sum_total_rem > 0 ? sum_total_rem.toString() : '-', true),
+      makeFooterCell(sum_total_und > 0 ? sum_total_und.toString() : '-', true),
+      makeFooterCell(sum_total_app > 0 ? sum_total_app.toString() : '-', true),
+      // Tổng số câu toàn đề
+      makeFooterCell(`${totalQuestionsAll} câu`, true),
+    ],
+  });
+
+  // Hàng Tổng 2: Tỉ lệ % điểm
+  const remPct = totalQuestionsAll > 0 ? Math.round((sum_total_rem / totalQuestionsAll) * 100) : 40;
+  const undPct = totalQuestionsAll > 0 ? Math.round((sum_total_und / totalQuestionsAll) * 100) : 30;
+  const appPct = 100 - remPct - undPct;
+
+  const footerRow2 = new TableRow({
+    children: [
       new TableCell({
+        columnSpan: 3,
         verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: `${totalQuestionsSum} câu`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
+        shading: { fill: 'EBF4F6' },
+        children: [new Paragraph({ children: [new TextRun({ text: 'Tỉ lệ % điểm', bold: true, size: contentFontSize, font: headerFont })], alignment: AlignmentType.CENTER })],
       }),
-      new TableCell({
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: `${totalPointsSum}đ`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-      }),
-      new TableCell({
-        verticalAlign: VerticalAlign.CENTER,
-        children: [new Paragraph({ children: [new TextRun({ text: `${totalPercentageSum > 0 ? totalPercentageSum : 100}%`, bold: true, size: 18, font: 'Times New Roman' })], alignment: AlignmentType.CENTER })],
-      }),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell('-'),
+      makeFooterCell(`${remPct}%`, true),
+      makeFooterCell(`${undPct}%`, true),
+      makeFooterCell(`${appPct}%`, true),
+      makeFooterCell('100%', true),
     ],
   });
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: [headerRow1, headerRow2, headerRow3, ...dataRows, footerRow],
+    rows: [headerRow1, headerRow2, headerRow3, headerRow4, ...dataRows, footerRow1, footerRow2],
   });
 }
 
@@ -2106,20 +2283,109 @@ export class ExportDocx {
         docChildren.push(new Table({ rows: rowsP3 }), new Paragraph({ text: '', spacing: { after: 150 } }));
       }
 
-      // Đáp án Phần IV Tự luận / Hướng dẫn giải chi tiết kèm Hình vẽ & Đồ thị
+      // Đáp án & Hướng dẫn giải chi tiết cho tất cả các phần (I, II, III, IV)
       const targetExam = exams.find((e) => e.code === ak.code) || exams[0];
       if (targetExam) {
+        const p1WithExp = targetExam.questions.filter((q) => q.partType === 'PART1' && q.explanation);
+        const p2WithExp = targetExam.questions.filter((q) => q.partType === 'PART2' && q.explanation);
+        const p3WithExp = targetExam.questions.filter((q) => q.partType === 'PART3' && (q.explanation || q.shortAnswer));
         const p4Questions = targetExam.questions.filter((q) => q.partType === 'PART4');
+
+        if (p1WithExp.length > 0 || p2WithExp.length > 0 || p3WithExp.length > 0) {
+          docChildren.push(
+            new Paragraph({
+              spacing: { before: 200, after: 100 },
+              children: [
+                new TextRun({
+                  text: 'HƯỚNG DẪN GIẢI CHI TIẾT CÂU HỎI TRẮC NGHIỆM (PHẦN I, II, III):',
+                  bold: true,
+                  size: 22,
+                  font: 'Times New Roman',
+                  color: '008080',
+                }),
+              ],
+            })
+          );
+
+          if (p1WithExp.length > 0) {
+            docChildren.push(
+              new Paragraph({
+                spacing: { before: 100, after: 60 },
+                children: [
+                  new TextRun({
+                    text: '1. Giải thích chi tiết Phần I (Trắc nghiệm nhiều lựa chọn):',
+                    bold: true,
+                    size: 20,
+                    font: 'Times New Roman',
+                  }),
+                ],
+              })
+            );
+            for (const q of p1WithExp) {
+              const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART1');
+              const title = `Câu ${q.number} ${tag} (Đáp án đúng: ${q.correctOption}): `;
+              const pars = await buildContentParagraphs(q.explanation || '', title, true, { size: 21 });
+              docChildren.push(...pars);
+            }
+          }
+
+          if (p2WithExp.length > 0) {
+            docChildren.push(
+              new Paragraph({
+                spacing: { before: 120, after: 60 },
+                children: [
+                  new TextRun({
+                    text: '2. Giải thích chi tiết Phần II (Trắc nghiệm Đúng/Sai):',
+                    bold: true,
+                    size: 20,
+                    font: 'Times New Roman',
+                  }),
+                ],
+              })
+            );
+            for (const q of p2WithExp) {
+              const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART2');
+              const title = `Câu ${q.number} ${tag}: `;
+              const pars = await buildContentParagraphs(q.explanation || '', title, true, { size: 21 });
+              docChildren.push(...pars);
+            }
+          }
+
+          if (p3WithExp.length > 0) {
+            docChildren.push(
+              new Paragraph({
+                spacing: { before: 120, after: 60 },
+                children: [
+                  new TextRun({
+                    text: '3. Giải thích chi tiết Phần III (Trắc nghiệm trả lời ngắn):',
+                    bold: true,
+                    size: 20,
+                    font: 'Times New Roman',
+                  }),
+                ],
+              })
+            );
+            for (const q of p3WithExp) {
+              const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART3');
+              const title = `Câu ${q.number} ${tag} (Đáp số: ${q.shortAnswer || ''}): `;
+              const solText = q.explanation || `Đáp số chính xác: ${q.shortAnswer || ''}`;
+              const pars = await buildContentParagraphs(solText, title, true, { size: 21 });
+              docChildren.push(...pars);
+            }
+          }
+        }
+
         if (p4Questions.length > 0) {
           docChildren.push(
             new Paragraph({
-              spacing: { before: 150, after: 100 },
+              spacing: { before: 200, after: 100 },
               children: [
                 new TextRun({
                   text: 'PHẦN IV. Hướng dẫn giải chi tiết Tự luận & Rubric chấm điểm:',
                   bold: true,
                   size: 22,
                   font: 'Times New Roman',
+                  color: '008080',
                 }),
               ],
             })
@@ -2129,7 +2395,7 @@ export class ExportDocx {
             const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART4');
             const title = `Câu ${q.number} ${tag} (${q.points} điểm): `;
             const textContent = q.essayAnswerGuide || q.explanation || q.content;
-            const solPars = await buildContentParagraphs(textContent, title, true, { size: 22 });
+            const solPars = await buildContentParagraphs(textContent, title, true, { size: 21 });
             docChildren.push(...solPars);
 
             if (q.rubric && q.rubric.length > 0) {
@@ -2435,19 +2701,109 @@ export class ExportDocx {
         docChildren.push(new Table({ rows: rowsP3 }), new Paragraph({ text: '', spacing: { after: 150 } }));
       }
 
+      // Đáp án & Hướng dẫn giải chi tiết cho tất cả các phần (I, II, III, IV)
       const targetExam = exams.find((e) => e.code === ak.code) || exams[0];
       if (targetExam) {
+        const p1WithExp = targetExam.questions.filter((q) => q.partType === 'PART1' && q.explanation);
+        const p2WithExp = targetExam.questions.filter((q) => q.partType === 'PART2' && q.explanation);
+        const p3WithExp = targetExam.questions.filter((q) => q.partType === 'PART3' && (q.explanation || q.shortAnswer));
         const p4Questions = targetExam.questions.filter((q) => q.partType === 'PART4');
+
+        if (p1WithExp.length > 0 || p2WithExp.length > 0 || p3WithExp.length > 0) {
+          docChildren.push(
+            new Paragraph({
+              spacing: { before: 200, after: 100 },
+              children: [
+                new TextRun({
+                  text: 'HƯỚNG DẪN GIẢI CHI TIẾT CÂU HỎI TRẮC NGHIỆM (PHẦN I, II, III):',
+                  bold: true,
+                  size: 22,
+                  font: 'Times New Roman',
+                  color: '008080',
+                }),
+              ],
+            })
+          );
+
+          if (p1WithExp.length > 0) {
+            docChildren.push(
+              new Paragraph({
+                spacing: { before: 100, after: 60 },
+                children: [
+                  new TextRun({
+                    text: '1. Giải thích chi tiết Phần I (Trắc nghiệm nhiều lựa chọn):',
+                    bold: true,
+                    size: 20,
+                    font: 'Times New Roman',
+                  }),
+                ],
+              })
+            );
+            for (const q of p1WithExp) {
+              const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART1');
+              const title = `Câu ${q.number} ${tag} (Đáp án đúng: ${q.correctOption}): `;
+              const pars = await buildContentParagraphs(q.explanation || '', title, true, { size: 21 });
+              docChildren.push(...pars);
+            }
+          }
+
+          if (p2WithExp.length > 0) {
+            docChildren.push(
+              new Paragraph({
+                spacing: { before: 120, after: 60 },
+                children: [
+                  new TextRun({
+                    text: '2. Giải thích chi tiết Phần II (Trắc nghiệm Đúng/Sai):',
+                    bold: true,
+                    size: 20,
+                    font: 'Times New Roman',
+                  }),
+                ],
+              })
+            );
+            for (const q of p2WithExp) {
+              const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART2');
+              const title = `Câu ${q.number} ${tag}: `;
+              const pars = await buildContentParagraphs(q.explanation || '', title, true, { size: 21 });
+              docChildren.push(...pars);
+            }
+          }
+
+          if (p3WithExp.length > 0) {
+            docChildren.push(
+              new Paragraph({
+                spacing: { before: 120, after: 60 },
+                children: [
+                  new TextRun({
+                    text: '3. Giải thích chi tiết Phần III (Trắc nghiệm trả lời ngắn):',
+                    bold: true,
+                    size: 20,
+                    font: 'Times New Roman',
+                  }),
+                ],
+              })
+            );
+            for (const q of p3WithExp) {
+              const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART3');
+              const title = `Câu ${q.number} ${tag} (Đáp số: ${q.shortAnswer || ''}): `;
+              const solText = q.explanation || `Đáp số chính xác: ${q.shortAnswer || ''}`;
+              const pars = await buildContentParagraphs(solText, title, true, { size: 21 });
+              docChildren.push(...pars);
+            }
+          }
+        }
+
         if (p4Questions.length > 0) {
           docChildren.push(
             new Paragraph({
-              spacing: { before: 150, after: 100 },
+              spacing: { before: 200, after: 100 },
               children: [
                 new TextRun({
                   text: 'PHẦN IV. Hướng dẫn giải chi tiết Tự luận & Rubric chấm điểm:',
                   bold: true,
                   size: 22,
                   font: 'Times New Roman',
+                  color: '008080',
                 }),
               ],
             })
@@ -2457,7 +2813,7 @@ export class ExportDocx {
             const tag = getCognitiveTag(q.cognitiveLevel, q.partType || 'PART4');
             const title = `Câu ${q.number} ${tag} (${q.points} điểm): `;
             const textContent = q.essayAnswerGuide || q.explanation || q.content;
-            const solPars = await buildContentParagraphs(textContent, title, true, { size: 22 });
+            const solPars = await buildContentParagraphs(textContent, title, true, { size: 21 });
             docChildren.push(...solPars);
 
             if (q.rubric && q.rubric.length > 0) {

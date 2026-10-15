@@ -178,6 +178,8 @@ export interface ExamMetadata {
   subjectConfig?: SubjectConfig; // Cấu hình chi tiết đặc thù môn học
   referenceContext?: string; // Giới hạn kiến thức / Mô tả nội dung bài học chi tiết từ SGK
   referenceImages?: string[]; // Danh sách ảnh đính kèm (SGK, trang sách, ảnh mục lục, v.v...)
+  customMatrixContext?: string; // Nội dung ma trận có sẵn do giáo viên cung cấp (dạng text, bảng, copy từ Word/Excel)
+  customMatrixImages?: string[]; // Ảnh chụp khung ma trận có sẵn do tổ bộ môn phê duyệt
   onlineExamCode?: string;   // Mã đề thi trực tuyến (nếu đã xuất bản)
 }
 
@@ -229,20 +231,23 @@ export interface Question {
 }
 
 export interface CognitiveBreakdown {
-  remember: number;
-  understand: number;
-  apply: number;
-  advanced: number;
+  remember: number | string;
+  understand: number | string;
+  apply: number | string;
+  advanced?: number | string;
 }
 
 export interface MatrixRow {
   stt: number;
   topic: string;             // Mạch nội dung / Chủ đề
   subTopic: string;          // Đơn vị kiến thức
-  part1: CognitiveBreakdown; // Nhiều lựa chọn (số câu)
-  part2: CognitiveBreakdown; // Đúng/Sai (số lệnh hỏi / câu)
-  part3: CognitiveBreakdown; // Trả lời ngắn (số câu)
-  part4: CognitiveBreakdown; // Tự luận (số câu)
+  part1: CognitiveBreakdown; // Nhiều lựa chọn: Biết, Hiểu, Vận dụng (số câu hoặc nhãn câu như "1, 2")
+  part2: CognitiveBreakdown; // Đúng/Sai: Biết, Hiểu, Vận dụng (số lệnh hỏi hoặc nhãn câu như "13a, 13b")
+  part3: CognitiveBreakdown; // Trả lời ngắn: Biết, Hiểu, Vận dụng (số câu hoặc nhãn câu như "15a")
+  part4: CognitiveBreakdown; // Tự luận: Biết, Hiểu, Vận dụng (số câu hoặc nhãn câu như "16a, 17")
+  totalRemember?: number;    // Tổng Biết
+  totalUnderstand?: number;  // Tổng Hiểu
+  totalApply?: number;       // Tổng Vận dụng
   totalQuestions: number;
   totalPoints: number;
   percentage: number;

@@ -168,28 +168,54 @@ export class UserDataSync {
     // 0. Đọc từ Supabase nếu được cấu hình
     if (SupabaseService.isEnabled()) {
       try {
-        const spData = await SupabaseService.loadUserData(userId);
-        if (spData) {
-          const local = this.getLocalUserData(userId);
-          const merged: UserDataPayload = {
-            settings: { ...defaultSettings, ...(spData.settings || local.settings || {}) },
-            examHistory: spData.examHistory || local.examHistory || [],
-            questionBank: spData.questionBank || local.questionBank || [],
-            classes: spData.classes || local.classes || [],
-            students: spData.students || local.students || [],
-            onlineExams: spData.onlineExams || local.onlineExams || [],
-            deletedExamCodes: spData.deletedExamCodes || local.deletedExamCodes || [],
-            deletedStudentSbds: spData.deletedStudentSbds || local.deletedStudentSbds || [],
-            classesWipedAt: spData.classesWipedAt || local.classesWipedAt,
-            updatedAt: spData.updatedAt || new Date().toISOString(),
-          };
-          this.saveLocalUserData(userId, merged);
-          return merged;
-        } else {
-          // Chưa có document trên Supabase nhưng Supabase đang bật -> Trả về dữ liệu local, không quét Firestore
-          const local = this.getLocalUserData(userId);
-          return local;
+        let spData = await SupabaseService.loadUserData(userId);
+        // Nếu tài khoản chưa có đề thi hoặc mới đăng nhập, kiểm tra dữ liệu từ 'guest' hoặc 'admin'
+        if ((!spData || !spData.examHistory || spData.examHistory.length === 0) && userId !== 'guest') {
+          const guestData = await SupabaseService.loadUserData('guest');
+          if (guestData && guestData.examHistory && guestData.examHistory.length > 0) {
+            spData = spData ? { ...spData, examHistory: guestData.examHistory } : guestData;
+          }
         }
+        // Kiểm tra thêm các đề thi đã phát hành trên Supabase published_exams
+        let recoveredPackages: ExamPackage[] = [];
+        try {
+          const pubExams = await SupabaseService.getExams(userId === 'admin' ? undefined : userId);
+          if (pubExams && pubExams.length > 0) {
+            pubExams.forEach((pe) => {
+              if (pe.examPackage && pe.examPackage.id) {
+                recoveredPackages.push(pe.examPackage);
+              }
+            });
+          }
+        } catch {}
+
+        const local = this.getLocalUserData(userId);
+        const historyMap = new Map<string, ExamPackage>();
+        (spData?.examHistory || []).forEach((p: ExamPackage) => p && p.id && historyMap.set(p.id, p));
+        recoveredPackages.forEach((p) => p && p.id && !historyMap.has(p.id) && historyMap.set(p.id, p));
+        (local.examHistory || []).forEach((p: ExamPackage) => p && p.id && !historyMap.has(p.id) && historyMap.set(p.id, p));
+
+        const mergedHistory = Array.from(historyMap.values());
+
+        const merged: UserDataPayload = {
+          settings: { ...defaultSettings, ...(spData?.settings || local.settings || {}) },
+          examHistory: mergedHistory,
+          questionBank: (spData?.questionBank && spData.questionBank.length > 0) ? spData.questionBank : (local.questionBank || []),
+          classes: (spData?.classes && spData.classes.length > 0) ? spData.classes : (local.classes || []),
+          students: (spData?.students && spData.students.length > 0) ? spData.students : (local.students || []),
+          onlineExams: (spData?.onlineExams && spData.onlineExams.length > 0) ? spData.onlineExams : (local.onlineExams || []),
+          deletedExamCodes: spData?.deletedExamCodes || local.deletedExamCodes || [],
+          deletedStudentSbds: spData?.deletedStudentSbds || local.deletedStudentSbds || [],
+          classesWipedAt: spData?.classesWipedAt || local.classesWipedAt,
+          updatedAt: spData?.updatedAt || new Date().toISOString(),
+        };
+
+        this.saveLocalUserData(userId, merged);
+        // Tự động sao lưu dữ liệu lên Supabase nếu có đề mới từ local
+        if (mergedHistory.length > (spData?.examHistory?.length || 0)) {
+          SupabaseService.saveUserData(userId, { examHistory: mergedHistory }).catch(() => {});
+        }
+        return merged;
       } catch (sbErr) {
         console.warn('Lỗi đọc user_data từ Supabase:', sbErr);
       }

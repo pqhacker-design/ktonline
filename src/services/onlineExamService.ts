@@ -2684,40 +2684,78 @@ export class OnlineExamService {
     let fetchedFromRemote = false;
     let remoteStudents: any[] = [];
 
-    try {
-      const [apiResult, firestoreStudents] = await Promise.all([
-        this.request<{ success: boolean; students: any[] }>(`/api/students${queryStr}`).catch(() => null),
-        this.getSystemStudentsFromFirestore(ignoreUserIdFilter).catch(() => null),
-      ]);
-
-      if (firestoreStudents !== null) {
-        fetchedFromRemote = true;
-        remoteStudents = firestoreStudents;
-      } else if (apiResult && apiResult.success && Array.isArray(apiResult.students)) {
-        fetchedFromRemote = true;
-        remoteStudents = apiResult.students;
+    // 0. Ưu tiên đọc từ Supabase system_students nếu Supabase đã kích hoạt
+    if (SupabaseService.isEnabled()) {
+      try {
+        const filterUser = (ignoreUserIdFilter || userId === 'guest' || userId === 'admin') ? undefined : userId;
+        const spStudents = await SupabaseService.getStudents(classId, filterUser);
+        if (Array.isArray(spStudents) && spStudents.length > 0) {
+          fetchedFromRemote = true;
+          remoteStudents = spStudents;
+        } else {
+          // Nếu bảng system_students chưa có bản ghi, kiểm tra trường students trong user_data
+          const spUserData = await SupabaseService.loadUserData(userId || 'guest');
+          if (spUserData && Array.isArray(spUserData.students) && spUserData.students.length > 0) {
+            fetchedFromRemote = true;
+            remoteStudents = spUserData.students;
+            // Tự động đẩy lên bảng system_students để lần sau truy vấn nhanh
+            SupabaseService.saveStudents(remoteStudents).catch(() => {});
+          }
+        }
+      } catch (sbErr) {
+        console.warn('Lỗi đọc system_students từ Supabase:', sbErr);
       }
-    } catch {
-      // ignore
+    }
+
+    if (!fetchedFromRemote) {
+      try {
+        const [apiResult, firestoreStudents] = await Promise.all([
+          this.request<{ success: boolean; students: any[] }>(`/api/students${queryStr}`).catch(() => null),
+          this.getSystemStudentsFromFirestore(ignoreUserIdFilter).catch(() => null),
+        ]);
+
+        if (firestoreStudents !== null && firestoreStudents.length > 0) {
+          fetchedFromRemote = true;
+          remoteStudents = firestoreStudents;
+        } else if (apiResult && apiResult.success && Array.isArray(apiResult.students) && apiResult.students.length > 0) {
+          fetchedFromRemote = true;
+          remoteStudents = apiResult.students;
+        }
+      } catch {
+        // ignore
+      }
     }
 
     let allStudents: any[] = [];
-    if (fetchedFromRemote) {
-      // Remote Firestore/API is single source of truth!
-      allStudents = remoteStudents.filter((s) => {
+    if (fetchedFromRemote && remoteStudents.length > 0) {
+      // Hợp nhất dữ liệu remote với bộ nhớ đệm cục bộ để tuyệt đối không bao giờ làm mất học sinh vừa nhập
+      const studentMap = new Map<string, any>();
+      remoteStudents.forEach((s) => s && s.id && studentMap.set(s.id, s));
+      localStudents.forEach((s) => {
+        if (s && s.id && !studentMap.has(s.id)) {
+          studentMap.set(s.id, s);
+          if (SupabaseService.isEnabled()) {
+            SupabaseService.saveStudents([s]).catch(() => {});
+          }
+        }
+      });
+      allStudents = Array.from(studentMap.values()).filter((s) => {
         if (!s || !s.id) return false;
-        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest');
+        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest') || userId === 'admin';
       });
       if (!classId) {
-        // Save authoritative list to local cache (wipes out deleted students from local cache)
         this.saveLocalStudents(allStudents);
       }
     } else {
-      // Fallback offline cache only
+      // Fallback: giữ nguyên danh sách cục bộ, không bao giờ ghi đè bằng mảng rỗng []!
       allStudents = localStudents.filter((s) => {
         if (!s || !s.id) return false;
-        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest');
+        return ignoreUserIdFilter || s.createdBy === userId || (!s.createdBy && userId === 'guest') || userId === 'admin';
       });
+      // Nếu Supabase đang bật mà bảng chưa có học sinh, tự động đồng bộ học sinh hiện có lên Supabase
+      if (allStudents.length > 0 && SupabaseService.isEnabled()) {
+        SupabaseService.saveStudents(allStudents).catch(() => {});
+      }
     }
 
     // Lọc bỏ bất kỳ học sinh nào có SBD nằm trong danh sách đã bị xóa
@@ -2741,7 +2779,7 @@ export class OnlineExamService {
     const rawList = Array.isArray(students) ? students : [students];
     const list = rawList.map((s) => ({
       ...s,
-      createdBy: s.createdBy || userId,
+      createdBy: s.createdBy || userId || 'guest',
       updatedAt: new Date().toISOString(),
     }));
 
@@ -2787,11 +2825,20 @@ export class OnlineExamService {
     this.saveLocalStudents(updated);
 
     // 4. Immediately update UserDataSync
-    if (userId && userId !== 'guest') {
-      UserDataSync.saveUserData(userId, { students: updated }).catch(() => {});
+    const targetUserId = (userId && userId !== 'guest') ? userId : 'guest';
+    UserDataSync.saveUserData(targetUserId, { students: updated }).catch(() => {});
+    if (targetUserId !== 'guest') {
+      UserDataSync.saveUserData('guest', { students: updated }).catch(() => {});
     }
 
-    // 5. Batch sync to Firestore + API in background
+    // 5. ĐỒNG BỘ TRỰC TIẾP LÊN SUPABASE (system_students)
+    if (SupabaseService.isEnabled()) {
+      SupabaseService.saveStudents(savedList).catch((sbErr) => {
+        console.warn('Lỗi lưu student lên Supabase:', sbErr);
+      });
+    }
+
+    // 6. Batch sync to Firestore + API in background
     const backgroundSync = async () => {
       if (UserDataSync.getIsQuotaExceeded()) return;
       try {
@@ -2803,7 +2850,7 @@ export class OnlineExamService {
             docRef,
             {
               ...st,
-              createdBy: st.createdBy || userId,
+              createdBy: st.createdBy || userId || 'guest',
               sbd: cleanSbd,
               sbdOriginal: st.sbd ? st.sbd.trim() : '',
               updatedAt: new Date().toISOString(),
@@ -2849,8 +2896,10 @@ export class OnlineExamService {
     this.saveLocalStudents(students);
 
     // 2. Immediately update UserDataSync
-    if (userId && userId !== 'guest') {
-      UserDataSync.saveUserData(userId, { students }).catch(() => {});
+    const targetUserId = (userId && userId !== 'guest') ? userId : 'guest';
+    UserDataSync.saveUserData(targetUserId, { students }).catch(() => {});
+    if (targetUserId !== 'guest') {
+      UserDataSync.saveUserData('guest', { students }).catch(() => {});
     }
 
     // 3. Remote delete in parallel

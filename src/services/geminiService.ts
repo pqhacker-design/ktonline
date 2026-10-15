@@ -23,13 +23,18 @@ export class GeminiService {
 
     if (onProgress) onProgress(`Đang gửi yêu cầu tới Gemini AI (${selectedModel})...`);
 
+    const combinedImages = [
+      ...(metadata.referenceImages || []),
+      ...(metadata.customMatrixImages || []),
+    ];
+
     const rawText = await callGeminiApi({
       prompt,
       systemInstruction,
       responseMimeType: 'application/json',
       customApiKey,
       model: selectedModel,
-      images: metadata.referenceImages || [],
+      images: combinedImages,
       onStatusUpdate: onProgress,
     });
 
