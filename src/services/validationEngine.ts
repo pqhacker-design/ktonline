@@ -88,30 +88,37 @@ export class ValidationEngine {
     const { part1_MCQSingle, part2_MCQTrueFalse, part3_MCQShort, part4_Essay } =
       metadata.questionCounts;
 
+    const hasCustomMatrix = Boolean(
+      (metadata.customMatrixContext && metadata.customMatrixContext.trim()) ||
+      (metadata.customMatrixImages && metadata.customMatrixImages.length > 0)
+    );
+
     const part1Questions = rawQuestions.filter((q) => q.partType === 'PART1');
     const part2Questions = rawQuestions.filter((q) => q.partType === 'PART2');
     const part3Questions = rawQuestions.filter((q) => q.partType === 'PART3');
     const part4Questions = rawQuestions.filter((q) => q.partType === 'PART4');
 
-    if (part1Questions.length !== part1_MCQSingle) {
-      warnings.push(
-        `Số câu Phần I khác yêu cầu (Cần: ${part1_MCQSingle}, Nhận được: ${part1Questions.length}).`
-      );
-    }
-    if (part2Questions.length !== part2_MCQTrueFalse) {
-      warnings.push(
-        `Số câu Phần II khác yêu cầu (Cần: ${part2_MCQTrueFalse}, Nhận được: ${part2Questions.length}).`
-      );
-    }
-    if (part3Questions.length !== part3_MCQShort) {
-      warnings.push(
-        `Số câu Phần III khác yêu cầu (Cần: ${part3_MCQShort}, Nhận được: ${part3Questions.length}).`
-      );
-    }
-    if (part4Questions.length !== part4_Essay) {
-      warnings.push(
-        `Số câu Phần IV khác yêu cầu (Cần: ${part4_Essay}, Nhận được: ${part4Questions.length}).`
-      );
+    if (!hasCustomMatrix) {
+      if (part1Questions.length !== part1_MCQSingle) {
+        warnings.push(
+          `Số câu Phần I khác yêu cầu (Cần: ${part1_MCQSingle}, Nhận được: ${part1Questions.length}).`
+        );
+      }
+      if (part2Questions.length !== part2_MCQTrueFalse) {
+        warnings.push(
+          `Số câu Phần II khác yêu cầu (Cần: ${part2_MCQTrueFalse}, Nhận được: ${part2Questions.length}).`
+        );
+      }
+      if (part3Questions.length !== part3_MCQShort) {
+        warnings.push(
+          `Số câu Phần III khác yêu cầu (Cần: ${part3_MCQShort}, Nhận được: ${part3Questions.length}).`
+        );
+      }
+      if (part4Questions.length !== part4_Essay) {
+        warnings.push(
+          `Số câu Phần IV khác yêu cầu (Cần: ${part4_Essay}, Nhận được: ${part4Questions.length}).`
+        );
+      }
     }
 
     // Đánh số lại câu hỏi theo từng phần
@@ -126,6 +133,23 @@ export class ValidationEngine {
       if (partType === 'PART2') num = p2Num++;
       else if (partType === 'PART3') num = p3Num++;
       else if (partType === 'PART4') num = p4Num++;
+
+      let calculatedPoint = 0.25;
+      if (hasCustomMatrix && typeof q.points === 'number' && q.points > 0) {
+        calculatedPoint = q.points;
+      } else if (partType === 'PART1') {
+        calculatedPoint = metadata.questionCounts.part1_PointsPerQuestion ?? (typeof q.points === 'number' && q.points > 0 ? q.points : 0.25);
+      } else if (partType === 'PART2') {
+        calculatedPoint = metadata.questionCounts.part2_PointsPerQuestion ?? (typeof q.points === 'number' && q.points > 0 ? q.points : 1.0);
+      } else if (partType === 'PART3') {
+        calculatedPoint = metadata.questionCounts.part3_PointsPerQuestion ?? (typeof q.points === 'number' && q.points > 0 ? q.points : 0.5);
+      } else if (partType === 'PART4') {
+        calculatedPoint = typeof q.points === 'number' && q.points > 0
+          ? q.points
+          : (q.cognitiveLevel === 'ADVANCED' || q.cognitiveLevel === 'VDC'
+              ? metadata.questionCounts.part4_AdvancedPoints ?? 1.0
+              : 1.0);
+      }
 
       const validQuestion: Question = {
         id: q.id || `gen-q-${Math.random().toString(36).substring(2, 9)}`,
@@ -142,18 +166,7 @@ export class ValidationEngine {
         number: num,
         content: cleanQuestionText(q.content || 'Nội dung câu hỏi chưa cập nhật.'),
         cognitiveLevel: q.cognitiveLevel || 'REMEMBER',
-        points:
-          partType === 'PART1'
-            ? metadata.questionCounts.part1_PointsPerQuestion ?? (typeof q.points === 'number' ? q.points : 0.25)
-            : partType === 'PART2'
-            ? metadata.questionCounts.part2_PointsPerQuestion ?? (typeof q.points === 'number' ? q.points : 1.0)
-            : partType === 'PART3'
-            ? metadata.questionCounts.part3_PointsPerQuestion ?? (typeof q.points === 'number' ? q.points : 0.25)
-            : partType === 'PART4'
-            ? (q.cognitiveLevel === 'ADVANCED' || q.cognitiveLevel === 'VDC'
-                ? metadata.questionCounts.part4_AdvancedPoints ?? (typeof q.points === 'number' ? q.points : 1.0)
-                : (typeof q.points === 'number' && q.points > 0 ? q.points : 1.5))
-            : 0.25,
+        points: calculatedPoint,
         topic: q.topic || metadata.chapterTitle || 'Kiến thức chung',
         explanation: cleanQuestionText(q.explanation || ''),
       };
