@@ -171,8 +171,30 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
 
   const MATRIX_TEMPLATES: Record<
     string,
-    { label: string; text: string; defaultP1?: number; defaultP2?: number; defaultP3?: number; defaultP4?: number }
+    { label: string; text: string; defaultP1?: number; defaultP2?: number; defaultP3?: number; defaultP4?: number; defaultP3Pts?: number; defaultP4Pts?: number }
   > = {
+    toan_thcs_18: {
+      label: '📐 Toán THCS (18 câu - 29 ý)',
+      text: `### MA TRẬN ĐỀ KIỂM TRA MÔN TOÁN THCS (18 CÂU / 29 Ý - CHUẨN 7991)
+| TT | Mạch kiến thức / Chủ đề | Phần I (TN 4 lựa chọn) | Phần II (TN Đúng/Sai - 4 ý) | Phần III (TN Trả lời ngắn) | Phần IV (Tự luận) | Tổng số câu | Điểm |
+|---|---|---|---|---|---|---|---|
+| 1 | Số & Phép tính / Số học | 4 câu (Câu 1, 2, 3, 4: NB) | 1 câu (Câu 13: 4 ý a,b,c,d - 2 NB, 2 VD) | 2 câu (Câu 15a: NB, 15b: VD) | 2 câu (Câu 16a: TH, 16b: VD; Câu 17: VD) | 9 câu | 4.75đ |
+| 2 | Tính chất số học / Chia hết | 3 câu (Câu 5, 6: NB; Câu 7: TH) | 0 | 2 câu (Câu 15c: NB, 15d: TH) | 0 | 5 câu | 1.75đ |
+| 3 | Hình học phẳng thực tiễn | 5 câu (Câu 8, 10: NB; Câu 9, 11, 12: TH) | 1 câu (Câu 14: 4 ý a,b,c,d - 3 NB, 1 TH) | 0 | 1 câu (Câu 18: 2 ý 18.1: TH, 18.2: VD) | 7 câu | 3.50đ |
+| **CỘNG** | | **12 câu (3.0đ)** | **2 câu lớn (2.0đ)** | **4 câu (2.0đ)** | **3 câu (3.0đ)** | **18 câu (29 ý)** | **10.0đ** |
+
+🎯 ĐỊNH HƯỚNG CẤU TRÚC ĐỀ CHO AI BÁM SÁT 100%:
+1. Phần I: 12 câu trắc nghiệm 4 lựa chọn (Câu 1 đến 12 | mỗi câu 0.25đ = 3.0đ).
+2. Phần II: 2 câu hỏi Đúng/Sai (Câu 13 và Câu 14, mỗi câu gồm 4 ý a, b, c, d chia đều 0.25đ/ý = 2.0đ).
+3. Phần III: 4 câu trả lời ngắn độc lập (15a, 15b, 15c, 15d | mỗi câu 0.5đ = 2.0đ).
+4. Phần IV: 3 câu tự luận (Câu 16 gồm 2 ý a, b; Câu 17; Câu 18 gồm 2 ý 18.1, 18.2 | Tổng = 3.0đ).`,
+      defaultP1: 12,
+      defaultP2: 2,
+      defaultP3: 4,
+      defaultP4: 3,
+      defaultP3Pts: 0.5,
+      defaultP4Pts: 1.0,
+    },
     toan: {
       label: '📐 Toán (Chuẩn 7991)',
       text: `### MA TRẬN ĐỀ KIỂM TRA MÔN TOÁN (CHUẨN BGD&ĐT)
@@ -265,8 +287,72 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
         part2_MCQTrueFalse: tpl.defaultP2!,
         part3_MCQShort: tpl.defaultP3!,
         part4_Essay: tpl.defaultP4!,
+        part3_PointsPerQuestion: tpl.defaultP3Pts ?? prev.part3_PointsPerQuestion,
+        part4_ApplyPoints: tpl.defaultP4Pts ?? prev.part4_ApplyPoints,
+        part4_AdvancedPoints: tpl.defaultP4Pts ?? prev.part4_AdvancedPoints,
       }));
     }
+  };
+
+  const handleInsertStructurePrompt = (type: 'thcs_18' | 'thpt_22' | 'van') => {
+    let snippet = '';
+    if (type === 'thcs_18') {
+      snippet = `\n\n### CẤU TRÚC ĐỀ BÁM SÁT MA TRẬN TRÊN (18 CÂU - 29 Ý | TỔNG 10.0 ĐIỂM):
+- Phần I (Câu 1 -> 12): Đúng 12 câu trắc nghiệm 4 lựa chọn (8 Biết, 4 Hiểu - mỗi câu 0.25đ = 3.0đ).
+- Phần II (Câu 13, 14): Đúng 2 câu lớn Đúng/Sai (Câu 13 gồm 4 ý a,b,c,d; Câu 14 gồm 4 ý a,b,c,d - mỗi câu 1.0đ = 2.0đ).
+- Phần III (Câu 15a, 15b, 15c, 15d): Đúng 4 câu trả lời ngắn độc lập (2 Biết, 1 Hiểu, 1 Vận dụng - mỗi câu 0.5đ = 2.0đ).
+- Phần IV (Câu 16, 17, 18): Đúng 3 câu tự luận (Câu 16 gồm ý a, b; Câu 17; Câu 18 gồm ý 18.1, 18.2 - Tổng = 3.0đ).
+* YÊU CẦU AI: Ra đủ 100% 18 câu hỏi trên, không gộp và không bỏ sót bất kỳ câu nào!`;
+      setQuestionCounts((prev) => ({
+        ...prev,
+        part1_MCQSingle: 12,
+        part1_PointsPerQuestion: 0.25,
+        part2_MCQTrueFalse: 2,
+        part2_PointsPerQuestion: 1.0,
+        part3_MCQShort: 4,
+        part3_PointsPerQuestion: 0.5,
+        part4_Essay: 3,
+        part4_ApplyCount: 2,
+        part4_ApplyPoints: 1.0,
+        part4_AdvancedCount: 1,
+        part4_AdvancedPoints: 1.0,
+      }));
+    } else if (type === 'thpt_22') {
+      snippet = `\n\n### CẤU TRÚC ĐỀ CHUẨN THPT/ĐGNL (22 CÂU | TỔNG 10.0 ĐIỂM):
+- Phần I: 12 câu trắc nghiệm 4 lựa chọn (Câu 1-12 | 0.25đ/câu = 3.0đ).
+- Phần II: 4 câu trắc nghiệm Đúng/Sai (Câu 1-4 | mỗi câu 4 ý a,b,c,d = 4.0đ).
+- Phần III: 6 câu trắc nghiệm Trả lời ngắn (Câu 1-6 | 0.5đ/câu = 3.0đ).
+* Phần IV: 0 câu Tự luận.`;
+      setQuestionCounts((prev) => ({
+        ...prev,
+        part1_MCQSingle: 12,
+        part1_PointsPerQuestion: 0.25,
+        part2_MCQTrueFalse: 4,
+        part2_PointsPerQuestion: 1.0,
+        part3_MCQShort: 6,
+        part3_PointsPerQuestion: 0.5,
+        part4_Essay: 0,
+      }));
+    } else if (type === 'van') {
+      snippet = `\n\n### CẤU TRÚC ĐỀ MÔN NGỮ VĂN (ĐỌC HIỂU & VIẾT | TỔNG 10.0 ĐIỂM):
+- Phần I Đọc hiểu: 8 câu (Câu 1-8 | 4.0đ).
+- Phần II Viết (Tự luận): 2 câu (Câu 1: Viết đoạn văn nghị luận 2.0đ; Câu 2: Bài văn 4.0đ).`;
+      setQuestionCounts((prev) => ({
+        ...prev,
+        part1_MCQSingle: 8,
+        part1_PointsPerQuestion: 0.5,
+        part2_MCQTrueFalse: 0,
+        part3_MCQShort: 0,
+        part4_Essay: 2,
+        part4_ApplyCount: 1,
+        part4_ApplyPoints: 2.0,
+        part4_AdvancedCount: 1,
+        part4_AdvancedPoints: 4.0,
+      }));
+    }
+
+    setCustomMatrixContext((prev) => (prev ? prev.trim() + snippet : snippet.trim()));
+    setMatrixInputMode('custom');
   };
 
   const handleClearMatrix = () => {
@@ -1385,6 +1471,43 @@ export const TestGeneratorView: React.FC<TestGeneratorViewProps> = ({
                     <span>Xóa ma trận</span>
                   </button>
                 )}
+              </div>
+
+              {/* Hộp gợi ý cấu trúc đề bám sát ma trận */}
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/30 p-3.5 rounded-xl border border-amber-200 dark:border-amber-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-900 dark:text-amber-200">
+                    <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>Gợi ý chèn cấu trúc đề chính xác (Giúp AI ra đề chuẩn 100% khớp ma trận):</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                  Nếu ma trận của thầy/cô có đánh số theo từng ý (như <b>13a-d</b>, <b>15a-d</b>, <b>16a-b</b>), hãy nhấn nút dưới đây để hệ thống tự động bổ sung hướng dẫn chi tiết số câu lớn - số ý con và tự cân bằng điểm cho AI:
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleInsertStructurePrompt('thcs_18')}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs transition-all flex items-center space-x-1 cursor-pointer active:scale-95"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>📐 Chèn cấu trúc 18 câu - 29 ý (Toán 6, 7, 8, 9)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleInsertStructurePrompt('thpt_22')}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-950 dark:text-amber-200 font-semibold transition-all flex items-center space-x-1 cursor-pointer"
+                  >
+                    <span>⚡ Chèn cấu trúc 22 câu (THPT 2025)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleInsertStructurePrompt('van')}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-950 dark:text-amber-200 font-semibold transition-all flex items-center space-x-1 cursor-pointer"
+                  >
+                    <span>📖 Chèn cấu trúc Ngữ văn</span>
+                  </button>
+                </div>
               </div>
 
               {/* Textarea nhập / dán ma trận */}
