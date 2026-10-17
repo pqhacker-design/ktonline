@@ -121,6 +121,31 @@ export default function App() {
           : null;
         setCurrentExamPackage(pkg);
       }
+
+      // 2b. Đồng bộ trực tiếp từ Kho Đề Online để đảm bảo mọi đề đã tạo/phát hành đều hiển thị trên Dashboard
+      OnlineExamService.listExams().then((res) => {
+        if (res.success && Array.isArray(res.exams) && res.exams.length > 0) {
+          const currentHist = StorageEngine.getExamHistory();
+          const map = new Map<string, ExamPackage>();
+          currentHist.forEach((p) => p && p.id && map.set(p.id, p));
+          let hasNew = false;
+          res.exams.forEach((oe) => {
+            const codeUpper = (oe.code || '').trim().toUpperCase();
+            const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id || ('pkg_' + codeUpper);
+            if (!map.has(pkgId)) {
+              const recovered = UserDataSync.recoverPackageFromPublishedExam(oe, targetId, codeUpper);
+              StorageEngine.saveExamPackage(recovered);
+              map.set(pkgId, recovered);
+              hasNew = true;
+            }
+          });
+          if (hasNew) {
+            const updated = StorageEngine.getExamHistory();
+            setExamHistory(updated);
+            setCurrentExamPackage((prev) => prev || updated[0] || null);
+          }
+        }
+      }).catch(() => {});
     });
 
     // 3. Listen to real-time updates for this specific user
