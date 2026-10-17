@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { OnlineExamItem, OnlineExamService } from '../services/onlineExamService';
 import { StorageEngine } from '../services/storageEngine';
+import { UserDataSync } from '../services/userDataSync';
 import { QuestionBankItem } from '../types';
 import { ShareExamModal } from './ShareExamModal';
 import { ManualExamModal } from './ManualExamModal';
@@ -159,6 +160,10 @@ export const OnlineExamBankView: React.FC<OnlineExamBankViewProps> = ({
             }
             // Sync to Firestore immediately
             await OnlineExamService.syncPublishedExamToFirestore(clean).catch(() => {});
+            try {
+              const pkg = UserDataSync.recoverPackageFromPublishedExam(clean, OnlineExamService.getActiveUserId(), clean.code.toUpperCase());
+              StorageEngine.saveExamPackage(pkg);
+            } catch {}
             importedCount++;
           }
         }
