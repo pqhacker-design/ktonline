@@ -18,6 +18,16 @@ export function cleanQuestionText(text: string): string {
   // 1. Loại bỏ các nhãn mã mức độ thừa như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [NB],...
   str = str.replace(/\s*\[(NB|TH|VD|VDC|REMEMBER|UNDERSTAND|APPLY|ADVANCED)(_(TL|TN|TF|SA))?\]\s*/gi, ' ');
 
+  // 1a. Sửa lỗi AI dùng TeX Greek letter / backslash trước tiếng Việt (như \Chi ều -> Chiều, \Di ện -> Diện)
+  str = str.replace(/\\Chi\s*ều\b/gi, 'Chiều');
+  str = str.replace(/\\chi\s*ều\b/gi, 'chiều');
+  str = str.replace(/X\s*ều\b/g, 'Chiều');
+  str = str.replace(/\\Di\s*ện\b/gi, 'Diện');
+  str = str.replace(/\\di\s*ện\b/gi, 'diện');
+
+  // 1b. Dọn dẹp các dấu gạch chéo ngược thừa dính vào trước từ tiếng Việt
+  str = str.replace(/\\([A-Za-z]*[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][A-Za-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]*)/g, '$1');
+
   // 2. Chuyển mã TeX accent / \text{} đặc biệt sang Unicode Tiếng Việt chuẩn
   str = str.replace(/\\text\{\\dh\}/gi, 'đ');
   str = str.replace(/\\text\{\\DH\}/gi, 'Đ');
@@ -39,13 +49,18 @@ export function cleanQuestionText(text: string): string {
   str = str.replace(/(\d+)\s*\\text\{\s*cm\s*\}/g, '$1 cm');
   str = str.replace(/\\text\{\s*cm\s*\}/g, 'cm');
 
-  // 5. Tách từ tiếng Việt dính vào biến số toán học (BiếtAB -> Biết AB, và8 -> và 8, cmvà -> cm và)
-  str = str.replace(/([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])([A-Z]{1,4}\b)/g, '$1 $2');
-  str = str.replace(/([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])(\d+)/g, '$1 $2');
-  str = str.replace(/(\d+)\s*cm([a-àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])/g, '$1 cm $2');
+  // 5. Tách từ tiếng Việt dính vào biến số toán học (sử dụng a-z chuẩn)
+  str = str.replace(/([a-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])([A-Z]{1,4}\b)/g, '$1 $2');
+  str = str.replace(/([a-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])(\d+)/g, '$1 $2');
+  str = str.replace(/(\d+)\s*cm([a-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])/g, '$1 cm $2');
 
   // 6. Chuẩn hóa góc 60\circ, 50\circ -> 50^\circ
   str = str.replace(/(\d+)\s*\\\^?\{?circ\}?/g, '$1^\\circ');
+
+  // 7. Chuyển đổi các dấu xuống dòng kiểu LaTeX '\\' còn sót thành ngắt dòng thực sự '\n'
+  str = str.replace(/\\+([0-9]+[.)])/g, '\n$1');
+  str = str.replace(/\\+([a-zA-Z][.)])/g, '\n$1');
+  str = str.replace(/\\\\+/g, '\n');
 
   return str.trim();
 }
