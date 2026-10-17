@@ -162,20 +162,129 @@ export class StorageEngine {
     try {
       const key = this.getKey(STORAGE_KEYS.EXAM_HISTORY);
       let data = localStorage.getItem(key);
+      let list: ExamPackage[] = [];
       if (data !== null) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) {
-          // Filter out legacy sample packages
-          const clean = parsed.filter(
-            (p) => p && p.id && !p.id.includes('sample') && p.id !== 'pkg_sample_7791'
-          );
-          if (clean.length !== parsed.length) {
-            localStorage.setItem(key, JSON.stringify(clean));
+        try {
+          const parsed = JSON.parse(data);
+          if (Array.isArray(parsed)) {
+            list = parsed;
           }
-          return clean;
+        } catch {}
+      }
+
+      // Nếu tài khoản hiện tại chưa có đề, thử đọc từ shared history key
+      if (list.length === 0 && key !== STORAGE_KEYS.EXAM_HISTORY) {
+        const sharedRaw = localStorage.getItem(STORAGE_KEYS.EXAM_HISTORY);
+        if (sharedRaw) {
+          try {
+            const sharedParsed = JSON.parse(sharedRaw);
+            if (Array.isArray(sharedParsed) && sharedParsed.length > 0) {
+              list = sharedParsed;
+            }
+          } catch {}
         }
       }
-      return [];
+
+      // Filter out legacy sample packages
+      let clean = list.filter(
+        (p) => p && p.id && !p.id.includes('sample') && p.id !== 'pkg_sample_7791'
+      );
+
+      // Kiểm tra thêm các đề online từ local storage nếu chưa có trong history
+      try {
+        const userId = this.currentUserId;
+        const cleanId = userId && userId !== 'guest' ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
+        const onlineRaw = localStorage.getItem(`aitest_online_exams_store_${cleanId}`) ||
+          (cleanId === 'guest' ? localStorage.getItem('aitest_online_exams_store_shared') : null);
+        if (onlineRaw) {
+          const onlineList = JSON.parse(onlineRaw);
+          if (Array.isArray(onlineList) && onlineList.length > 0) {
+            const map = new Map<string, ExamPackage>();
+            clean.forEach((p) => p && p.id && map.set(p.id, p));
+            let added = false;
+            onlineList.forEach((oe: any) => {
+              if (!oe || !oe.code) return;
+              const codeUpper = oe.code.trim().toUpperCase();
+              const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id || ('pkg_' + codeUpper);
+              if (!map.has(pkgId)) {
+                const pkg: ExamPackage = oe.examPackage && oe.examPackage.exams?.length > 0
+                  ? {
+                      ...oe.examPackage,
+                      id: pkgId,
+                      createdAt: oe.createdDate || oe.createdAt || new Date().toISOString(),
+                      createdBy: oe.createdBy || userId,
+                      metadata: {
+                        ...oe.examPackage.metadata,
+                        onlineExamCode: codeUpper,
+                        examTitle: oe.examPackage.metadata?.examTitle || oe.title || 'Đề kiểm tra',
+                        subject: oe.examPackage.metadata?.subject || oe.subject || 'Toán',
+                        grade: oe.examPackage.metadata?.grade || oe.grade || 'Khối 10',
+                        chapterTitle: oe.examPackage.metadata?.chapterTitle || oe.topic || '',
+                        durationMinutes: Number(oe.examPackage.metadata?.durationMinutes || oe.duration) || 45,
+                        totalPoints: Number(oe.examPackage.metadata?.totalPoints || oe.totalPoints) || 10.0,
+                      },
+                    }
+                  : {
+                      id: pkgId,
+                      createdAt: oe.createdDate || oe.createdAt || new Date().toISOString(),
+                      createdBy: oe.createdBy || userId,
+                      metadata: {
+                        schoolName: 'Trường THCS Bình San',
+                        departmentName: 'Sở Giáo dục và Đào tạo',
+                        className: 'Khối ' + (oe.grade || '10'),
+                        semester: 'Học kỳ I',
+                        schoolYear: '2026 - 2027',
+                        examTitle: oe.title || 'Đề kiểm tra',
+                        subject: (oe.subject || 'Toán') as any,
+                        grade: oe.grade || 'Khối 10',
+                        chapterTitle: oe.topic || '',
+                        durationMinutes: Number(oe.duration) || 45,
+                        totalPoints: Number(oe.totalPoints) || 10.0,
+                        onlineExamCode: codeUpper,
+                        curriculum: 'Kết nối tri thức với cuộc sống',
+                        examMode: 'MCQ_ESSAY',
+                        codeCount: 1,
+                        questionCounts: {
+                          part1_MCQSingle: 12,
+                          part2_MCQTrueFalse: 2,
+                          part3_MCQShort: 4,
+                          part4_Essay: 2,
+                        },
+                        cognitiveRatio: {
+                          remember: 40,
+                          understand: 30,
+                          apply: 20,
+                          advanced: 10,
+                        },
+                      },
+                      exams: [
+                        {
+                          code: codeUpper || '101',
+                          questions: oe.examPackage?.exams?.[0]?.questions || oe.questions || [],
+                        },
+                      ],
+                      matrix: oe.examPackage?.matrix || [],
+                      specification: oe.examPackage?.specification || [],
+                      answerKeys: oe.examPackage?.answerKeys || [],
+                    };
+                map.set(pkgId, pkg);
+                added = true;
+              }
+            });
+            if (added) {
+              clean = Array.from(map.values()).sort(
+                (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+              );
+              localStorage.setItem(key, JSON.stringify(clean));
+            }
+          }
+        }
+      } catch {}
+
+      if (data === null || clean.length !== list.length) {
+        localStorage.setItem(key, JSON.stringify(clean));
+      }
+      return clean;
     } catch (e) {
       console.error('Lỗi đọc lịch sử đề thi:', e);
       return [];
