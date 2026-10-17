@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import { ExamPackage, QuestionBankItem } from '../types';
 import { OnlineExamService } from '../services/onlineExamService';
+import { StorageEngine } from '../services/storageEngine';
+import { UserDataSync } from '../services/userDataSync';
 
 interface DashboardViewProps {
   examHistory: ExamPackage[];
@@ -64,7 +66,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       .catch(() => {});
   }, [examHistory]);
 
-  const latestExam = examHistory[0] || null;
+  // Hợp nhất danh sách đề từ examHistory và onlineExams để Dashboard luôn hiển thị đầy đủ 100% đề thi
+  const combinedExams = React.useMemo(() => {
+    const map = new Map<string, ExamPackage>();
+
+    // 1. Thêm các đề từ examHistory
+    examHistory.forEach((pkg) => {
+      if (pkg && pkg.id) {
+        map.set(pkg.id, pkg);
+        if (pkg.metadata?.onlineExamCode) {
+          map.set('CODE:' + pkg.metadata.onlineExamCode.trim().toUpperCase(), pkg);
+        }
+      }
+    });
+
+    // 2. Thêm các đề online chưa có trong examHistory
+    onlineExams.forEach((oe) => {
+      if (!oe) return;
+      const codeUpper = (oe.code || '').trim().toUpperCase();
+      const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id || ('pkg_' + codeUpper);
+
+      if (map.has(pkgId) || (codeUpper && map.has('CODE:' + codeUpper))) {
+        return;
+      }
+
+      const pkg = UserDataSync.recoverPackageFromPublishedExam(oe, oe.createdBy || 'guest', codeUpper);
+      map.set(pkgId, pkg);
+      if (codeUpper) {
+        map.set('CODE:' + codeUpper, pkg);
+      }
+    });
+
+    const unique: ExamPackage[] = [];
+    const seen = new Set<string>();
+    map.forEach((p) => {
+      if (p && p.id && !seen.has(p.id)) {
+        seen.add(p.id);
+        unique.push(p);
+      }
+    });
+
+    return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [examHistory, onlineExams]);
+
+  // Đồng bộ ngầm các đề online còn thiếu vào StorageEngine
+  React.useEffect(() => {
+    if (combinedExams.length > examHistory.length) {
+      combinedExams.forEach((pkg) => {
+        if (!examHistory.some((eh) => eh.id === pkg.id || (pkg.metadata?.onlineExamCode && eh.metadata?.onlineExamCode === pkg.metadata.onlineExamCode))) {
+          StorageEngine.saveExamPackage(pkg);
+        }
+      });
+    }
+  }, [combinedExams.length, examHistory.length]);
+
+  const latestExam = combinedExams[0] || null;
 
   // ApexCharts Configurations
   const trendChartOptions: any = {
@@ -101,7 +157,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   const trendSeries = [
-    { name: 'Gói đề đã sinh', data: [12, 24, 38, 52, 68, examHistory.length] },
+    { name: 'Gói đề đã sinh', data: [12, 24, 38, 52, 68, combinedExams.length] },
     { name: 'Lượt học sinh nộp bài', data: [120, 280, 450, 820, 1150, 1480] },
   ];
 
@@ -185,7 +241,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Gói Đề Đã Sinh (AI)
             </p>
             <h3 className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-              {examHistory.length} gói đề
+              {combinedExams.length} gói đề
             </h3>
             <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1 flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5" /> Chuẩn CV 7991/BGDĐT
@@ -368,7 +424,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {examHistory.length === 0 ? (
+        {combinedExams.length === 0 ? (
           <div className="text-center py-12 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-3xl">
             <FileSpreadsheet className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
             <p className="text-sm font-bold text-slate-600 dark:text-slate-400">
@@ -397,7 +453,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                {examHistory.map((item) => {
+                {combinedExams.map((item) => {
                   const matchedOnline = onlineExams.find(
                     (oe) =>
                       (oe.code && item.metadata?.onlineExamCode && oe.code.toUpperCase() === item.metadata.onlineExamCode.toUpperCase()) ||
@@ -556,7 +612,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   setIsDeleting(true);
                   await new Promise((resolve) => setTimeout(resolve, 50));
                   try {
+                    const onlineCode = deletingItem.metadata?.onlineExamCode;
+                    if (onlineCode) {
+                      await OnlineExamService.deleteExam(onlineCode).catch(() => {});
+                    }
                     onDeleteExamPackage(deletingItem.id);
+                    setOnlineExams((prev) =>
+                      prev.filter(
+                        (e) =>
+                          (onlineCode ? e.code?.toUpperCase() !== onlineCode.toUpperCase() : true) &&
+                          e.packageId !== deletingItem.id &&
+                          e.id !== deletingItem.id
+                      )
+                    );
                   } finally {
                     setIsDeleting(false);
                     setDeletingItem(null);
