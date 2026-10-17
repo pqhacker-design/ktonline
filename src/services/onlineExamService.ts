@@ -961,6 +961,22 @@ export class OnlineExamService {
         ...localExams.filter((e) => e.code.toUpperCase() !== savedResult!.code.toUpperCase()),
       ];
       this.saveLocalExams(updated);
+
+      if (data.examPackage) {
+        try {
+          const pkgToSave = {
+            ...data.examPackage,
+            id: data.examPackage.id || savedResult.exam.packageId || savedResult.exam.id || ('pkg_' + savedResult.code),
+            metadata: {
+              ...data.examPackage.metadata,
+              onlineExamCode: savedResult.code,
+            },
+          };
+          StorageEngine.saveExamPackage(pkgToSave);
+        } catch (err) {
+          console.warn('Lỗi lưu examPackage sang StorageEngine trong saveExam:', err);
+        }
+      }
     }
 
     return savedResult;
@@ -1140,7 +1156,9 @@ export class OnlineExamService {
             if (deletedCodes.has(codeUpper)) return;
             const isOwner =
               Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && e.createdBy === userId) ||
-              (!e.createdBy && localKnownCodes.has(codeUpper));
+              (userId === 'admin') ||
+              (!e.createdBy && localKnownCodes.has(codeUpper)) ||
+              (userId === 'guest' && (!e.createdBy || e.createdBy === 'guest'));
 
             if (isOwner) {
               const pkg = e.examPackage || {};
@@ -1191,7 +1209,9 @@ export class OnlineExamService {
         if (deletedCodes.has(key)) return;
         const isOwner =
           Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && item.createdBy === userId) ||
-          (!item.createdBy && localKnownCodes.has(key));
+          (userId === 'admin') ||
+          (!item.createdBy && localKnownCodes.has(key)) ||
+          (userId === 'guest' && (!item.createdBy || item.createdBy === 'guest'));
 
         if (isOwner) {
           const itemWithUser = { ...item, createdBy: item.createdBy || userId };
