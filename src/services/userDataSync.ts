@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, onSnapshot, disableNetwork, enableNetwork } from 'firebase/firestore';
+import { doc, getDoc, setDoc, onSnapshot, disableNetwork, enableNetwork, collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/firebase';
 import { AppSettings, ExamPackage, QuestionBankItem } from '../types';
 import { defaultSettings } from './storageEngine';
@@ -50,6 +50,72 @@ export class UserDataSync {
 
   static getActiveUserId(): string | null {
     return this.activeUserId;
+  }
+
+  public static recoverPackageFromPublishedExam(pe: any, userId: string, codeUpper: string): ExamPackage {
+    const pkgId = pe.examPackage?.id || pe.packageId || pe.examPackageId || ('pkg_' + codeUpper);
+    if (pe.examPackage && pe.examPackage.exams && pe.examPackage.exams.length > 0) {
+      return {
+        ...pe.examPackage,
+        id: pkgId,
+        createdAt: pe.examPackage.createdAt || pe.createdDate || pe.createdAt || new Date().toISOString(),
+        createdBy: pe.createdBy || pe.examPackage.createdBy || userId,
+        metadata: {
+          ...pe.examPackage.metadata,
+          onlineExamCode: codeUpper,
+          examTitle: pe.examPackage.metadata?.examTitle || pe.title || 'Đề kiểm tra',
+          subject: pe.examPackage.metadata?.subject || pe.subject || 'Toán',
+          grade: pe.examPackage.metadata?.grade || pe.grade || 'Khối 10',
+          chapterTitle: pe.examPackage.metadata?.chapterTitle || pe.topic || '',
+          durationMinutes: Number(pe.examPackage.metadata?.durationMinutes || pe.duration) || 45,
+          totalPoints: Number(pe.examPackage.metadata?.totalPoints || pe.totalPoints) || 10.0,
+        },
+      };
+    }
+
+    return {
+      id: pkgId,
+      createdAt: pe.createdDate || pe.createdAt || new Date().toISOString(),
+      createdBy: pe.createdBy || userId,
+      metadata: {
+        schoolName: 'Trường THCS Bình San',
+        departmentName: 'Sở Giáo dục và Đào tạo',
+        className: 'Khối ' + (pe.grade || '10'),
+        semester: 'Học kỳ I',
+        schoolYear: '2026 - 2027',
+        examTitle: pe.title || 'Đề kiểm tra',
+        subject: (pe.subject || 'Toán') as any,
+        grade: pe.grade || 'Khối 10',
+        chapterTitle: pe.topic || '',
+        durationMinutes: Number(pe.duration) || 45,
+        totalPoints: Number(pe.totalPoints) || 10.0,
+        onlineExamCode: codeUpper,
+        curriculum: 'Kết nối tri thức với cuộc sống',
+        examMode: 'MCQ_ESSAY',
+        codeCount: 1,
+        questionCounts: {
+          part1_MCQSingle: 12,
+          part2_MCQTrueFalse: 2,
+          part3_MCQShort: 4,
+          part4_Essay: 2,
+        },
+        cognitiveRatio: {
+          remember: 40,
+          understand: 30,
+          apply: 20,
+          advanced: 10,
+        },
+      },
+      exams: [
+        {
+          code: codeUpper || '101',
+          questions: pe.examPackage?.exams?.[0]?.questions || pe.questions || [],
+        },
+      ],
+      matrix: pe.examPackage?.matrix || [],
+      specification: pe.examPackage?.specification || [],
+      answerKeys: pe.examPackage?.answerKeys || [],
+    };
   }
 
   /**
@@ -317,27 +383,77 @@ export class UserDataSync {
             return true;
           });
 
-        // Recover any exam packages from onlineExams into examHistory if missing and not deleted
+        // Phục hồi các gói đề thi từ onlineExams trong user_data nếu có
         onlineExams.forEach((oe: any) => {
           const codeUpper = (oe.code || '').trim().toUpperCase();
-          const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id;
+          const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id || ('pkg_' + codeUpper);
           if (
             (!codeUpper || !deletedSet.has(codeUpper)) &&
             (!pkgId || (!deletedSet.has(pkgId) && !deletedSet.has('PKG:' + pkgId))) &&
-            oe.examPackage &&
-            oe.examPackage.id &&
-            !historyMap.has(oe.examPackage.id)
+            !historyMap.has(pkgId)
           ) {
-            const pkg = {
-              ...oe.examPackage,
-              metadata: {
-                ...oe.examPackage.metadata,
-                onlineExamCode: oe.code || oe.examPackage.metadata?.onlineExamCode,
-              },
-            };
-            historyMap.set(pkg.id, pkg);
+            const pkg = UserDataSync.recoverPackageFromPublishedExam(oe, userId, codeUpper);
+            historyMap.set(pkgId, pkg);
           }
         });
+
+        // Quét trực tiếp collection 'published_exams' từ Firestore để phục hồi toàn bộ đề thi của user
+        try {
+          const pubColRef = collection(db, 'published_exams');
+          const pubSnap = await getDocs(pubColRef);
+          pubSnap.forEach((d) => {
+            const pe = d.data() as any;
+            if (pe && pe.code) {
+              const codeUpper = pe.code.trim().toUpperCase();
+              if (deletedSet.has(codeUpper)) return;
+              const isOwner =
+                Boolean(userId && userId !== 'guest' && userId !== 'anonymous' && pe.createdBy === userId) ||
+                (userId === 'admin') ||
+                (userId === 'guest' && (!pe.createdBy || pe.createdBy === 'guest'));
+
+              if (isOwner) {
+                const pkgId = pe.examPackage?.id || pe.packageId || pe.examPackageId || ('pkg_' + codeUpper);
+                if (!deletedSet.has(pkgId) && !deletedSet.has(pkgId.toUpperCase()) && !deletedSet.has('PKG:' + pkgId)) {
+                  if (!historyMap.has(pkgId)) {
+                    const pkg = UserDataSync.recoverPackageFromPublishedExam(pe, userId, codeUpper);
+                    historyMap.set(pkgId, pkg);
+                  }
+                }
+              }
+            }
+          });
+        } catch (pubErr) {
+          console.warn('Lỗi đọc published_exams từ Firestore khi phục hồi examHistory:', pubErr);
+        }
+
+        // Quét thêm kho đề local storage của user
+        try {
+          const cleanId = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
+          const localKeys = [
+            `aitest_online_exams_store_${cleanId}`,
+            'aitest_online_exams_store_shared'
+          ];
+          localKeys.forEach((lk) => {
+            const raw = localStorage.getItem(lk);
+            if (raw) {
+              const list = JSON.parse(raw);
+              if (Array.isArray(list)) {
+                list.forEach((oe: any) => {
+                  if (!oe || !oe.code) return;
+                  const codeUpper = oe.code.trim().toUpperCase();
+                  if (deletedSet.has(codeUpper)) return;
+                  const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id || ('pkg_' + codeUpper);
+                  if (!deletedSet.has(pkgId) && !deletedSet.has(pkgId.toUpperCase()) && !deletedSet.has('PKG:' + pkgId)) {
+                    if (!historyMap.has(pkgId)) {
+                      const pkg = UserDataSync.recoverPackageFromPublishedExam(oe, userId, codeUpper);
+                      historyMap.set(pkgId, pkg);
+                    }
+                  }
+                });
+              }
+            }
+          });
+        } catch {}
 
         const examHistory = Array.from(historyMap.values());
 
@@ -399,10 +515,36 @@ export class UserDataSync {
     // Check local storage for this user
     const local = this.getLocalUserData(userId);
 
+    // Phục hồi từ local online exams nếu có
+    const cleanUid = userId ? userId.replace(/[^a-zA-Z0-9_]/g, '_') : 'guest';
+    const localExamsRaw = localStorage.getItem(`aitest_online_exams_store_${cleanUid}`) ||
+      localStorage.getItem('aitest_online_exams_store_shared');
+    const recoveredHistory = [...(local.examHistory || []).filter((p) => p && p.id && !p.id.includes('sample') && p.id !== 'pkg_sample_7791')];
+    if (localExamsRaw) {
+      try {
+        const list = JSON.parse(localExamsRaw);
+        if (Array.isArray(list)) {
+          const map = new Map<string, ExamPackage>();
+          recoveredHistory.forEach((p) => p && p.id && map.set(p.id, p));
+          list.forEach((oe: any) => {
+            if (!oe || !oe.code) return;
+            const codeUpper = oe.code.trim().toUpperCase();
+            const pkgId = oe.packageId || oe.examPackageId || oe.examPackage?.id || ('pkg_' + codeUpper);
+            if (!map.has(pkgId)) {
+              const pkg = UserDataSync.recoverPackageFromPublishedExam(oe, userId, codeUpper);
+              map.set(pkgId, pkg);
+            }
+          });
+          recoveredHistory.length = 0;
+          recoveredHistory.push(...Array.from(map.values()));
+        }
+      } catch {}
+    }
+
     // Initial default payload for new user account
     const initialPayload: UserDataPayload = {
       settings: local.settings || defaultSettings,
-      examHistory: (local.examHistory || []).filter((p) => p && p.id && !p.id.includes('sample') && p.id !== 'pkg_sample_7791'),
+      examHistory: recoveredHistory,
       questionBank: (local.questionBank || []).filter((q) => q && q.id && !q.id.includes('sample') && !q.id.includes('qb-sample')),
       classes: local.classes || [],
       students: local.students || [],
