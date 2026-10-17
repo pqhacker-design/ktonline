@@ -918,6 +918,31 @@ function processPlainPart(plain: string): string {
   // 1. Loại bỏ các nhãn mã mức độ thừa như [NB_TL], [TH_TL], [VD_TL], [VDC_TL], [NB_TN], [NB],...
   str = str.replace(/\s*\[(NB|TH|VD|VDC|REMEMBER|UNDERSTAND|APPLY|ADVANCED)(_(TL|TN|TF|SA))?\]\s*/gi, ' ');
 
+  // 1a. Sửa triệt để các lỗi backslash AI sinh trước chữ tiếng Việt và lỗi TeX Greek letter nhầm tiếng Việt
+  str = str.replace(/\\Chi\s*ều\b/gi, 'Chiều');
+  str = str.replace(/\\chi\s*ều\b/gi, 'chiều');
+  str = str.replace(/X\s*ều\b/g, 'Chiều');
+  str = str.replace(/\\Di\s*ện\b/gi, 'Diện');
+  str = str.replace(/\\di\s*ện\b/gi, 'diện');
+
+  // Chuyển ".\ \" hoặc ".\ \" thành ".\n"
+  str = str.replace(/\.[ \t]*\\[ \t]*\\*[ \t]*/g, '.\n');
+  str = str.replace(/([?!:;])\s*\\+\s*(?=[A-Za-z0-9àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ])/g, '$1\n');
+
+  // Chuyển '\\' trước số thứ tự ý con: \\1), \\2), \\a), \\b)... thành \n1), \n2)...
+  str = str.replace(/\\+([0-9]+[.)])/g, '\n$1');
+  str = str.replace(/\\+([a-zA-Z][.)])/g, '\n$1');
+  str = str.replace(/\\+([-*•])/g, '\n$1');
+  str = str.replace(/\\\\+/g, '\n');
+
+  // Loại bỏ dấu '\' thừa dính trước từ tiếng Việt (ví dụ: \Diện tích -> Diện tích, \Chiều rộng -> Chiều rộng)
+  str = str.replace(/\\([A-Za-z]*[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ][A-Za-zàáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]*)/g, '$1');
+
+  // Dọn dẹp dấu '\' đơn độc trước từ viết hoa
+  str = str.replace(/([.?!])\s*\\\s*([A-ZÀÁẢÃẠÂẦẤẨẪẬĂẰẮẲẴẶÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ])/g, '$1\n$2');
+  str = str.replace(/(^|\n)\s*\\\s*/g, '$1');
+  str = str.replace(/\s*\\\s*$/g, '');
+
   // 2. Dọn dẹp dấu $ bị lẻ/mồ côi dán trực tiếp vào lệnh LaTeX (e.g., \cdot$ -> \cdot)
   str = str.replace(/(\\[a-zA-Z]+(\{[^{}]*\})*)\$/g, '$1');
 
@@ -955,10 +980,21 @@ function processPlainPart(plain: string): string {
   );
 
   // 8b. Nhận diện và bọc $...$ cho các công thức chứa lệnh LaTeX: \frac, \sqrt, \vec, \Delta, \alpha, v.v.
-  const cmdRegex = /(?:(?<=\s|^|[([{:;])([a-zA-Z](?:'|\d+|\([a-zA-Z0-9]+\))?\s*[\=\<\>\le\ge\neq\approx\in]\s*))?(\\(?:d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|sqrt(?:\[[^\]]*\])?\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|(?:vec|overrightarrow|widehat|overline|mathbb|mathbf|mathrm|text|ce)\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|[a-zA-Z]+))((?:\s*[\+\-\*\/\=\<\>\le\ge\neq\approx]\s*(?:\\(?:d?frac\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|sqrt(?:\[[^\]]*\])?\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|[a-zA-Z]+(?:\{[^{}]*\})*)|[a-zA-Z0-9_\'\.\^]+|\d+(?:\,\d+)?))*)/g;
+  const validMathCommands =
+    '(?:d?frac\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}|sqrt(?:\\[[^\\]]*\\])?\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}|(?:vec|overrightarrow|widehat|overline|underline|mathbb|mathbf|mathrm|text|ce)\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}|(?:alpha|beta|gamma|delta|epsilon|varepsilon|zeta|eta|theta|vartheta|iota|kappa|lambda|mu|nu|xi|pi|varpi|rho|varrho|sigma|varsigma|tau|upsilon|phi|varphi|chi|psi|omega|Gamma|Delta|Theta|Lambda|Xi|Pi|Sigma|Upsilon|Phi|Psi|Omega|sin|cos|tan|cot|ln|log|exp|lim|sum|prod|int|iint|iiint|oint|pm|mp|times|div|cdot|ast|star|circ|bullet|cap|cup|subset|supset|subseteq|supseteq|in|notin|ni|le|ge|leq|geq|neq|approx|equiv|sim|cong|propto|perp|parallel|angle|triangle|degree|infty|partial|nabla|forall|exists|emptyset|varnothing|to|gets|dots|cdots|vdots|ddots|rightarrow|leftarrow|Rightarrow|Leftarrow|Leftrightarrow|leftrightarrow|mapsto)\\b(?![àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]))';
+
+  const cmdRegex = new RegExp(
+    '(?:(?<=\\s|^|[([{:;])([a-zA-Z](?:\'|\\d+|\\([a-zA-Z0-9]+\\))?\\s*[\\=\\<\\>\\le\\ge\\neq\\approx\\in]\\s*))?(\\\\' +
+      validMathCommands +
+      ')((?:\\s*[\\+\\-\\*/\\=\\<\\>\\le\\ge\\neq\\approx]\\s*(?:\\\\(?:d?frac\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}|sqrt(?:\\[[^\\]]*\\])?\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}|[a-zA-Z]+(?:\\{[^{}]*\\})*)|[a-zA-Z0-9_\'\\.\\^]+|\\d+(?:\\,\\d+)?))*)',
+    'g'
+  );
 
   str = str.replace(cmdRegex, (match, lhs, cmd, rhs) => {
     if (/^\\(begin|end|n|t|r)$/.test(cmd)) return match;
+    if (/[àáảãạâầấẩẫậăằắẳẵặèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(match)) {
+      return match.replace(/^\\/, '');
+    }
     let formula = (lhs || '') + cmd + (rhs || '');
     let trimmed = formula.trim();
     if (trimmed.startsWith('$')) return match;
